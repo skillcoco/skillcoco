@@ -1,0 +1,56 @@
+{
+  "id": "kubernetes-fundamentals",
+  "title": "Kubernetes Fundamentals",
+  "description": "Learn Kubernetes from the ground up - containers, pods, services, deployments, and beyond.",
+  "version": "1.0.0",
+  "author": "School of DevOps & AI",
+  "domainModule": "devops",
+  "estimatedHours": 40,
+  "difficulty": "beginner-to-intermediate",
+  "prerequisites": ["Basic Linux CLI", "Docker fundamentals"],
+  "tags": ["kubernetes", "k8s", "containers", "devops", "cloud-native"],
+  "modules": [
+    {
+      "id": "k8s-intro",
+      "title": "What is Kubernetes?",
+      "type": "lesson",
+      "difficulty": 1,
+      "estimatedMinutes": 30,
+      "objectives": [
+        "Explain why container orchestration is needed",
+        "Describe Kubernetes architecture at a high level",
+        "Identify key Kubernetes components"
+      ]
+    },
+    {
+      "id": "k8s-pods",
+      "title": "Pods - The Smallest Unit",
+      "type": "lesson",
+      "difficulty": 3,
+      "estimatedMinutes": 45,
+      "prerequisites": ["k8s-intro"],
+      "objectives": [
+        "Define what a Pod is and why it exists",
+        "Create pods using YAML manifests",
+        "Inspect and debug running pods"
+      ]
+    },
+    {
+      "id": "k8s-pods-lab",
+      "title": "Lab: Working with Pods",
+      "type": "lab",
+      "difficulty": 4,
+      "estimatedMinutes": 60,
+      "prerequisites": ["k8s-pods"],
+      "objectives": [
+        "Create multi-container pods",
+        "Use kubectl to manage pod lifecycle",
+        "Debug a failing pod"
+      ]
+    }
+  ],
+  "edges": [
+    { "from": "k8s-intro", "to": "k8s-pods", "type": "prerequisite" },
+    { "from": "k8s-pods", "to": "k8s-pods-lab", "type": "prerequisite" }
+  ]
+}
