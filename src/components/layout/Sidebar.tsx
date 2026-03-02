@@ -1,109 +1,318 @@
-import { Link, useLocation } from "react-router-dom";
+import { NavLink, Link } from "react-router-dom";
 import {
   LayoutDashboard,
-  BookOpen,
-  Brain,
-  Settings,
-  PanelLeftClose,
-  PanelLeft,
+  RotateCcw,
+  BarChart3,
   Plus,
+  Settings,
+  Sun,
+  Moon,
+  ChevronLeft,
+  BookOpen,
 } from "lucide-react";
 import { useAppStore } from "@/stores/useAppStore";
 import { useLearningStore } from "@/stores/useLearningStore";
+import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: Brain, label: "Review", path: "/review" },
-  { icon: Settings, label: "Settings", path: "/settings" },
-];
+function getTrackColor(topic: string): string {
+  const key = topic.toLowerCase();
+  if (key.includes("kubernetes")) return "hsl(var(--track-kubernetes))";
+  if (key.includes("rust")) return "hsl(var(--track-rust))";
+  if (key.includes("go")) return "hsl(var(--track-go))";
+  if (key.includes("python")) return "hsl(var(--track-python))";
+  return "hsl(var(--primary))";
+}
 
 export function Sidebar() {
-  const location = useLocation();
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const tracks = useLearningStore((s) => s.tracks);
+  const dueCards = useLearningStore((s) => s.dueCards);
+  const { theme, toggleTheme } = useTheme();
+
+  const dueCount = dueCards.length;
 
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-sidebar transition-all duration-200",
+        "fixed left-0 top-0 z-40 flex h-screen flex-col transition-all duration-200",
+        "border-r border-white/10",
+        "bg-background/60 backdrop-blur-xl backdrop-saturate-150",
+        "supports-[backdrop-filter]:bg-background/60",
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Logo */}
-      <div className="flex h-14 items-center justify-between border-b border-border px-4">
+      {/* Logo Area */}
+      <div className="flex h-14 items-center justify-between px-4">
         {!collapsed && (
-          <span className="text-lg font-bold text-foreground">
-            Learn<span className="text-primary">Forge</span>
-          </span>
+          <div className="flex items-center gap-2">
+            <BookOpen size={20} className="text-primary" />
+            <span className="text-lg font-bold text-foreground">
+              Learn<span className="text-primary">Forge</span>
+            </span>
+          </div>
         )}
         <button
           onClick={toggleSidebar}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+          className={cn(
+            "rounded-md p-1.5 text-muted-foreground transition-colors",
+            "hover:bg-white/10 hover:text-foreground",
+            collapsed && "mx-auto"
+          )}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {collapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
+          <ChevronLeft
+            size={18}
+            className={cn(
+              "transition-transform duration-200",
+              collapsed && "rotate-180"
+            )}
+          />
         </button>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-2">
-        {navItems.map((item) => {
-          const active = location.pathname === item.path;
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                active
-                  ? "bg-sidebar-accent text-foreground font-medium"
-                  : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-              )}
-            >
-              <item.icon size={18} />
-              {!collapsed && <span>{item.label}</span>}
-            </Link>
-          );
-        })}
+      {/* Navigation Section */}
+      <nav className="flex-1 overflow-y-auto px-2 pt-4">
+        {!collapsed && (
+          <span className="mb-2 block px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+            Navigation
+          </span>
+        )}
 
-        {/* Active Tracks */}
+        <NavLink
+          to="/"
+          end
+          className={({ isActive }) =>
+            cn(
+              "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+              isActive
+                ? "bg-white/10 font-medium text-foreground"
+                : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+              collapsed && "justify-center"
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              {isActive && (
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
+              )}
+              <LayoutDashboard size={18} />
+              {!collapsed && <span>Dashboard</span>}
+            </>
+          )}
+        </NavLink>
+
+        <NavLink
+          to="/review"
+          className={({ isActive }) =>
+            cn(
+              "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+              isActive
+                ? "bg-white/10 font-medium text-foreground"
+                : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+              collapsed && "justify-center"
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              {isActive && (
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
+              )}
+              <RotateCcw size={18} />
+              {!collapsed && (
+                <span className="flex-1">
+                  Review
+                  {dueCount > 0 && (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-orange-500/20 px-1.5 py-0.5 text-[10px] font-medium text-orange-400">
+                      {dueCount} due
+                    </span>
+                  )}
+                </span>
+              )}
+              {collapsed && dueCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white">
+                  {dueCount > 99 ? "99" : dueCount}
+                </span>
+              )}
+            </>
+          )}
+        </NavLink>
+
+        <NavLink
+          to="/analytics"
+          className={({ isActive }) =>
+            cn(
+              "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+              isActive
+                ? "bg-white/10 font-medium text-foreground"
+                : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+              collapsed && "justify-center"
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              {isActive && (
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
+              )}
+              <BarChart3 size={18} />
+              {!collapsed && <span>Analytics</span>}
+            </>
+          )}
+        </NavLink>
+
+        {/* Learning Tracks Section */}
         {!collapsed && (
           <div className="mt-6">
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Tracks
+            <div className="mb-2 flex items-center justify-between px-3">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                Learning Tracks
               </span>
               <Link
                 to="/onboarding"
-                className="rounded-md p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                aria-label="New track"
               >
                 <Plus size={14} />
               </Link>
             </div>
+
+            <div className="space-y-0.5">
+              {tracks.map((track) => {
+                const color = getTrackColor(track.topic);
+                return (
+                  <NavLink
+                    key={track.id}
+                    to={`/track/${track.id}`}
+                    className={({ isActive }) =>
+                      cn(
+                        "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                        isActive
+                          ? "bg-white/10 font-medium text-foreground"
+                          : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                      )
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        {isActive && (
+                          <span
+                            className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm"
+                            style={{ backgroundColor: color }}
+                          />
+                        )}
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: color }}
+                        />
+                        <div className="flex flex-1 items-center gap-2 overflow-hidden">
+                          <span className="truncate">{track.topic}</span>
+                          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                            <span className="text-[11px] tabular-nums text-muted-foreground">
+                              {track.progressPercent}%
+                            </span>
+                            <div className="h-1 w-8 overflow-hidden rounded-full bg-white/10">
+                              <div
+                                className="h-full rounded-full transition-all duration-300"
+                                style={{
+                                  width: `${track.progressPercent}%`,
+                                  backgroundColor: color,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
+            </div>
+
+            {/* New Track Button */}
+            <Link
+              to="/onboarding"
+              className={cn(
+                "mt-1 flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+                "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              )}
+            >
+              <Plus size={16} />
+              <span>New Track</span>
+            </Link>
+          </div>
+        )}
+
+        {/* Collapsed state: show track dots */}
+        {collapsed && tracks.length > 0 && (
+          <div className="mt-6 flex flex-col items-center gap-2">
             {tracks.map((track) => (
-              <Link
+              <NavLink
                 key={track.id}
                 to={`/track/${track.id}`}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                  location.pathname.includes(track.id)
-                    ? "bg-sidebar-accent text-foreground font-medium"
-                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-                )}
+                className="rounded-md p-1.5 transition-colors hover:bg-white/10"
+                title={`${track.topic} (${track.progressPercent}%)`}
               >
-                <BookOpen size={16} />
-                <div className="flex-1 truncate">
-                  <div className="truncate">{track.topic}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {track.progressPercent}% complete
-                  </div>
-                </div>
-              </Link>
+                <span
+                  className="block h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: getTrackColor(track.topic) }}
+                />
+              </NavLink>
             ))}
+            <Link
+              to="/onboarding"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+              title="New Track"
+            >
+              <Plus size={14} />
+            </Link>
           </div>
         )}
       </nav>
+
+      {/* Bottom Section: Settings + Theme Toggle */}
+      <div className="border-t border-white/10 p-2">
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            cn(
+              "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+              isActive
+                ? "bg-white/10 font-medium text-foreground"
+                : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+              collapsed && "justify-center"
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              {isActive && (
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
+              )}
+              <Settings size={18} />
+              {!collapsed && <span>Settings</span>}
+            </>
+          )}
+        </NavLink>
+
+        <button
+          onClick={toggleTheme}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+            "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+            collapsed && "justify-center"
+          )}
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+        >
+          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+          {!collapsed && (
+            <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+          )}
+        </button>
+      </div>
     </aside>
   );
 }

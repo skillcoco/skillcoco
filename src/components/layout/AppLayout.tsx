@@ -8,7 +8,7 @@ export function AppLayout() {
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-screen overflow-hidden bg-background/95">
       <Sidebar />
       <div
         className={cn(
