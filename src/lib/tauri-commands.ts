@@ -13,10 +13,12 @@ import type {
 } from "@/types";
 import type {
   AIProviderConfig,
-  AssessKnowledgeRequest,
-  AssessKnowledgeResponse,
+  AssessmentRequest,
   GeneratePathRequest,
+  GenerateContentRequest,
   TutorMessage,
+  ProviderAuthStatus,
+  LoginRequest,
 } from "@/types/ai";
 
 // ── Learner Profile ──
@@ -61,6 +63,24 @@ export async function updateModuleProgress(progress: Partial<ModuleProgress>): P
   return invoke("update_module_progress", { progress });
 }
 
+// ── Auth ──
+
+export async function getAuthStatus(): Promise<ProviderAuthStatus[]> {
+  return invoke("get_auth_status");
+}
+
+export async function loginProvider(request: LoginRequest): Promise<ProviderAuthStatus> {
+  return invoke("login_provider", { request });
+}
+
+export async function setActiveProvider(provider: string): Promise<void> {
+  return invoke("set_active_provider", { provider });
+}
+
+export async function logoutProvider(provider: string): Promise<void> {
+  return invoke("logout_provider", { provider });
+}
+
 // ── AI ──
 
 export async function getAIConfig(): Promise<AIProviderConfig> {
@@ -71,16 +91,36 @@ export async function updateAIConfig(config: AIProviderConfig): Promise<void> {
   return invoke("update_ai_config", { config });
 }
 
-export async function assessKnowledge(req: AssessKnowledgeRequest): Promise<AssessKnowledgeResponse> {
-  return invoke("assess_knowledge", { request: req });
+export async function assessKnowledge(request: AssessmentRequest): Promise<string> {
+  return invoke("assess_knowledge", { request });
 }
 
-export async function generateLearningPath(req: GeneratePathRequest): Promise<LearningPath> {
-  return invoke("generate_learning_path", { request: req });
+export async function generateLearningPath(request: GeneratePathRequest): Promise<LearningPath> {
+  return invoke("generate_learning_path", { request });
 }
 
-export async function sendTutorMessage(msg: TutorMessage): Promise<string> {
-  return invoke("send_tutor_message", { message: msg });
+export async function sendTutorMessage(message: TutorMessage): Promise<string> {
+  return invoke("send_tutor_message", { message });
+}
+
+// ── Module Content ──
+
+export async function generateModuleContent(request: GenerateContentRequest): Promise<string> {
+  return invoke("generate_module_content", { request });
+}
+
+// ── Exercises ──
+
+export async function getExercises(moduleId: string): Promise<import("@/types/exercises").Exercise[]> {
+  return invoke("get_exercises", { moduleId });
+}
+
+export async function generateExercise(req: import("@/types/ai").GenerateExerciseRequest): Promise<import("@/types/exercises").Exercise> {
+  return invoke("generate_exercise", { request: req });
+}
+
+export async function evaluateResponse(req: import("@/types/ai").EvaluateResponseRequest): Promise<import("@/types/ai").EvaluateResponseResult> {
+  return invoke("evaluate_response", { request: req });
 }
 
 // ── Spaced Repetition ──

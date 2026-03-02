@@ -2,13 +2,13 @@
 // AI Provider Types
 // ═══════════════════════════════════════════
 
-export type AIProviderType = "claude" | "openai" | "ollama" | "custom";
+export type AIProviderType = "anthropic" | "openai" | "gemini" | "ollama" | "custom";
 
 export interface AIProviderConfig {
   type: AIProviderType;
   apiKey?: string;
   model: string;
-  baseUrl?: string; // for custom/ollama
+  baseUrl?: string;
   maxTokens: number;
   temperature: number;
 }
@@ -29,30 +29,69 @@ export interface AIConversation {
   updatedAt: string;
 }
 
-// ── AI Tutor Request/Response Types ──
+// ── Auth Types ──
 
-export interface AssessKnowledgeRequest {
+export interface ProviderAuthStatus {
+  provider: string;
+  authenticated: boolean;
+  method: string;
+  displayName: string | null;
+  model: string | null;
+  isActive: boolean;
+}
+
+export interface LoginRequest {
+  provider: string;
+  method: "api-key" | "ollama";
+  credential?: string;
+  model?: string;
+  baseUrl?: string;
+}
+
+// ── Assessment Types ──
+
+export interface AssessmentTurn {
+  role: string;
+  content: string;
+}
+
+export interface AssessmentRequest {
   topic: string;
-  learnerResponses: string[];
+  domain: string;
+  messages: AssessmentTurn[];
 }
 
 export interface AssessKnowledgeResponse {
-  skillLevel: Record<string, number>; // subtopic -> 0-1 score
+  skillLevel: Record<string, number>;
   knowledgeGaps: string[];
   recommendedStartingPoint: string;
   overallLevel: string;
 }
 
+// ── Path Generation ──
+
 export interface GeneratePathRequest {
+  trackId: string;
   topic: string;
-  assessment: AssessKnowledgeResponse;
-  goals: string[];
-  preferences: {
-    learningStyle: string;
-    sessionDuration: number;
-    depth: "overview" | "standard" | "deep";
-  };
+  domain: string;
+  goal: string;
+  assessmentLevel: string;
+  assessmentGaps: string[];
+  assessmentStrengths: string[];
 }
+
+// ── Content Generation ──
+
+export interface GenerateContentRequest {
+  moduleId: string;
+  trackId: string;
+  moduleTitle: string;
+  objectives: string[];
+  learnerLevel: string;
+  previousPerformance?: string;
+}
+
+// ── Exercise Types ──
 
 export interface GenerateExerciseRequest {
   moduleId: string;
@@ -69,18 +108,17 @@ export interface EvaluateResponseRequest {
 }
 
 export interface EvaluateResponseResult {
-  score: number; // 0-100
+  score: number;
   feedback: string;
   misconceptions: string[];
   hints: string[];
   isCorrect: boolean;
 }
 
+// ── Tutor ──
+
 export interface TutorMessage {
-  message: string;
-  context: {
-    trackId: string;
-    moduleId?: string;
-    learnerHistory: string;
-  };
+  content: string;
+  moduleContext?: string;
+  history?: AIMessage[];
 }

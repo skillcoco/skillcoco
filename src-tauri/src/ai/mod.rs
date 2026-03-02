@@ -1,6 +1,3 @@
-pub mod claude;
-pub mod ollama;
-pub mod openai;
-pub mod provider;
+pub mod service;
 
-pub use provider::{AIProvider, AIRequest, AIResponse, create_provider};
+pub use service::{ai_request, AIServiceRequest, AIServiceResponse, ServiceMessage};
