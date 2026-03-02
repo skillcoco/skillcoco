@@ -129,4 +129,18 @@
     border: 1px solid rgba(255, 255, 255, 0.50);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
   }
+
+  /* Pulsing border for in-progress module nodes */
+  .animate-pulse-border {
+    animation: pulse-border 2s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 12px 2px currentColor;
+  }
 }
