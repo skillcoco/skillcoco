@@ -4,58 +4,94 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* -- Light theme (matches soft gray/white direction) -- */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 25 95% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 25 95% 53%;
     --radius: 0.5rem;
+
+    /* Sidebar */
     --sidebar: 210 40% 98%;
-    --sidebar-foreground: 222.2 84% 4.9%;
+    --sidebar-foreground: 222 47% 11%;
     --sidebar-accent: 210 40% 94%;
-    --success: 142 76% 36%;
+
+    /* Glass effects - light */
+    --glass-bg: rgba(255, 255, 255, 0.60);
+    --glass-border: rgba(255, 255, 255, 0.40);
+    --glass-blur: 12px;
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+
+    /* Track accent colors */
+    --track-kubernetes: 217 91% 60%;
+    --track-rust: 14 86% 55%;
+    --track-go: 187 72% 50%;
+    --track-python: 45 93% 58%;
+
+    /* Status colors */
+    --success: 160 84% 39%;
     --warning: 38 92% 50%;
+    --info: 217 91% 60%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
+    /* -- Dark theme (deep charcoal + warm accent) -- */
+    --background: 235 35% 13%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+    --card: 232 33% 12%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
+    --popover: 232 33% 12%;
     --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
+    --primary: 25 95% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 230 25% 18%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
+    --muted: 230 25% 18%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 230 25% 18%;
     --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar: 217.2 32.6% 12%;
+    --border: 230 25% 20%;
+    --input: 230 25% 20%;
+    --ring: 25 95% 53%;
+
+    /* Sidebar */
+    --sidebar: 235 35% 11%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-accent: 217.2 32.6% 20%;
-    --success: 142 76% 36%;
+    --sidebar-accent: 230 25% 20%;
+
+    /* Glass effects - dark */
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-blur: 12px;
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.30);
+
+    /* Track accent colors (same across themes) */
+    --track-kubernetes: 217 91% 60%;
+    --track-rust: 14 86% 55%;
+    --track-go: 187 72% 50%;
+    --track-python: 45 93% 58%;
+
+    /* Status colors */
+    --success: 160 84% 39%;
     --warning: 38 92% 50%;
+    --info: 217 91% 60%;
   }
 }
 
@@ -66,5 +102,31 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  /* Standard glassmorphism card */
+  .glass {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--glass-shadow);
+  }
+
+  /* Stronger glassmorphism variant */
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.20);
+  }
+
+  :root .glass-strong {
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.50);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
   }
 }

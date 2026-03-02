@@ -46,6 +46,13 @@ const config: Config = {
         },
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
+        info: "hsl(var(--info))",
+        track: {
+          kubernetes: "hsl(var(--track-kubernetes))",
+          rust: "hsl(var(--track-rust))",
+          go: "hsl(var(--track-go))",
+          python: "hsl(var(--track-python))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -6,8 +6,11 @@ import { ModuleView } from "@/pages/ModuleView";
 import { ReviewSession } from "@/pages/ReviewSession";
 import { Settings } from "@/pages/Settings";
 import { Onboarding } from "@/pages/Onboarding";
+import { useTheme } from "@/hooks/useTheme";
 
 export default function App() {
+  useTheme();
+
   return (
     <Routes>
       <Route element={<AppLayout />}>

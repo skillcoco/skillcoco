@@ -2,12 +2,12 @@ import { create } from "zustand";
 
 interface AppState {
   sidebarCollapsed: boolean;
-  theme: "light" | "dark" | "system";
+  theme: "dark" | "light";
   isLoading: boolean;
   error: string | null;
 
   toggleSidebar: () => void;
-  setTheme: (theme: "light" | "dark" | "system") => void;
+  setTheme: (theme: "dark" | "light") => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 }
