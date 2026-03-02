@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS modules (
     objectives_json TEXT NOT NULL DEFAULT '[]',
     prerequisites_json TEXT NOT NULL DEFAULT '[]',
     content_json TEXT NOT NULL DEFAULT '{}',
+    content TEXT,
+    content_generated_at TEXT,
     ordering INTEGER NOT NULL DEFAULT 0
 );
 
