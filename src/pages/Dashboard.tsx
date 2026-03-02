@@ -1,70 +1,133 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, ArrowRight, Brain, Target, Clock } from "lucide-react";
+import { Plus, Target, BarChart3, Flame, BookOpen, Layers } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
-import { formatDuration } from "@/lib/utils";
+import { getOrCreateProfile } from "@/lib/tauri-commands";
+import type { LearnerProfile } from "@/types";
+import { StatsCard } from "@/components/dashboard/StatsCard";
+import { TrackCard } from "@/components/dashboard/TrackCard";
+import { SmartSessionCard } from "@/components/dashboard/SmartSessionCard";
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
 
 export function Dashboard() {
   const { tracks, dueCards, loadTracks, loadDueCards } = useLearningStore();
+  const [profile, setProfile] = useState<LearnerProfile | null>(null);
 
   useEffect(() => {
     loadTracks();
     loadDueCards();
+    getOrCreateProfile()
+      .then(setProfile)
+      .catch((err) => console.error("Failed to load profile:", err));
   }, []);
 
+  const activeTracks = tracks.filter((t) => t.status === "active");
+  const totalModulesAll = tracks.length * 10; // approximate; will be replaced by real data
+  const completedModulesAll = tracks.reduce(
+    (acc, t) => acc + Math.round((t.progressPercent / 100) * 10),
+    0,
+  );
+  const bestStreak = { days: 0, trackName: "" }; // placeholder until streak tracking is wired
+  const displayName = profile?.displayName || "Learner";
+
+  // Summary for subtitle
+  const subtitle = [
+    dueCards.length > 0 ? `${dueCards.length} reviews due` : null,
+    activeTracks.length > 0 ? `${activeTracks.length} active learning track${activeTracks.length !== 1 ? "s" : ""}` : null,
+  ]
+    .filter(Boolean)
+    .join(" and ");
+
+  // Smart session estimates
+  const estimatedMinutes = dueCards.length * 2 + (activeTracks.length > 0 ? 15 : 0);
+  const nextModule = activeTracks.length > 0 && activeTracks[0].currentModuleId
+    ? activeTracks[0].topic
+    : null;
+
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Your learning journey at a glance
+    <div className="mx-auto max-w-6xl space-y-8 pb-12">
+      {/* Greeting */}
+      <div>
+        <h1 className="text-3xl font-bold text-foreground">
+          {getGreeting()}, {displayName}.
+        </h1>
+        {subtitle && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            You have {subtitle}.
           </p>
-        </div>
-        <Link
-          to="/onboarding"
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus size={16} />
-          New Track
-        </Link>
+        )}
       </div>
 
-      {/* Quick Actions */}
+      {/* Smart Session Card */}
       {dueCards.length > 0 && (
-        <Link
-          to="/review"
-          className="flex items-center justify-between rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent"
-        >
-          <div className="flex items-center gap-3">
-            <Brain className="text-primary" size={20} />
-            <div>
-              <div className="font-medium text-foreground">
-                {dueCards.length} cards ready for review
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Keep your streak alive with a quick review session
-              </div>
-            </div>
-          </div>
-          <ArrowRight size={18} className="text-muted-foreground" />
-        </Link>
+        <SmartSessionCard
+          dueCount={dueCards.length}
+          nextModuleName={nextModule}
+          estimatedMinutes={estimatedMinutes}
+        />
       )}
 
-      {/* Active Tracks */}
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatsCard
+          label="Reviews Due"
+          value={dueCards.length}
+          subtitle="across all tracks"
+          icon={<Target size={18} />}
+          accentColor="hsl(var(--primary))"
+        />
+        <StatsCard
+          label="Modules Done"
+          value={`${completedModulesAll} of ${totalModulesAll}`}
+          subtitle="total progress"
+          icon={<BarChart3 size={18} />}
+          accentColor="hsl(var(--info))"
+        />
+        <StatsCard
+          label="Best Streak"
+          value={bestStreak.days > 0 ? `${bestStreak.days}d` : "--"}
+          subtitle={bestStreak.trackName || "no data yet"}
+          icon={<Flame size={18} />}
+          accentColor="hsl(var(--warning))"
+        />
+        <StatsCard
+          label="Active Tracks"
+          value={activeTracks.length}
+          subtitle="concurrent topics"
+          icon={<Layers size={18} />}
+          accentColor="hsl(var(--success))"
+        />
+      </div>
+
+      {/* Your Tracks */}
       <div>
-        <h2 className="mb-4 text-lg font-semibold text-foreground">Active Tracks</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground">Your Tracks</h2>
+          <Link
+            to="/onboarding"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Plus size={16} />
+            New Track
+          </Link>
+        </div>
+
         {tracks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16 text-center">
-            <Target className="mb-4 text-muted-foreground" size={40} />
-            <h3 className="text-lg font-medium text-foreground">No learning tracks yet</h3>
-            <p className="mb-6 text-sm text-muted-foreground">
-              Start your first track and let AI create a personalized learning path
+          <div className="glass flex flex-col items-center justify-center rounded-xl py-20 text-center">
+            <BookOpen className="mb-4 text-muted-foreground" size={48} />
+            <h3 className="text-lg font-semibold text-foreground">No learning tracks yet</h3>
+            <p className="mb-6 mt-1 max-w-sm text-sm text-muted-foreground">
+              Start your first track and let AI create a personalized learning path for you.
             </p>
             <Link
               to="/onboarding"
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <Plus size={16} />
               Start Learning
@@ -72,38 +135,26 @@ export function Dashboard() {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {tracks.map((track) => (
-              <Link
-                key={track.id}
-                to={`/track/${track.id}`}
-                className="rounded-lg border border-border bg-card p-5 transition-colors hover:bg-accent"
-              >
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="font-semibold text-foreground">{track.topic}</h3>
-                  <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground">
-                    {track.domainModule}
-                  </span>
-                </div>
-                <p className="mb-4 text-sm text-muted-foreground line-clamp-2">
-                  {track.goal}
-                </p>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{track.progressPercent}% complete</span>
-                    <span className="flex items-center gap-1">
-                      <Clock size={12} />
-                      {formatDuration(track.totalTimeSpent)}
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-secondary">
-                    <div
-                      className="h-1.5 rounded-full bg-primary transition-all"
-                      style={{ width: `${track.progressPercent}%` }}
-                    />
-                  </div>
-                </div>
-              </Link>
-            ))}
+            {tracks.map((track) => {
+              const trackDueCards = dueCards.filter((c) =>
+                // If cards have a track-level association we filter; otherwise count all
+                true
+              );
+              const approxTotal = 10;
+              const approxCompleted = Math.round((track.progressPercent / 100) * approxTotal);
+
+              return (
+                <TrackCard
+                  key={track.id}
+                  track={track}
+                  dueReviews={trackDueCards.length}
+                  totalModules={approxTotal}
+                  completedModules={approxCompleted}
+                  streakDays={0}
+                  nextModuleName={track.currentModuleId ? `Module ${approxCompleted + 1}` : null}
+                />
+              );
+            })}
           </div>
         )}
       </div>
