@@ -10,3 +10,5 @@
 // TODO: Implement in Phase 2
 // - Use bollard crate for Docker API
 // - Or shell out to docker CLI via tauri_plugin_shell
+
+pub struct DockerManager;

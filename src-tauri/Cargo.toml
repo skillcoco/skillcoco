@@ -17,11 +17,21 @@ tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1"
+async-trait = "0.1"
 log = "0.4"
 env_logger = "0.11"
+
+# AI provider auth + API calls
+zeroclaw = { path = "../../../../agentix/upstream/zeroclaw", default-features = false }
+
+# Vector DB for embeddings
+ruvector-core = { path = "../../../../agentix/upstream/ruvector/crates/ruvector-core", default-features = false, features = ["storage", "hnsw", "simd", "parallel"] }
+
+# Graph DB for learning path DAGs
+ruvector-graph = { path = "../../../../agentix/upstream/ruvector/crates/ruvector-graph", default-features = false }
