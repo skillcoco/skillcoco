@@ -1,0 +1,182 @@
+{
+  "id": "python-for-devops",
+  "title": "Python for DevOps",
+  "description": "A focused, practical course on using Python for DevOps and infrastructure automation. Starting with a quick refresher on Python fundamentals, you will learn file and system operations, process automation, API integration, configuration management, Docker automation, AWS scripting with boto3, and building robust CLI tools. Every module emphasizes real-world automation scenarios.",
+  "domain_module": "devops",
+  "estimated_hours": 30,
+  "modules": [
+    {
+      "id": "py-basics-refresher",
+      "title": "Python Basics Refresher",
+      "description": "A fast-paced review of Python fundamentals: data types, control flow, functions, list comprehensions, and virtual environments.",
+      "difficulty": 1,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Set up a Python virtual environment with venv",
+        "Use core data types: strings, lists, dicts, sets",
+        "Write functions with type hints",
+        "Apply list and dict comprehensions for concise data transformation"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "py-file-system",
+      "title": "File and System Operations",
+      "description": "Read, write, and manipulate files using pathlib and os. Work with file permissions, directory traversal, and temporary files.",
+      "difficulty": 1,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Navigate the filesystem with pathlib.Path",
+        "Read and write files in text and binary modes",
+        "Walk directory trees and match files with glob patterns",
+        "Handle file permissions and temporary files"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "py-subprocess",
+      "title": "Process Automation with subprocess",
+      "description": "Execute shell commands from Python, capture output, handle errors, and build automation pipelines using the subprocess module.",
+      "difficulty": 2,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Run external commands with subprocess.run",
+        "Capture stdout and stderr from processes",
+        "Handle process exit codes and timeouts",
+        "Chain commands and build shell-like pipelines in Python"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "py-api-requests",
+      "title": "API Integration with Requests",
+      "description": "Make HTTP requests, handle authentication, parse responses, and interact with REST APIs using the requests library.",
+      "difficulty": 2,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Make GET, POST, PUT, and DELETE requests",
+        "Handle authentication: API keys, tokens, and basic auth",
+        "Parse JSON responses and handle errors gracefully",
+        "Implement retry logic and timeouts"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "py-yaml-json",
+      "title": "YAML and JSON Config Parsing",
+      "description": "Parse, generate, and validate configuration files in YAML and JSON formats. Work with Jinja2 templates for config generation.",
+      "difficulty": 2,
+      "estimated_minutes": 25,
+      "objectives": [
+        "Parse and write YAML files with PyYAML",
+        "Load and dump JSON with the json module",
+        "Validate configuration structure programmatically",
+        "Generate configuration files from Jinja2 templates"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "py-docker-sdk",
+      "title": "Docker Automation with Python",
+      "description": "Control Docker programmatically using the Docker SDK for Python. Build images, manage containers, and automate Docker workflows.",
+      "difficulty": 3,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Connect to the Docker daemon with the Docker SDK",
+        "Build images and manage containers programmatically",
+        "Inspect container logs, stats, and networks",
+        "Automate multi-container workflows"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "py-aws-boto3",
+      "title": "AWS Automation with boto3",
+      "description": "Interact with AWS services using boto3. Manage EC2 instances, S3 buckets, and IAM resources through Python scripts.",
+      "difficulty": 3,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Configure boto3 with credentials and regions",
+        "Manage EC2 instances: launch, stop, terminate, and describe",
+        "Work with S3: upload, download, list, and manage buckets",
+        "Handle AWS API errors and implement pagination"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "py-infra-scripting",
+      "title": "Infrastructure Scripting Patterns",
+      "description": "Combine file operations, subprocess, APIs, and cloud SDKs to build real infrastructure automation scripts: health checks, log aggregation, and deployment helpers.",
+      "difficulty": 3,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Build a server health check script with retry logic",
+        "Automate log collection and aggregation across hosts",
+        "Script a deployment pipeline with rollback capability",
+        "Implement idempotent infrastructure operations"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "py-testing-pytest",
+      "title": "Testing with pytest",
+      "description": "Write reliable tests for your automation scripts using pytest. Use fixtures, mocking, parametrize, and test infrastructure code safely.",
+      "difficulty": 2,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Write test functions and use assert statements with pytest",
+        "Use fixtures for setup and teardown",
+        "Mock external services with unittest.mock and pytest-mock",
+        "Parametrize tests for multiple input scenarios"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "py-cli-tools",
+      "title": "Building CLI Tools with Click",
+      "description": "Build professional command-line tools using Click. Add commands, options, arguments, help text, and output formatting.",
+      "difficulty": 2,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Create CLI commands with Click decorators",
+        "Add options, arguments, and help text",
+        "Implement subcommands for complex tools",
+        "Format output with rich or tabulate for readability"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "py-devops-capstone",
+      "title": "Capstone: Build a DevOps Automation Toolkit",
+      "description": "Build a complete CLI toolkit that automates a real DevOps workflow: check infrastructure health, deploy a containerized app, and report status via API.",
+      "difficulty": 4,
+      "estimated_minutes": 45,
+      "objectives": [
+        "Design a multi-command CLI tool for DevOps automation",
+        "Integrate Docker, API calls, and config parsing in one tool",
+        "Implement error handling, logging, and dry-run modes",
+        "Write tests for the core automation logic"
+      ],
+      "exercise_types": ["code_challenge"]
+    }
+  ],
+  "edges": [
+    { "from": "py-basics-refresher", "to": "py-file-system" },
+    { "from": "py-basics-refresher", "to": "py-subprocess" },
+    { "from": "py-basics-refresher", "to": "py-api-requests" },
+    { "from": "py-basics-refresher", "to": "py-yaml-json" },
+    { "from": "py-file-system", "to": "py-docker-sdk" },
+    { "from": "py-subprocess", "to": "py-docker-sdk" },
+    { "from": "py-api-requests", "to": "py-aws-boto3" },
+    { "from": "py-yaml-json", "to": "py-aws-boto3" },
+    { "from": "py-docker-sdk", "to": "py-infra-scripting" },
+    { "from": "py-aws-boto3", "to": "py-infra-scripting" },
+    { "from": "py-basics-refresher", "to": "py-testing-pytest" },
+    { "from": "py-file-system", "to": "py-testing-pytest" },
+    { "from": "py-basics-refresher", "to": "py-cli-tools" },
+    { "from": "py-yaml-json", "to": "py-cli-tools" },
+    { "from": "py-infra-scripting", "to": "py-devops-capstone" },
+    { "from": "py-testing-pytest", "to": "py-devops-capstone" },
+    { "from": "py-cli-tools", "to": "py-devops-capstone" }
+  ]
+}

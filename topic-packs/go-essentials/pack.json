@@ -1,0 +1,212 @@
+{
+  "id": "go-essentials",
+  "title": "Go Essentials",
+  "description": "A practical introduction to the Go programming language. You will learn Go's type system, functions, structs, interfaces, error handling, and concurrency primitives. The course emphasizes Go's strengths in building HTTP servers, CLI tools, and concurrent programs, culminating in a real-world project.",
+  "domain_module": "programming",
+  "estimated_hours": 35,
+  "modules": [
+    {
+      "id": "go-setup",
+      "title": "Go Setup and Hello World",
+      "description": "Install Go, configure your workspace, understand GOPATH vs modules, and write your first program.",
+      "difficulty": 1,
+      "estimated_minutes": 20,
+      "objectives": [
+        "Install Go and verify the installation",
+        "Initialize a project with go mod init",
+        "Write, build, and run a Hello World program",
+        "Understand Go's compilation model"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "go-types-variables",
+      "title": "Types, Variables, and Constants",
+      "description": "Learn Go's type system: basic types, zero values, type inference with :=, constants, and iota.",
+      "difficulty": 1,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Declare variables with var and short declaration :=",
+        "Use basic types: int, float64, string, bool",
+        "Define constants and use iota for enumerations",
+        "Explain zero values for each type"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "go-control-flow",
+      "title": "Control Flow and Functions",
+      "description": "Master if/else, switch, for loops, and function definitions including multiple return values and named returns.",
+      "difficulty": 1,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Write functions with multiple return values",
+        "Use for as the only loop construct in Go",
+        "Apply switch statements with and without a condition",
+        "Understand defer and its execution order"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "go-slices-maps",
+      "title": "Arrays, Slices, and Maps",
+      "description": "Work with Go's composite types. Understand the difference between arrays and slices, and use maps for key-value data.",
+      "difficulty": 2,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Create and manipulate slices with append, copy, and slicing",
+        "Understand slice internals: length, capacity, and underlying arrays",
+        "Use maps for key-value storage and check for key existence",
+        "Iterate over slices and maps with range"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "go-structs-methods",
+      "title": "Structs and Methods",
+      "description": "Define custom types with structs, attach methods with value and pointer receivers, and compose types with embedding.",
+      "difficulty": 2,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Define structs and initialize them with literals",
+        "Implement methods with value and pointer receivers",
+        "Use struct embedding for composition",
+        "Understand when to use pointer vs value receivers"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "go-interfaces",
+      "title": "Interfaces",
+      "description": "Understand Go's implicit interface satisfaction. Design with interfaces, use the empty interface, and apply type assertions and type switches.",
+      "difficulty": 3,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Define interfaces and implement them implicitly",
+        "Use common standard library interfaces (io.Reader, io.Writer, fmt.Stringer)",
+        "Apply type assertions and type switches",
+        "Design functions that accept interfaces for flexibility"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "go-error-handling",
+      "title": "Error Handling",
+      "description": "Handle errors the Go way with the error interface, custom error types, errors.Is/As, and wrapping with fmt.Errorf.",
+      "difficulty": 2,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Return and check errors idiomatically",
+        "Create custom error types implementing the error interface",
+        "Wrap errors with fmt.Errorf and %w",
+        "Inspect error chains with errors.Is and errors.As"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "go-goroutines",
+      "title": "Goroutines and Concurrency",
+      "description": "Launch concurrent goroutines and coordinate them with WaitGroups. Understand Go's concurrency philosophy: 'share memory by communicating.'",
+      "difficulty": 3,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Launch goroutines with the go keyword",
+        "Synchronize goroutines with sync.WaitGroup",
+        "Protect shared data with sync.Mutex",
+        "Explain the difference between concurrency and parallelism"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "go-channels",
+      "title": "Channels and Select",
+      "description": "Communicate between goroutines using channels. Use buffered channels, directional channels, and the select statement for multiplexing.",
+      "difficulty": 3,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Create and use unbuffered and buffered channels",
+        "Apply directional channel types for safety",
+        "Multiplex channel operations with select",
+        "Implement common patterns: fan-out, fan-in, and pipeline"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "go-packages-modules",
+      "title": "Packages and Modules",
+      "description": "Organize code into packages, manage dependencies with Go modules, and understand visibility rules with exported/unexported identifiers.",
+      "difficulty": 2,
+      "estimated_minutes": 25,
+      "objectives": [
+        "Structure a multi-package project",
+        "Manage dependencies with go mod tidy and go.sum",
+        "Understand exported vs unexported identifiers",
+        "Use internal packages for encapsulation"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "go-testing",
+      "title": "Testing in Go",
+      "description": "Write tests, benchmarks, and examples using Go's built-in testing package. Use table-driven tests and understand test coverage.",
+      "difficulty": 2,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Write test functions with the testing package",
+        "Use table-driven tests for comprehensive coverage",
+        "Run benchmarks and interpret results",
+        "Generate and analyze test coverage reports"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "go-json-http",
+      "title": "JSON Handling and HTTP Servers",
+      "description": "Marshal and unmarshal JSON with struct tags. Build HTTP servers using net/http with handlers, middleware, and routing.",
+      "difficulty": 3,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Marshal and unmarshal JSON with encoding/json and struct tags",
+        "Create HTTP handlers with http.HandlerFunc",
+        "Build a REST API with routing and middleware",
+        "Make HTTP client requests with http.Client"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "go-cli-capstone",
+      "title": "Capstone: Build a CLI Tool",
+      "description": "Build a complete CLI application using cobra or the flag package, combining file I/O, JSON processing, error handling, and concurrency.",
+      "difficulty": 4,
+      "estimated_minutes": 45,
+      "objectives": [
+        "Design a CLI tool with subcommands and flags",
+        "Process files and data concurrently with goroutines",
+        "Handle errors gracefully with user-friendly messages",
+        "Write tests for core functionality"
+      ],
+      "exercise_types": ["code_challenge"]
+    }
+  ],
+  "edges": [
+    { "from": "go-setup", "to": "go-types-variables" },
+    { "from": "go-types-variables", "to": "go-control-flow" },
+    { "from": "go-control-flow", "to": "go-slices-maps" },
+    { "from": "go-control-flow", "to": "go-structs-methods" },
+    { "from": "go-structs-methods", "to": "go-interfaces" },
+    { "from": "go-structs-methods", "to": "go-error-handling" },
+    { "from": "go-slices-maps", "to": "go-error-handling" },
+    { "from": "go-interfaces", "to": "go-goroutines" },
+    { "from": "go-error-handling", "to": "go-goroutines" },
+    { "from": "go-goroutines", "to": "go-channels" },
+    { "from": "go-control-flow", "to": "go-packages-modules" },
+    { "from": "go-error-handling", "to": "go-testing" },
+    { "from": "go-packages-modules", "to": "go-testing" },
+    { "from": "go-interfaces", "to": "go-json-http" },
+    { "from": "go-slices-maps", "to": "go-json-http" },
+    { "from": "go-error-handling", "to": "go-json-http" },
+    { "from": "go-channels", "to": "go-cli-capstone" },
+    { "from": "go-testing", "to": "go-cli-capstone" },
+    { "from": "go-json-http", "to": "go-cli-capstone" }
+  ]
+}

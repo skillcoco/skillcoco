@@ -1,56 +1,222 @@
 {
   "id": "kubernetes-fundamentals",
   "title": "Kubernetes Fundamentals",
-  "description": "Learn Kubernetes from the ground up - containers, pods, services, deployments, and beyond.",
-  "version": "1.0.0",
-  "author": "School of DevOps & AI",
-  "domainModule": "devops",
-  "estimatedHours": 40,
-  "difficulty": "beginner-to-intermediate",
-  "prerequisites": ["Basic Linux CLI", "Docker fundamentals"],
-  "tags": ["kubernetes", "k8s", "containers", "devops", "cloud-native"],
+  "description": "Learn Kubernetes from the ground up. Starting with container basics and cluster architecture, you will progress through pods, deployments, services, networking, storage, and security. By the end, you will be comfortable deploying and managing applications on Kubernetes and troubleshooting common issues.",
+  "domain_module": "devops",
+  "estimated_hours": 40,
   "modules": [
     {
-      "id": "k8s-intro",
-      "title": "What is Kubernetes?",
-      "type": "lesson",
+      "id": "k8s-containers-recap",
+      "title": "Container Basics Recap",
+      "description": "Review container fundamentals: images, registries, Dockerfiles, and container runtimes. Establishes the foundation for understanding why orchestration is needed.",
       "difficulty": 1,
-      "estimatedMinutes": 30,
+      "estimated_minutes": 25,
       "objectives": [
-        "Explain why container orchestration is needed",
-        "Describe Kubernetes architecture at a high level",
-        "Identify key Kubernetes components"
-      ]
+        "Explain the difference between containers and virtual machines",
+        "Build and run a container from a Dockerfile",
+        "Push and pull images from a container registry"
+      ],
+      "exercise_types": ["conceptual_qa", "fill_in_blank"]
+    },
+    {
+      "id": "k8s-architecture",
+      "title": "Kubernetes Architecture",
+      "description": "Understand the control plane and worker node components: API server, etcd, scheduler, controller manager, kubelet, and kube-proxy.",
+      "difficulty": 1,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Identify the role of each control plane component",
+        "Describe how worker nodes communicate with the control plane",
+        "Explain the declarative model and reconciliation loop"
+      ],
+      "exercise_types": ["conceptual_qa", "fill_in_blank"]
+    },
+    {
+      "id": "k8s-kubectl-setup",
+      "title": "Setting Up kubectl and a Local Cluster",
+      "description": "Install kubectl, configure kubeconfig, and spin up a local cluster with kind or minikube for hands-on practice.",
+      "difficulty": 1,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Install and configure kubectl",
+        "Create a local Kubernetes cluster using kind or minikube",
+        "Verify cluster health with kubectl commands"
+      ],
+      "exercise_types": ["code_challenge"]
     },
     {
       "id": "k8s-pods",
-      "title": "Pods - The Smallest Unit",
-      "type": "lesson",
-      "difficulty": 3,
-      "estimatedMinutes": 45,
-      "prerequisites": ["k8s-intro"],
+      "title": "Pods - The Smallest Deployable Unit",
+      "description": "Deep dive into pods: single-container and multi-container patterns, pod lifecycle, resource requests and limits, and writing pod manifests.",
+      "difficulty": 2,
+      "estimated_minutes": 40,
       "objectives": [
         "Define what a Pod is and why it exists",
-        "Create pods using YAML manifests",
-        "Inspect and debug running pods"
-      ]
+        "Write a Pod YAML manifest from scratch",
+        "Configure resource requests and limits",
+        "Inspect and debug running pods with kubectl"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge", "fill_in_blank"]
     },
     {
-      "id": "k8s-pods-lab",
-      "title": "Lab: Working with Pods",
-      "type": "lab",
-      "difficulty": 4,
-      "estimatedMinutes": 60,
-      "prerequisites": ["k8s-pods"],
+      "id": "k8s-deployments",
+      "title": "Deployments and ReplicaSets",
+      "description": "Learn how Deployments manage ReplicaSets to provide declarative updates, rolling rollouts, and rollbacks for your applications.",
+      "difficulty": 2,
+      "estimated_minutes": 40,
       "objectives": [
-        "Create multi-container pods",
-        "Use kubectl to manage pod lifecycle",
-        "Debug a failing pod"
-      ]
+        "Create a Deployment and understand its relationship to ReplicaSets",
+        "Perform rolling updates and rollbacks",
+        "Scale a Deployment horizontally",
+        "Use deployment strategies (RollingUpdate vs Recreate)"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "k8s-services",
+      "title": "Services and Networking Basics",
+      "description": "Expose pods to each other and to the outside world using ClusterIP, NodePort, and LoadBalancer services. Understand Kubernetes DNS and service discovery.",
+      "difficulty": 2,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Explain the three main Service types and when to use each",
+        "Create a Service to expose a Deployment",
+        "Describe how Kubernetes DNS enables service discovery",
+        "Debug connectivity issues between services"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "k8s-configmaps-secrets",
+      "title": "ConfigMaps and Secrets",
+      "description": "Externalize application configuration using ConfigMaps and manage sensitive data with Secrets. Mount them as environment variables or volumes.",
+      "difficulty": 2,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Create ConfigMaps from literals, files, and directories",
+        "Inject ConfigMap data as environment variables and volume mounts",
+        "Create and consume Secrets safely",
+        "Understand the limitations of Kubernetes Secrets"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "k8s-namespaces",
+      "title": "Namespaces and Resource Organization",
+      "description": "Organize cluster resources with namespaces. Apply resource quotas and limit ranges to enforce multi-tenancy guardrails.",
+      "difficulty": 2,
+      "estimated_minutes": 25,
+      "objectives": [
+        "Create and switch between namespaces",
+        "Apply ResourceQuotas to limit namespace consumption",
+        "Set LimitRanges for default resource constraints",
+        "Understand cross-namespace communication"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "k8s-ingress",
+      "title": "Ingress and External Access",
+      "description": "Route external HTTP/S traffic to services using Ingress resources. Configure host-based and path-based routing with an Ingress controller.",
+      "difficulty": 3,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Install and configure an Ingress controller (e.g., NGINX)",
+        "Write Ingress rules for host-based and path-based routing",
+        "Configure TLS termination on Ingress",
+        "Troubleshoot Ingress misconfigurations"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "k8s-storage",
+      "title": "Persistent Storage",
+      "description": "Manage stateful workloads with PersistentVolumes, PersistentVolumeClaims, and StorageClasses. Understand static and dynamic provisioning.",
+      "difficulty": 3,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Explain the PV, PVC, and StorageClass relationship",
+        "Create a PersistentVolumeClaim and mount it in a Pod",
+        "Configure dynamic provisioning with a StorageClass",
+        "Understand access modes and reclaim policies"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "k8s-rbac",
+      "title": "RBAC and Security Basics",
+      "description": "Secure your cluster with Role-Based Access Control. Create Roles, ClusterRoles, RoleBindings, and ClusterRoleBindings. Understand ServiceAccounts.",
+      "difficulty": 3,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Explain the RBAC authorization model in Kubernetes",
+        "Create Roles and RoleBindings for namespace-scoped access",
+        "Create ClusterRoles for cluster-wide permissions",
+        "Assign ServiceAccounts to pods for API access"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "k8s-helm",
+      "title": "Helm - Package Management for Kubernetes",
+      "description": "Use Helm to package, template, and deploy applications. Work with charts, values files, and the Helm release lifecycle.",
+      "difficulty": 3,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Install Helm and add chart repositories",
+        "Deploy an application using a Helm chart",
+        "Customize deployments with values files and overrides",
+        "Upgrade and rollback Helm releases"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "k8s-troubleshooting",
+      "title": "Troubleshooting Kubernetes",
+      "description": "Develop a systematic approach to diagnosing and fixing common Kubernetes issues: CrashLoopBackOff, ImagePullBackOff, pending pods, and networking failures.",
+      "difficulty": 4,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Use kubectl describe, logs, and events to diagnose issues",
+        "Troubleshoot pod scheduling failures",
+        "Debug container crash loops and image pull errors",
+        "Diagnose service and networking connectivity problems"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "k8s-capstone",
+      "title": "Capstone: Deploy a Multi-Tier Application",
+      "description": "Bring it all together by deploying a multi-tier web application with a frontend, backend API, and database, complete with services, configmaps, secrets, ingress, and persistent storage.",
+      "difficulty": 4,
+      "estimated_minutes": 45,
+      "objectives": [
+        "Design Kubernetes manifests for a multi-tier application",
+        "Configure inter-service communication and external access",
+        "Manage configuration and secrets across tiers",
+        "Verify the full deployment end-to-end"
+      ],
+      "exercise_types": ["code_challenge"]
     }
   ],
   "edges": [
-    { "from": "k8s-intro", "to": "k8s-pods", "type": "prerequisite" },
-    { "from": "k8s-pods", "to": "k8s-pods-lab", "type": "prerequisite" }
+    { "from": "k8s-containers-recap", "to": "k8s-architecture" },
+    { "from": "k8s-architecture", "to": "k8s-kubectl-setup" },
+    { "from": "k8s-kubectl-setup", "to": "k8s-pods" },
+    { "from": "k8s-pods", "to": "k8s-deployments" },
+    { "from": "k8s-pods", "to": "k8s-configmaps-secrets" },
+    { "from": "k8s-pods", "to": "k8s-namespaces" },
+    { "from": "k8s-deployments", "to": "k8s-services" },
+    { "from": "k8s-services", "to": "k8s-ingress" },
+    { "from": "k8s-configmaps-secrets", "to": "k8s-ingress" },
+    { "from": "k8s-pods", "to": "k8s-storage" },
+    { "from": "k8s-namespaces", "to": "k8s-rbac" },
+    { "from": "k8s-deployments", "to": "k8s-helm" },
+    { "from": "k8s-configmaps-secrets", "to": "k8s-helm" },
+    { "from": "k8s-ingress", "to": "k8s-troubleshooting" },
+    { "from": "k8s-storage", "to": "k8s-troubleshooting" },
+    { "from": "k8s-rbac", "to": "k8s-troubleshooting" },
+    { "from": "k8s-troubleshooting", "to": "k8s-capstone" },
+    { "from": "k8s-helm", "to": "k8s-capstone" }
   ]
 }

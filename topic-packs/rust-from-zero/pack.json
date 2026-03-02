@@ -1,0 +1,305 @@
+{
+  "id": "rust-from-zero",
+  "title": "Rust from Zero",
+  "description": "A comprehensive introduction to the Rust programming language. Starting from installation and basic syntax, you will master ownership, borrowing, lifetimes, traits, generics, error handling, concurrency, and async programming. The course culminates in building a real CLI application that ties all concepts together.",
+  "domain_module": "programming",
+  "estimated_hours": 50,
+  "modules": [
+    {
+      "id": "rust-setup",
+      "title": "Setup and Hello World",
+      "description": "Install Rust via rustup, configure your editor, and write your first program. Understand cargo, crates, and the Rust compilation model.",
+      "difficulty": 1,
+      "estimated_minutes": 25,
+      "objectives": [
+        "Install Rust and configure the toolchain with rustup",
+        "Create a new project with cargo",
+        "Compile and run a Hello World program",
+        "Understand the role of Cargo.toml and Cargo.lock"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "rust-variables-types",
+      "title": "Variables, Types, and Mutability",
+      "description": "Learn about immutability by default, type inference, scalar types, compound types, and shadowing.",
+      "difficulty": 1,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Declare immutable and mutable variables",
+        "Use scalar types: integers, floats, booleans, characters",
+        "Work with tuples and arrays",
+        "Explain shadowing and when to use it"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "rust-control-flow",
+      "title": "Control Flow and Functions",
+      "description": "Master if/else expressions, loops (loop, while, for), and function definitions with parameters and return types.",
+      "difficulty": 1,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Write functions with typed parameters and return values",
+        "Use if/else as expressions",
+        "Iterate with for, while, and loop",
+        "Understand statements vs expressions in Rust"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "rust-ownership",
+      "title": "Ownership and Move Semantics",
+      "description": "Rust's central concept: ownership rules, move semantics, and the Copy trait. Understand how Rust manages memory without a garbage collector.",
+      "difficulty": 2,
+      "estimated_minutes": 40,
+      "objectives": [
+        "State the three ownership rules",
+        "Explain move semantics and when values are moved vs copied",
+        "Identify which types implement Copy",
+        "Trace ownership through function calls"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-borrowing",
+      "title": "References and Borrowing",
+      "description": "Borrow values with shared and mutable references. Understand the borrow checker rules and why they prevent data races at compile time.",
+      "difficulty": 2,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Create shared (&T) and mutable (&mut T) references",
+        "Explain the borrowing rules enforced by the compiler",
+        "Fix common borrow checker errors",
+        "Understand the relationship between ownership and borrowing"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-structs",
+      "title": "Structs and Methods",
+      "description": "Define custom data types with structs. Implement methods and associated functions using impl blocks.",
+      "difficulty": 2,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Define structs with named, tuple, and unit variants",
+        "Implement methods with &self, &mut self, and self receivers",
+        "Write associated functions (constructors)",
+        "Use the derive macro for Debug and Display"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "rust-enums-matching",
+      "title": "Enums and Pattern Matching",
+      "description": "Model complex data with enums, including variants with data. Use match, if let, and while let for exhaustive and concise pattern matching.",
+      "difficulty": 2,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Define enums with unit, tuple, and struct variants",
+        "Use match expressions with exhaustive patterns",
+        "Apply if let and while let for concise matching",
+        "Understand Option<T> as a core Rust enum"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-error-handling",
+      "title": "Error Handling with Result and Option",
+      "description": "Handle errors idiomatically using Result<T, E>, the ? operator, and custom error types. Understand the difference between recoverable and unrecoverable errors.",
+      "difficulty": 2,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Use Result<T, E> for recoverable error handling",
+        "Propagate errors with the ? operator",
+        "Define custom error types with thiserror",
+        "Choose between panic!, unwrap, expect, and proper error handling"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-collections",
+      "title": "Collections: Vec, String, HashMap",
+      "description": "Work with Rust's standard collections. Understand heap allocation, String vs &str, and iterator-based collection manipulation.",
+      "difficulty": 2,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Create and manipulate Vec<T> with push, pop, and indexing",
+        "Explain the difference between String and &str",
+        "Use HashMap for key-value storage",
+        "Iterate over collections with for loops and iterators"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "rust-traits",
+      "title": "Traits and Trait Bounds",
+      "description": "Define shared behavior with traits. Implement traits for your types and use trait bounds to write generic, polymorphic code.",
+      "difficulty": 3,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Define and implement traits",
+        "Use default method implementations",
+        "Apply trait bounds on generic functions",
+        "Understand common standard library traits (Display, Debug, Clone, From)"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-generics",
+      "title": "Generics",
+      "description": "Write reusable code with generic type parameters on functions, structs, enums, and impl blocks. Understand monomorphization.",
+      "difficulty": 3,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Define generic functions and structs",
+        "Apply multiple trait bounds with where clauses",
+        "Explain monomorphization and its performance implications",
+        "Use generics with Option, Result, and Vec"
+      ],
+      "exercise_types": ["code_challenge", "fill_in_blank"]
+    },
+    {
+      "id": "rust-lifetimes",
+      "title": "Lifetimes",
+      "description": "Understand lifetime annotations and how they help the compiler verify that references are always valid. Learn lifetime elision rules and common patterns.",
+      "difficulty": 4,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Explain why lifetime annotations are needed",
+        "Annotate function signatures with lifetime parameters",
+        "Apply lifetime annotations on structs that hold references",
+        "Understand the three lifetime elision rules"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-closures-iterators",
+      "title": "Closures and Iterators",
+      "description": "Use closures for inline anonymous functions and master the iterator trait for functional-style data processing chains.",
+      "difficulty": 3,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Write closures that capture variables from their environment",
+        "Understand Fn, FnMut, and FnOnce traits",
+        "Chain iterator adaptors: map, filter, fold, collect",
+        "Create custom iterators by implementing the Iterator trait"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "rust-modules-crates",
+      "title": "Modules, Crates, and Cargo",
+      "description": "Organize code into modules and crates. Manage dependencies with Cargo, publish crates, and structure multi-file projects.",
+      "difficulty": 2,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Structure code with mod, pub, and use",
+        "Organize a project into multiple files and directories",
+        "Add and manage external crate dependencies",
+        "Understand the difference between library and binary crates"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-smart-pointers",
+      "title": "Smart Pointers: Box, Rc, RefCell",
+      "description": "Go beyond stack allocation with Box for heap data, Rc for shared ownership, and RefCell for interior mutability.",
+      "difficulty": 4,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Use Box<T> for heap allocation and recursive types",
+        "Share ownership with Rc<T> and Arc<T>",
+        "Apply interior mutability with RefCell<T>",
+        "Identify when each smart pointer type is appropriate"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-concurrency",
+      "title": "Concurrency with Threads",
+      "description": "Write fearless concurrent code with threads, message passing via channels, and shared state with Mutex and Arc.",
+      "difficulty": 4,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Spawn threads with std::thread::spawn",
+        "Send data between threads using channels (mpsc)",
+        "Share mutable state safely with Arc<Mutex<T>>",
+        "Explain how Rust's type system prevents data races"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-async",
+      "title": "Async Programming with Tokio",
+      "description": "Write non-blocking asynchronous code with async/await syntax and the Tokio runtime. Handle concurrent I/O efficiently.",
+      "difficulty": 4,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Understand the async/await model and Futures",
+        "Set up and use the Tokio async runtime",
+        "Perform concurrent I/O operations with async functions",
+        "Use tokio::select! and tokio::join! for task management"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "rust-testing",
+      "title": "Testing in Rust",
+      "description": "Write unit tests, integration tests, and doc tests using Rust's built-in test framework. Organize test code and use assertions effectively.",
+      "difficulty": 2,
+      "estimated_minutes": 30,
+      "objectives": [
+        "Write unit tests with #[test] and assert macros",
+        "Organize integration tests in the tests/ directory",
+        "Test error conditions with #[should_panic] and Result returns",
+        "Run tests selectively with cargo test filters"
+      ],
+      "exercise_types": ["code_challenge"]
+    },
+    {
+      "id": "rust-cli-capstone",
+      "title": "Capstone: Build a CLI Application",
+      "description": "Apply everything you have learned to build a complete command-line tool using clap for argument parsing, serde for serialization, and proper error handling.",
+      "difficulty": 5,
+      "estimated_minutes": 45,
+      "objectives": [
+        "Design and structure a multi-module CLI application",
+        "Parse command-line arguments with clap",
+        "Read and write files with serde serialization",
+        "Implement comprehensive error handling and user-friendly output"
+      ],
+      "exercise_types": ["code_challenge"]
+    }
+  ],
+  "edges": [
+    { "from": "rust-setup", "to": "rust-variables-types" },
+    { "from": "rust-variables-types", "to": "rust-control-flow" },
+    { "from": "rust-control-flow", "to": "rust-ownership" },
+    { "from": "rust-ownership", "to": "rust-borrowing" },
+    { "from": "rust-borrowing", "to": "rust-structs" },
+    { "from": "rust-borrowing", "to": "rust-enums-matching" },
+    { "from": "rust-enums-matching", "to": "rust-error-handling" },
+    { "from": "rust-structs", "to": "rust-collections" },
+    { "from": "rust-error-handling", "to": "rust-collections" },
+    { "from": "rust-structs", "to": "rust-traits" },
+    { "from": "rust-collections", "to": "rust-traits" },
+    { "from": "rust-traits", "to": "rust-generics" },
+    { "from": "rust-borrowing", "to": "rust-lifetimes" },
+    { "from": "rust-generics", "to": "rust-lifetimes" },
+    { "from": "rust-traits", "to": "rust-closures-iterators" },
+    { "from": "rust-collections", "to": "rust-closures-iterators" },
+    { "from": "rust-control-flow", "to": "rust-modules-crates" },
+    { "from": "rust-structs", "to": "rust-modules-crates" },
+    { "from": "rust-generics", "to": "rust-smart-pointers" },
+    { "from": "rust-smart-pointers", "to": "rust-concurrency" },
+    { "from": "rust-closures-iterators", "to": "rust-async" },
+    { "from": "rust-concurrency", "to": "rust-async" },
+    { "from": "rust-error-handling", "to": "rust-testing" },
+    { "from": "rust-modules-crates", "to": "rust-testing" },
+    { "from": "rust-async", "to": "rust-cli-capstone" },
+    { "from": "rust-testing", "to": "rust-cli-capstone" },
+    { "from": "rust-lifetimes", "to": "rust-cli-capstone" },
+    { "from": "rust-modules-crates", "to": "rust-cli-capstone" }
+  ]
+}
