@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "@/hooks/useTheme";
 import * as commands from "@/lib/tauri-commands";
-import type { ProviderAuthStatus, LoginRequest, DetectedProvider } from "@/types/ai";
+import type { ProviderAuthStatus, LoginRequest } from "@/types/ai";
 import {
   Shield,
   Key,
@@ -67,7 +67,6 @@ export function Settings() {
   const [expandedBYOK, setExpandedBYOK] = useState<string | null>(null);
   const [byokInputs, setByokInputs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<string | null>(null);
-  const [detectedProviders, setDetectedProviders] = useState<DetectedProvider[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Ollama state
@@ -90,16 +89,7 @@ export function Settings() {
   }
 
   useEffect(() => {
-    async function init() {
-      try {
-        const detected = await commands.detectSystemProviders();
-        if (detected.length > 0) setDetectedProviders(detected);
-      } catch {
-        // env detection is best-effort
-      }
-      await loadAuthStatus();
-    }
-    init();
+    loadAuthStatus();
   }, []);
 
   // ── Derived State ──
@@ -327,11 +317,6 @@ export function Settings() {
                         <span className="text-xs text-muted-foreground">
                           {provider.company}
                         </span>
-                        {detectedProviders.some((d) => d.provider === provider.id) && (
-                          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-                            env detected
-                          </span>
-                        )}
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {provider.description}

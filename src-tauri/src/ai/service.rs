@@ -27,31 +27,38 @@ pub struct AIServiceResponse {
 
 /// Central AI request function. All AI calls go through here.
 ///
-/// Credential resolution strategy (subscription-first):
-/// 1. If stored credential has an explicit API key or OAuth token, pass it to zeroclaw
-/// 2. Otherwise pass None — zeroclaw resolves from env vars, OAuth tokens, CLI creds:
-///    - Anthropic: ANTHROPIC_OAUTH_TOKEN (setup-token) → ANTHROPIC_API_KEY
-///    - OpenAI:    OPENAI_API_KEY
-///    - Gemini:    GEMINI_API_KEY → GOOGLE_API_KEY → Gemini CLI OAuth → GCloud ADC
-///    - Ollama:    no key needed (local)
+/// Credential resolution: always uses explicitly stored credentials from the app.
+/// Never falls through to environment variables — BYOK/API keys must be
+/// configured explicitly by the user in Settings. Subscription tokens
+/// (setup-token, OAuth) are the primary auth method.
 pub async fn ai_request(
     auth: &AuthState,
     request: AIServiceRequest,
 ) -> Result<AIServiceResponse, String> {
     let cred = auth
         .get_active_credential()?
-        .ok_or("No AI provider configured. Go to Settings to add one.")?;
+        .ok_or("No AI provider configured. Go to Settings to connect one.")?;
 
     let provider_name = normalize_provider_name(&cred.provider);
 
-    // Only pass explicit credentials from our store if the user provided them via BYOK.
-    // For OAuth/setup-token and env-based auth, pass None and let zeroclaw resolve
-    // from env vars, stored OAuth tokens, and CLI credentials automatically.
+    // Always require an explicit credential from our store.
+    // Pass a sentinel placeholder for Ollama (no key needed).
+    // This prevents zeroclaw from auto-resolving env vars like ANTHROPIC_API_KEY
+    // which would charge the paid API instead of using the subscription.
     let stored_credential: Option<String> = match cred.method {
         crate::auth::AuthMethod::ApiKey => cred.api_key.clone(),
         crate::auth::AuthMethod::OAuth => cred.oauth_token.clone(),
-        crate::auth::AuthMethod::None => None, // Ollama — no key
+        crate::auth::AuthMethod::None => None, // Ollama — local, no key
     };
+
+    // For cloud providers, a credential MUST exist in the store
+    if stored_credential.is_none() && provider_name != "ollama" {
+        return Err(format!(
+            "No credentials stored for {}. Go to Settings and connect using \
+             a subscription token (recommended) or API key.",
+            cred.provider
+        ));
+    }
 
     let options = ProviderRuntimeOptions {
         max_tokens_override: request.max_tokens,

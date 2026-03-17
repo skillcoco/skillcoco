@@ -101,51 +101,19 @@ pub fn logout_provider(auth: State<AuthState>, provider: String) -> Result<(), S
     auth.remove_credential(&provider)
 }
 
-/// Detect API keys from environment variables and register providers.
-/// Checks ANTHROPIC_API_KEY, OPENAI_API_KEY, and GEMINI_API_KEY.
-/// Only imports if no credential is stored yet (subscription tokens take priority).
-/// Also checks ANTHROPIC_OAUTH_TOKEN for Claude setup-token users.
+/// Report which providers are already configured in the credential store.
+/// Does NOT auto-import from environment variables — BYOK must be explicit.
 #[tauri::command]
 pub fn detect_system_providers(auth: State<AuthState>) -> Result<Vec<DetectedProvider>, String> {
     let mut detected = Vec::new();
+    let providers = ["claude", "openai", "gemini", "ollama"];
 
-    // Check for subscription tokens first (setup-token, etc.)
-    if let Ok(token) = std::env::var("ANTHROPIC_OAUTH_TOKEN") {
-        let trimmed = token.trim().to_string();
-        if !trimmed.is_empty() {
-            let already_has = auth.get_credential("claude")?.is_some();
-            if !already_has {
-                auth.store_oauth_token("claude", &trimmed, Some("Claude (subscription)"), Some("claude-sonnet-4-20250514"))?;
-            }
-            detected.push(DetectedProvider {
-                provider: "claude".to_string(),
-                source: "ANTHROPIC_OAUTH_TOKEN".to_string(),
-                imported: !already_has,
-            });
-        }
-    }
-
-    // Then check API keys as fallback
-    let checks: &[(&str, &str, &str, &str)] = &[
-        ("ANTHROPIC_API_KEY", "claude", "claude-sonnet-4-20250514", "ANTHROPIC_API_KEY"),
-        ("OPENAI_API_KEY", "openai", "gpt-4o", "OPENAI_API_KEY"),
-        ("GEMINI_API_KEY", "gemini", "gemini-2.0-flash", "GEMINI_API_KEY"),
-    ];
-
-    for (env_var, provider, model, source_label) in checks {
-        if let Ok(key) = std::env::var(env_var) {
-            let trimmed = key.trim().to_string();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let already_has = auth.get_credential(provider)?.is_some();
-            if !already_has {
-                auth.store_api_key(provider, &trimmed, Some(model))?;
-            }
+    for provider in providers {
+        if let Ok(Some(cred)) = auth.get_credential(provider) {
             detected.push(DetectedProvider {
                 provider: provider.to_string(),
-                source: source_label.to_string(),
-                imported: !already_has,
+                source: format!("{:?}", cred.method).to_lowercase(),
+                imported: false,
             });
         }
     }

@@ -186,32 +186,6 @@ impl AuthState {
         };
         Ok(store.credentials.get(active).cloned())
     }
-
-    /// Register providers from environment variables at startup.
-    /// Only creates entries for providers that have NO stored credential at all.
-    /// OAuth/subscription credentials are never overwritten — they take priority.
-    /// This ensures the UI shows providers as "connected" when env vars exist.
-    pub fn detect_env_credentials(&self) {
-        let checks: &[(&str, &str, &str)] = &[
-            ("ANTHROPIC_API_KEY", "claude", "claude-sonnet-4-20250514"),
-            ("OPENAI_API_KEY", "openai", "gpt-4o"),
-            ("GEMINI_API_KEY", "gemini", "gemini-2.0-flash"),
-        ];
-
-        for (env_var, provider, model) in checks {
-            if let Ok(key) = std::env::var(env_var) {
-                let trimmed = key.trim().to_string();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                // Only import if no credential exists at all
-                if let Ok(None) = self.get_credential(provider) {
-                    let _ = self.store_api_key(provider, &trimmed, Some(model));
-                    log::info!("Auto-registered {} from {}", provider, env_var);
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
