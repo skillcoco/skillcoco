@@ -179,21 +179,33 @@ async fn start_gemini_oauth(auth: AuthState, flow: OAuthFlowState) -> Result<(),
 }
 
 /// Save a Claude setup-token (sk-ant-oat01-*) from `claude setup-token`.
+/// Validates the token against the Anthropic API before storing it.
 /// This is stored as an OAuth credential so zeroclaw sends it as Bearer + anthropic-beta header.
 #[tauri::command]
-pub fn save_setup_token(
-    auth: State<AuthState>,
+pub async fn save_setup_token(
+    auth: State<'_, AuthState>,
     token: String,
 ) -> Result<OAuthStartResult, String> {
-    let trimmed = token.trim();
+    let trimmed = token.trim().to_string();
     if trimmed.is_empty() {
         return Err("Token cannot be empty".to_string());
     }
 
+    if !trimmed.starts_with("sk-ant-oat01-") {
+        return Err(
+            "Invalid token format. Setup tokens start with sk-ant-oat01-. \
+             Run `claude setup-token` in your terminal to generate one."
+                .to_string(),
+        );
+    }
+
+    // Validate the token against the Anthropic API before storing
+    validate_anthropic_token(&trimmed).await?;
+
     auth.store_oauth_token(
         "claude",
-        trimmed,
-        Some("Claude (Setup Token)"),
+        &trimmed,
+        Some("Claude (Subscription)"),
         Some("claude-sonnet-4-20250514"),
     )?;
 
@@ -201,6 +213,44 @@ pub fn save_setup_token(
         started: true,
         provider: "claude".to_string(),
     })
+}
+
+/// Validate a setup-token by making a minimal API call to Anthropic.
+/// Returns Ok(()) if the token is valid, Err with a user-friendly message otherwise.
+async fn validate_anthropic_token(token: &str) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let res = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("Authorization", format!("Bearer {}", token))
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .body(r#"{"model":"claude-sonnet-4-20250514","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"#)
+        .send()
+        .await
+        .map_err(|e| format!("Network error validating token: {}", e))?;
+
+    let status = res.status().as_u16();
+    if status == 200 {
+        return Ok(());
+    }
+
+    let body = res.text().await.unwrap_or_default();
+
+    match status {
+        401 => Err(
+            "Setup token is invalid or expired. Run `claude setup-token` \
+             again in your terminal to generate a fresh token."
+                .to_string(),
+        ),
+        403 if body.contains("OAuth authentication is currently not allowed") => Err(
+            "Your Anthropic account does not support setup tokens. \
+             Use 'API Key' instead with a key from console.anthropic.com."
+                .to_string(),
+        ),
+        403 => Err(format!("Token rejected by Anthropic (403): {}", body)),
+        _ => Err(format!("Anthropic API returned {}: {}", status, body)),
+    }
 }
 
 /// Check if an OAuth flow has completed for the given provider.
