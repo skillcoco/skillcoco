@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Target, BarChart3, Flame, BookOpen, Layers } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
-import { getOrCreateProfile } from "@/lib/tauri-commands";
+import * as commands from "@/lib/tauri-commands";
 import type { LearnerProfile } from "@/types";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { TrackCard } from "@/components/dashboard/TrackCard";
@@ -22,17 +22,37 @@ export function Dashboard() {
   useEffect(() => {
     loadTracks();
     loadDueCards();
-    getOrCreateProfile()
+    commands.getOrCreateProfile()
       .then(setProfile)
       .catch((err) => console.error("Failed to load profile:", err));
   }, []);
 
   const activeTracks = tracks.filter((t) => t.status === "active");
-  const totalModulesAll = tracks.length * 10; // approximate; will be replaced by real data
-  const completedModulesAll = tracks.reduce(
-    (acc, t) => acc + Math.round((t.progressPercent / 100) * 10),
-    0,
-  );
+  const [moduleCounts, setModuleCounts] = useState<Record<string, { total: number; completed: number }>>({});
+
+  useEffect(() => {
+    async function loadModuleCounts() {
+      const counts: Record<string, { total: number; completed: number }> = {};
+      for (const track of tracks) {
+        try {
+          const [path, progress] = await Promise.all([
+            commands.getPath(track.id),
+            commands.getModuleProgress(track.id),
+          ]);
+          const total = path.modules?.length ?? 0;
+          const completed = progress.filter((p) => p.status === "completed").length;
+          counts[track.id] = { total, completed };
+        } catch {
+          counts[track.id] = { total: 0, completed: 0 };
+        }
+      }
+      setModuleCounts(counts);
+    }
+    if (tracks.length > 0) loadModuleCounts();
+  }, [tracks]);
+
+  const totalModulesAll = Object.values(moduleCounts).reduce((s, c) => s + c.total, 0);
+  const completedModulesAll = Object.values(moduleCounts).reduce((s, c) => s + c.completed, 0);
   const bestStreak = { days: 0, trackName: "" }; // placeholder until streak tracking is wired
   const displayName = profile?.displayName || "Learner";
 
@@ -136,22 +156,16 @@ export function Dashboard() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {tracks.map((track) => {
-              const trackDueCards = dueCards.filter((c) =>
-                // If cards have a track-level association we filter; otherwise count all
-                true
-              );
-              const approxTotal = 10;
-              const approxCompleted = Math.round((track.progressPercent / 100) * approxTotal);
-
+              const trackCounts = moduleCounts[track.id] ?? { total: 0, completed: 0 };
               return (
                 <TrackCard
                   key={track.id}
                   track={track}
-                  dueReviews={trackDueCards.length}
-                  totalModules={approxTotal}
-                  completedModules={approxCompleted}
+                  dueReviews={dueCards.length}
+                  totalModules={trackCounts.total}
+                  completedModules={trackCounts.completed}
                   streakDays={0}
-                  nextModuleName={track.currentModuleId ? `Module ${approxCompleted + 1}` : null}
+                  nextModuleName={track.currentModuleId ? "Continue" : null}
                 />
               );
             })}

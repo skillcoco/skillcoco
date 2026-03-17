@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderAuthStatus {
     pub provider: String,
     pub authenticated: bool,
@@ -10,6 +11,14 @@ pub struct ProviderAuthStatus {
     pub display_name: Option<String>,
     pub model: Option<String>,
     pub is_active: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectedProvider {
+    pub provider: String,
+    pub source: String,
+    pub imported: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -24,7 +33,7 @@ pub struct LoginRequest {
 /// Get authentication status for all supported providers.
 #[tauri::command]
 pub fn get_auth_status(auth: State<AuthState>) -> Result<Vec<ProviderAuthStatus>, String> {
-    let providers = ["anthropic", "openai", "gemini", "ollama"];
+    let providers = ["claude", "openai", "gemini", "ollama"];
     let active = auth.get_active_provider()?;
     let mut statuses = Vec::new();
 
@@ -90,4 +99,38 @@ pub fn set_active_provider(auth: State<AuthState>, provider: String) -> Result<(
 #[tauri::command]
 pub fn logout_provider(auth: State<AuthState>, provider: String) -> Result<(), String> {
     auth.remove_credential(&provider)
+}
+
+/// Detect API keys from environment variables and auto-configure providers.
+/// Checks ANTHROPIC_API_KEY, OPENAI_API_KEY, and GEMINI_API_KEY.
+/// Only imports if no credential is already stored for that provider.
+#[tauri::command]
+pub fn detect_system_providers(auth: State<AuthState>) -> Result<Vec<DetectedProvider>, String> {
+    let mut detected = Vec::new();
+
+    let checks: &[(&str, &str, &str, &str)] = &[
+        ("ANTHROPIC_API_KEY", "claude", "claude-sonnet-4-20250514", "ANTHROPIC_API_KEY"),
+        ("OPENAI_API_KEY", "openai", "gpt-4o", "OPENAI_API_KEY"),
+        ("GEMINI_API_KEY", "gemini", "gemini-2.0-flash", "GEMINI_API_KEY"),
+    ];
+
+    for (env_var, provider, model, source_label) in checks {
+        if let Ok(key) = std::env::var(env_var) {
+            let trimmed = key.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let already_has = auth.get_credential(provider)?.is_some();
+            if !already_has {
+                auth.store_api_key(provider, &trimmed, Some(model))?;
+            }
+            detected.push(DetectedProvider {
+                provider: provider.to_string(),
+                source: source_label.to_string(),
+                imported: !already_has,
+            });
+        }
+    }
+
+    Ok(detected)
 }

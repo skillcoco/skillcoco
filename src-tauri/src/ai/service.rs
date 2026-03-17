@@ -36,7 +36,12 @@ pub async fn ai_request(
         .ok_or("No AI provider configured. Go to Settings to add one.")?;
 
     let provider_name = normalize_provider_name(&cred.provider);
-    let api_key = cred.api_key.as_deref().or(cred.oauth_token.as_deref());
+
+    // Route credential based on auth method: OAuth tokens take priority when method is OAuth
+    let credential = match cred.method {
+        crate::auth::AuthMethod::OAuth => cred.oauth_token.as_deref().or(cred.api_key.as_deref()),
+        _ => cred.api_key.as_deref().or(cred.oauth_token.as_deref()),
+    };
 
     let options = ProviderRuntimeOptions {
         max_tokens_override: request.max_tokens,
@@ -44,9 +49,9 @@ pub async fn ai_request(
     };
 
     let provider = if let Some(base_url) = &cred.base_url {
-        providers::create_provider_with_url(&provider_name, api_key, Some(base_url))
+        providers::create_provider_with_url(&provider_name, credential, Some(base_url))
     } else {
-        providers::create_provider_with_options(&provider_name, api_key, &options)
+        providers::create_provider_with_options(&provider_name, credential, &options)
     }
     .map_err(|e| format!("Failed to create AI provider: {}", e))?;
 
@@ -93,5 +98,83 @@ fn normalize_provider_name(name: &str) -> String {
         "gemini" | "google" => "gemini".to_string(),
         "ollama" => "ollama".to_string(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_claude() {
+        assert_eq!(normalize_provider_name("claude"), "anthropic");
+        assert_eq!(normalize_provider_name("anthropic"), "anthropic");
+    }
+
+    #[test]
+    fn test_normalize_openai() {
+        assert_eq!(normalize_provider_name("chatgpt"), "openai");
+        assert_eq!(normalize_provider_name("openai"), "openai");
+    }
+
+    #[test]
+    fn test_normalize_gemini() {
+        assert_eq!(normalize_provider_name("gemini"), "gemini");
+        assert_eq!(normalize_provider_name("google"), "gemini");
+    }
+
+    #[test]
+    fn test_normalize_ollama() {
+        assert_eq!(normalize_provider_name("ollama"), "ollama");
+    }
+
+    #[test]
+    fn test_normalize_unknown_passes_through() {
+        assert_eq!(normalize_provider_name("custom-provider"), "custom-provider");
+    }
+
+    #[test]
+    fn test_ai_request_fails_without_credential() {
+        let dir = tempfile::tempdir().unwrap();
+        let auth = AuthState::new(&dir.path().to_path_buf());
+        let request = AIServiceRequest {
+            system_prompt: "test".to_string(),
+            messages: vec![],
+            max_tokens: None,
+            temperature: None,
+            response_format: None,
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(ai_request(&auth, request));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No AI provider configured"));
+    }
+
+    #[test]
+    fn test_service_message_serialization() {
+        let msg = ServiceMessage {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"role\":\"user\""));
+        assert!(json.contains("\"content\":\"Hello\""));
+    }
+
+    #[test]
+    fn test_ai_service_request_defaults() {
+        let req = AIServiceRequest {
+            system_prompt: "You are helpful.".to_string(),
+            messages: vec![
+                ServiceMessage { role: "user".to_string(), content: "Hi".to_string() },
+            ],
+            max_tokens: None,
+            temperature: None,
+            response_format: None,
+        };
+        assert_eq!(req.messages.len(), 1);
+        assert!(req.max_tokens.is_none());
+        assert!(req.temperature.is_none());
     }
 }

@@ -143,3 +143,12 @@ export type AdaptationEventType =
   | "module_reordered"
   | "path_regenerated"
   | "style_changed";
+
+// ── Exercise Completion ──
+
+export interface CompleteExercisesResult {
+  masteryLevel: number;
+  moduleCompleted: boolean;
+  unlockedModules: string[];
+  cardsCreated: number;
+}

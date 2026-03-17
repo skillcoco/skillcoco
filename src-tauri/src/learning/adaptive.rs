@@ -79,4 +79,54 @@ mod tests {
         };
         assert!(posterior_only < initial, "Posterior should decrease on incorrect");
     }
+
+    #[test]
+    fn test_mastery_bounded_0_to_1() {
+        let params = BKTParams::default();
+        // Even after many correct answers, mastery should stay <= 1.0
+        let mut mastery = 0.3;
+        for _ in 0..100 {
+            mastery = update_mastery(&params, mastery, true);
+        }
+        assert!(mastery <= 1.0, "Mastery should not exceed 1.0");
+        assert!(mastery > 0.0, "Mastery should be positive");
+    }
+
+    #[test]
+    fn test_mastery_converges_on_repeated_correct() {
+        let params = BKTParams::default();
+        let mut mastery = 0.3;
+        for _ in 0..50 {
+            mastery = update_mastery(&params, mastery, true);
+        }
+        // Should converge near 1.0
+        assert!(mastery > 0.95, "Mastery should converge near 1.0 after many correct answers");
+    }
+
+    #[test]
+    fn test_custom_params() {
+        let params = BKTParams {
+            p_know: 0.5,
+            p_learn: 0.2,
+            p_guess: 0.1,
+            p_slip: 0.05,
+        };
+        let result = update_mastery(&params, 0.5, true);
+        assert!(result > 0.5, "Higher prior + correct should increase mastery");
+    }
+
+    #[test]
+    fn test_should_adapt_within_threshold() {
+        assert!(!should_adapt(0.5, 0.48, 0.1));
+    }
+
+    #[test]
+    fn test_should_adapt_exceeds_threshold() {
+        assert!(should_adapt(0.8, 0.5, 0.1));
+    }
+
+    #[test]
+    fn test_should_adapt_exact_threshold() {
+        assert!(!should_adapt(0.5, 0.4, 0.1)); // abs diff = 0.1, not > 0.1
+    }
 }

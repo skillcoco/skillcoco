@@ -86,4 +86,65 @@ mod tests {
         let result = sm2_calculate(3, 3, 1.3, 10.0);
         assert!(result.ease_factor >= 1.3);
     }
+
+    #[test]
+    fn test_third_review_uses_ease_factor() {
+        let result = sm2_calculate(5, 2, 2.5, 6.0);
+        assert_eq!(result.repetitions, 3);
+        assert_eq!(result.interval, 6.0 * 2.5); // interval * EF
+    }
+
+    #[test]
+    fn test_perfect_recall_increases_ease() {
+        let result = sm2_calculate(5, 3, 2.5, 15.0);
+        assert!(result.ease_factor > 2.5, "Perfect recall should increase ease factor");
+    }
+
+    #[test]
+    fn test_difficult_recall_decreases_ease() {
+        let result = sm2_calculate(3, 3, 2.5, 15.0);
+        assert!(result.ease_factor < 2.5, "Difficult recall should decrease ease factor");
+    }
+
+    #[test]
+    fn test_quality_clamped() {
+        // Quality below 0 should be treated as 0 (failed)
+        let result = sm2_calculate(-1, 5, 2.5, 30.0);
+        assert_eq!(result.interval, 1.0);
+        assert_eq!(result.repetitions, 0);
+
+        // Quality above 5 should be treated as 5
+        let result = sm2_calculate(10, 0, 2.5, 0.0);
+        assert_eq!(result.repetitions, 1);
+    }
+
+    #[test]
+    fn test_boundary_quality_2_fails() {
+        let result = sm2_calculate(2, 3, 2.5, 15.0);
+        assert_eq!(result.interval, 1.0);
+        assert_eq!(result.repetitions, 0);
+    }
+
+    #[test]
+    fn test_boundary_quality_3_passes() {
+        let result = sm2_calculate(3, 0, 2.5, 0.0);
+        assert_eq!(result.repetitions, 1);
+        assert_eq!(result.interval, 1.0);
+    }
+
+    #[test]
+    fn test_long_sequence_intervals_grow() {
+        let mut interval = 0.0;
+        let mut ef = 2.5;
+        let mut reps = 0;
+
+        for _ in 0..10 {
+            let result = sm2_calculate(4, reps, ef, interval);
+            assert!(result.interval >= interval || reps < 2, "Intervals should generally grow");
+            interval = result.interval;
+            ef = result.ease_factor;
+            reps = result.repetitions;
+        }
+        assert!(interval > 30.0, "After 10 successful reviews, interval should be > 30 days");
+    }
 }

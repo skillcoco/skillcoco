@@ -122,3 +122,24 @@ export interface TutorMessage {
   moduleContext?: string;
   history?: AIMessage[];
 }
+
+// ── Provider Detection ──
+
+export interface DetectedProvider {
+  provider: string;
+  source: string;
+  imported: boolean;
+}
+
+// ── OAuth ──
+
+export interface OAuthStartResult {
+  started: boolean;
+  provider: string;
+}
+
+export interface OAuthStatusResult {
+  completed: boolean;
+  provider: string;
+  authenticated: boolean;
+}

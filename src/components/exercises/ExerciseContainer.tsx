@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Loader2, BookOpen } from "lucide-react";
-import { getExercises } from "@/lib/tauri-commands";
+import { getExercises, generateExercise } from "@/lib/tauri-commands";
 import { ConceptualQA } from "./ConceptualQA";
 import { CodeChallenge } from "./CodeChallenge";
 import { FillInBlank } from "./FillInBlank";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 interface ExerciseContainerProps {
   moduleId: string;
-  onAllComplete?: () => void;
+  onAllComplete?: (scores: number[]) => void;
 }
 
 export function ExerciseContainer({ moduleId, onAllComplete }: ExerciseContainerProps) {
@@ -26,7 +26,30 @@ export function ExerciseContainer({ moduleId, onAllComplete }: ExerciseContainer
       setIsLoading(true);
       setError(null);
       try {
-        const result = await getExercises(moduleId);
+        let result = await getExercises(moduleId);
+
+        // Auto-generate if none exist
+        if (result.length === 0) {
+          const types = ["conceptual_qa", "code_challenge", "fill_in_blank"];
+          const generated = [];
+          for (const type of types) {
+            try {
+              const ex = await generateExercise({
+                moduleId,
+                difficulty: 5,
+                type,
+                context: `Module exercises for adaptive learning`,
+              });
+              generated.push(ex as unknown as Exercise);
+            } catch (genErr) {
+              console.error(`Failed to generate ${type} exercise:`, genErr);
+            }
+          }
+          if (generated.length > 0) {
+            result = await getExercises(moduleId); // reload from DB
+          }
+        }
+
         if (!cancelled) {
           setExercises(result);
           setCurrentIndex(0);
@@ -56,8 +79,8 @@ export function ExerciseContainer({ moduleId, onAllComplete }: ExerciseContainer
 
         // Check if all exercises are now complete
         if (next.size === exercises.length && onAllComplete) {
-          // Defer to avoid state update during render
-          setTimeout(onAllComplete, 0);
+          const allScores = exercises.map((ex) => next.get(ex.id) ?? 0);
+          setTimeout(() => onAllComplete(allScores), 0);
         }
 
         return next;
@@ -76,9 +99,12 @@ export function ExerciseContainer({ moduleId, onAllComplete }: ExerciseContainer
 
   if (isLoading) {
     return (
-      <div className="flex h-48 items-center justify-center text-muted-foreground">
-        <Loader2 size={20} className="mr-2 animate-spin" />
-        <span>Loading exercises...</span>
+      <div className="flex h-48 flex-col items-center justify-center text-muted-foreground">
+        <Loader2 size={20} className="mb-2 animate-spin" />
+        <span>Preparing exercises...</span>
+        <span className="mt-1 text-xs text-muted-foreground/70">
+          Generating personalized exercises for this module
+        </span>
       </div>
     );
   }

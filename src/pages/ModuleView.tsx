@@ -20,7 +20,7 @@ type ViewMode = "content" | "exercises";
 export function ModuleView() {
   const { trackId, moduleId } = useParams<{ trackId: string; moduleId: string }>();
   const navigate = useNavigate();
-  const { currentTrack, currentPath, moduleProgress, selectTrack } = useLearningStore();
+  const { currentTrack, currentPath, moduleProgress, selectTrack, completeExercises } = useLearningStore();
 
   const [content, setContent] = useState<string | null>(null);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
@@ -73,9 +73,17 @@ export function ModuleView() {
     return () => { cancelled = true; };
   }, [currentModule, trackId, moduleId, content, currentTrack, progress]);
 
-  const handleExercisesComplete = useCallback(() => {
-    // Could auto-navigate or show a completion state
-  }, []);
+  const handleExercisesComplete = useCallback(async (scores: number[]) => {
+    if (!trackId || !moduleId) return;
+    try {
+      const result = await completeExercises(moduleId, trackId, scores);
+      if (result.moduleCompleted) {
+        navigate(`/track/${trackId}`);
+      }
+    } catch (err) {
+      console.error("Failed to complete exercises:", err);
+    }
+  }, [trackId, moduleId, completeExercises, navigate]);
 
   // Compute progress percentage
   const progressPercent = progress?.masteryLevel != null ? Math.round(progress.masteryLevel * 100) : 0;

@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "@/hooks/useTheme";
-import { useAIStore } from "@/stores/useAIStore";
-import type { AIProviderType } from "@/types/ai";
+import * as commands from "@/lib/tauri-commands";
+import type { ProviderAuthStatus, LoginRequest, DetectedProvider } from "@/types/ai";
 import {
   Shield,
   Key,
   ChevronDown,
   ChevronUp,
   CheckCircle2,
-  Circle,
   Wifi,
   WifiOff,
   Sun,
@@ -18,16 +17,16 @@ import {
   Zap,
   ExternalLink,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
 
 // ── Provider Metadata ──
 
 interface ProviderMeta {
-  id: AIProviderType;
+  id: string;
   name: string;
   company: string;
   description: string;
-  oauthLabel: string;
   keyPlaceholder: string;
   defaultModel: string;
 }
@@ -38,7 +37,6 @@ const PROVIDERS: ProviderMeta[] = [
     name: "Claude",
     company: "Anthropic",
     description: "Advanced reasoning and analysis. Recommended for learning paths.",
-    oauthLabel: "Sign in with Anthropic",
     keyPlaceholder: "sk-ant-api03-...",
     defaultModel: "claude-sonnet-4-20250514",
   },
@@ -47,50 +45,30 @@ const PROVIDERS: ProviderMeta[] = [
     name: "ChatGPT",
     company: "OpenAI",
     description: "Versatile language model with broad knowledge coverage.",
-    oauthLabel: "Sign in with OpenAI",
     keyPlaceholder: "sk-...",
     defaultModel: "gpt-4o",
   },
   {
-    id: "custom",
+    id: "gemini",
     name: "Gemini",
     company: "Google",
     description: "Multimodal AI with strong technical understanding.",
-    oauthLabel: "Sign in with Google",
     keyPlaceholder: "AIza...",
     defaultModel: "gemini-2.0-flash",
   },
 ];
 
-// ── Connection State ──
-
-interface ProviderConnection {
-  connected: boolean;
-  method: "oauth" | "apikey" | null;
-  apiKey?: string;
-}
-
-type ConnectionMap = Record<string, ProviderConnection>;
-
 // ── Settings Page ──
 
 export function Settings() {
-  const { config, loadConfig, updateConfig } = useAIStore();
   const { theme, toggleTheme } = useTheme();
 
-  const [connections, setConnections] = useState<ConnectionMap>(() => {
-    const map: ConnectionMap = {};
-    for (const p of PROVIDERS) {
-      map[p.id] = { connected: false, method: null };
-    }
-    return map;
-  });
-
+  const [authStatuses, setAuthStatuses] = useState<ProviderAuthStatus[]>([]);
   const [expandedBYOK, setExpandedBYOK] = useState<string | null>(null);
   const [byokInputs, setByokInputs] = useState<Record<string, string>>({});
-  const [activeProvider, setActiveProvider] = useState<AIProviderType>(
-    config?.type ?? "claude",
-  );
+  const [loading, setLoading] = useState<string | null>(null);
+  const [detectedProviders, setDetectedProviders] = useState<DetectedProvider[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Ollama state
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434");
@@ -98,117 +76,176 @@ export function Settings() {
   const [ollamaStatus, setOllamaStatus] = useState<
     "idle" | "checking" | "connected" | "error"
   >("idle");
+  const [oauthPending, setOauthPending] = useState<string | null>(null);
+  const [setupTokenExpanded, setSetupTokenExpanded] = useState(false);
+  const [setupTokenInput, setSetupTokenInput] = useState("");
+
+  async function loadAuthStatus() {
+    try {
+      const statuses = await commands.getAuthStatus();
+      setAuthStatuses(statuses);
+    } catch (err) {
+      console.error("Failed to load auth status:", err);
+    }
+  }
 
   useEffect(() => {
-    loadConfig();
+    async function init() {
+      try {
+        const detected = await commands.detectSystemProviders();
+        if (detected.length > 0) setDetectedProviders(detected);
+      } catch {
+        // env detection is best-effort
+      }
+      await loadAuthStatus();
+    }
+    init();
   }, []);
 
-  useEffect(() => {
-    if (config) {
-      setActiveProvider(config.type);
-      if (config.type === "ollama") {
-        setOllamaHost(config.baseUrl ?? "http://localhost:11434");
-        setOllamaModel(config.model);
-      }
-      // If config has an apiKey set for a known provider, mark it connected
-      if (config.apiKey) {
-        setConnections((prev) => ({
-          ...prev,
-          [config.type]: {
-            connected: true,
-            method: "apikey",
-            apiKey: config.apiKey,
-          },
-        }));
-      }
-    }
-  }, [config]);
+  // ── Derived State ──
+
+  function getProviderStatus(providerId: string): ProviderAuthStatus | undefined {
+    return authStatuses.find((s) => s.provider === providerId);
+  }
+
+  function getActiveProviderId(): string | undefined {
+    return authStatuses.find((s) => s.isActive)?.provider;
+  }
 
   // ── Handlers ──
 
-  function handleOAuthConnect(providerId: string) {
-    // In a real implementation this would open the OAuth flow via Tauri deep links.
-    // For now we simulate a successful connection.
-    setConnections((prev) => ({
-      ...prev,
-      [providerId]: { connected: true, method: "oauth" },
-    }));
-  }
-
-  function handleBYOKSave(providerId: string) {
+  async function handleBYOKSave(providerId: string) {
     const key = byokInputs[providerId];
     if (!key?.trim()) return;
 
-    setConnections((prev) => ({
-      ...prev,
-      [providerId]: { connected: true, method: "apikey", apiKey: key.trim() },
-    }));
-    setExpandedBYOK(null);
-
-    // If this is the active provider, push config update
-    if (providerId === activeProvider) {
+    setLoading(providerId);
+    try {
       const provider = PROVIDERS.find((p) => p.id === providerId);
-      updateConfig({
-        type: providerId as AIProviderType,
-        apiKey: key.trim(),
-        model: config?.model ?? provider?.defaultModel ?? "",
-        maxTokens: config?.maxTokens ?? 4096,
-        temperature: config?.temperature ?? 0.7,
-      });
+      const request: LoginRequest = {
+        provider: providerId,
+        method: "api-key",
+        credential: key.trim(),
+        model: provider?.defaultModel,
+      };
+      await commands.loginProvider(request);
+      await loadAuthStatus();
+      setExpandedBYOK(null);
+      setByokInputs((prev) => ({ ...prev, [providerId]: "" }));
+    } catch (err) {
+      console.error("Failed to save API key:", err);
+    } finally {
+      setLoading(null);
     }
   }
 
-  function handleDisconnect(providerId: string) {
-    setConnections((prev) => ({
-      ...prev,
-      [providerId]: { connected: false, method: null },
-    }));
-    setByokInputs((prev) => ({ ...prev, [providerId]: "" }));
+  async function handleDisconnect(providerId: string) {
+    setLoading(providerId);
+    try {
+      await commands.logoutProvider(providerId);
+      await loadAuthStatus();
+    } catch (err) {
+      console.error("Failed to disconnect:", err);
+    } finally {
+      setLoading(null);
+    }
   }
 
-  function handleSetActiveProvider(type: AIProviderType) {
-    setActiveProvider(type);
-    const conn = connections[type];
-    const provider = PROVIDERS.find((p) => p.id === type);
-    updateConfig({
-      type,
-      apiKey: conn?.apiKey ?? config?.apiKey ?? "",
-      model: provider?.defaultModel ?? config?.model ?? "",
-      maxTokens: config?.maxTokens ?? 4096,
-      temperature: config?.temperature ?? 0.7,
-    });
+  async function handleSetActive(providerId: string) {
+    if (!providerId) return;
+    setActionError(null);
+    setLoading(providerId);
+    try {
+      await commands.setActiveProvider(providerId);
+      await loadAuthStatus();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setActionError(`Cannot set ${providerId} as active: ${msg}. Connect it first.`);
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function handleOllamaSave() {
+    setLoading("ollama");
+    try {
+      const request: LoginRequest = {
+        provider: "ollama",
+        method: "ollama",
+        model: ollamaModel,
+        baseUrl: ollamaHost,
+      };
+      await commands.loginProvider(request);
+      await loadAuthStatus();
+    } catch (err) {
+      console.error("Failed to configure Ollama:", err);
+    } finally {
+      setLoading(null);
+    }
   }
 
   function handleOllamaCheck() {
     setOllamaStatus("checking");
-    // Simulate connection check -- in production this would invoke a Tauri command
+    // TODO: Invoke a Tauri command to test the Ollama connection
     setTimeout(() => {
       setOllamaStatus("connected");
     }, 1200);
   }
 
-  function handleOllamaSave() {
-    setActiveProvider("ollama");
-    updateConfig({
-      type: "ollama",
-      model: ollamaModel,
-      baseUrl: ollamaHost,
-      maxTokens: config?.maxTokens ?? 4096,
-      temperature: config?.temperature ?? 0.7,
-    });
+  async function handleSaveSetupToken() {
+    if (!setupTokenInput.trim()) return;
+    setLoading("claude");
+    try {
+      await commands.saveSetupToken(setupTokenInput.trim());
+      await loadAuthStatus();
+      setSetupTokenExpanded(false);
+      setSetupTokenInput("");
+    } catch (err) {
+      console.error("Failed to save setup token:", err);
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function handleOAuthLogin(providerId: string) {
+    setOauthPending(providerId);
+    try {
+      await commands.startOAuthLogin(providerId);
+
+      // Poll for completion
+      const maxAttempts = 30; // 60 seconds at 2s intervals
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const status = await commands.checkOAuthStatus(providerId);
+        if (status.completed) {
+          await loadAuthStatus();
+          setOauthPending(null);
+          return;
+        }
+      }
+      // Timeout
+      setOauthPending(null);
+    } catch (err) {
+      console.error("OAuth login failed:", err);
+      setOauthPending(null);
+    }
   }
 
   // ── Render Helpers ──
 
+  const activeProviderId = getActiveProviderId();
+
   function getActiveProviderLabel(): string {
-    if (activeProvider === "ollama") return "Ollama (Local)";
-    const p = PROVIDERS.find((pr) => pr.id === activeProvider);
-    return p ? `${p.name} (${p.company})` : activeProvider;
+    if (activeProviderId === "ollama") return "Ollama (Local)";
+    const p = PROVIDERS.find((pr) => pr.id === activeProviderId);
+    return p ? `${p.name} (${p.company})` : activeProviderId ?? "None";
   }
 
   function isProviderConnected(id: string): boolean {
-    if (id === "ollama") return ollamaStatus === "connected";
-    return connections[id]?.connected ?? false;
+    if (id === "ollama") {
+      const status = getProviderStatus("ollama");
+      return status?.authenticated ?? false;
+    }
+    return getProviderStatus(id)?.authenticated ?? false;
   }
 
   return (
@@ -238,7 +275,7 @@ export function Settings() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isProviderConnected(activeProvider) ? (
+            {activeProviderId && isProviderConnected(activeProviderId) ? (
               <>
                 <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
                 <span className="text-xs font-medium text-emerald-500">
@@ -263,10 +300,11 @@ export function Settings() {
 
         <div className="space-y-3">
           {PROVIDERS.map((provider) => {
-            const conn = connections[provider.id];
-            const isConnected = conn?.connected ?? false;
+            const status = getProviderStatus(provider.id);
+            const isConnected = status?.authenticated ?? false;
             const isBYOKExpanded = expandedBYOK === provider.id;
-            const isActive = activeProvider === provider.id;
+            const isActive = activeProviderId === provider.id;
+            const isLoading = loading === provider.id;
 
             return (
               <div
@@ -289,6 +327,11 @@ export function Settings() {
                         <span className="text-xs text-muted-foreground">
                           {provider.company}
                         </span>
+                        {detectedProviders.some((d) => d.provider === provider.id) && (
+                          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                            env detected
+                          </span>
+                        )}
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {provider.description}
@@ -344,12 +387,9 @@ export function Settings() {
                     <>
                       {!isActive && (
                         <button
-                          onClick={() =>
-                            handleSetActiveProvider(
-                              provider.id as AIProviderType,
-                            )
-                          }
-                          className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                          onClick={() => handleSetActive(provider.id)}
+                          disabled={isLoading}
+                          className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                         >
                           Set as Active
                         </button>
@@ -362,20 +402,50 @@ export function Settings() {
                       )}
                       <button
                         onClick={() => handleDisconnect(provider.id)}
-                        className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
+                        disabled={isLoading}
+                        className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive disabled:opacity-50"
                       >
                         Disconnect
                       </button>
                     </>
                   ) : (
                     <>
-                      {/* OAuth Button */}
-                      <button
-                        onClick={() => handleOAuthConnect(provider.id)}
-                        className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                      >
-                        {provider.oauthLabel}
-                      </button>
+                      {/* OAuth for OpenAI / Gemini */}
+                      {(provider.id === "openai" || provider.id === "gemini") && (
+                        <button
+                          onClick={() => handleOAuthLogin(provider.id)}
+                          disabled={oauthPending === provider.id}
+                          className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          {oauthPending === provider.id ? (
+                            <>
+                              <Loader2 size={12} className="animate-spin" />
+                              Waiting for browser...
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink size={12} />
+                              Sign in with {provider.name}
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                      {/* Claude setup-token flow */}
+                      {provider.id === "claude" && (
+                        <button
+                          onClick={() => setSetupTokenExpanded(!setupTokenExpanded)}
+                          className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                        >
+                          <Shield size={12} />
+                          Use Setup Token
+                          {setupTokenExpanded ? (
+                            <ChevronUp size={12} />
+                          ) : (
+                            <ChevronDown size={12} />
+                          )}
+                        </button>
+                      )}
 
                       {/* BYOK Toggle */}
                       <button
@@ -397,6 +467,41 @@ export function Settings() {
                     </>
                   )}
                 </div>
+
+                {/* Claude Setup Token Section */}
+                {provider.id === "claude" && setupTokenExpanded && !isConnected && (
+                  <div className="mt-3 space-y-3 rounded-lg border border-border/50 bg-secondary/30 p-4">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-foreground">
+                        Setup Token
+                      </label>
+                      <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
+                        Run{" "}
+                        <code className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-foreground">
+                          claude setup-token
+                        </code>{" "}
+                        in your terminal, then paste the token below. This uses your existing Claude subscription.
+                      </p>
+                      <input
+                        type="password"
+                        placeholder="sk-ant-oat01-..."
+                        value={setupTokenInput}
+                        onChange={(e) => setSetupTokenInput(e.target.value)}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Your token is stored locally and used via Anthropic's official OAuth API.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleSaveSetupToken}
+                      disabled={!setupTokenInput.trim() || isLoading}
+                      className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Save and Connect
+                    </button>
+                  </div>
+                )}
 
                 {/* BYOK Expanded Section */}
                 {isBYOKExpanded && !isConnected && (
@@ -424,7 +529,7 @@ export function Settings() {
                     </div>
                     <button
                       onClick={() => handleBYOKSave(provider.id)}
-                      disabled={!byokInputs[provider.id]?.trim()}
+                      disabled={!byokInputs[provider.id]?.trim() || isLoading}
                       className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       Save and Connect
@@ -521,13 +626,14 @@ export function Settings() {
           <div className="flex items-center gap-2">
             <button
               onClick={handleOllamaSave}
-              className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              disabled={loading === "ollama"}
+              className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {activeProvider === "ollama"
+              {activeProviderId === "ollama"
                 ? "Update Configuration"
                 : "Set as Active Provider"}
             </button>
-            {activeProvider === "ollama" && (
+            {activeProviderId === "ollama" && (
               <span className="flex items-center gap-1.5 text-xs font-medium text-primary">
                 <CheckCircle2 size={14} />
                 Active
@@ -582,18 +688,30 @@ export function Settings() {
               </p>
             </div>
             <select
-              value={activeProvider}
-              onChange={(e) =>
-                handleSetActiveProvider(e.target.value as AIProviderType)
-              }
-              className="rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              value={activeProviderId ?? ""}
+              onChange={(e) => handleSetActive(e.target.value)}
+              className="rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
             >
-              <option value="claude">Claude (Anthropic)</option>
-              <option value="openai">ChatGPT (OpenAI)</option>
-              <option value="custom">Gemini (Google)</option>
-              <option value="ollama">Ollama (Local)</option>
+              <option value="" disabled>-- select a connected provider --</option>
+              {[
+                { value: "claude", label: "Claude (Anthropic)" },
+                { value: "openai", label: "ChatGPT (OpenAI)" },
+                { value: "gemini", label: "Gemini (Google)" },
+                { value: "ollama", label: "Ollama (Local)" },
+              ].map((opt) => (
+                <option
+                  key={opt.value}
+                  value={opt.value}
+                  disabled={!isProviderConnected(opt.value)}
+                >
+                  {opt.label}{!isProviderConnected(opt.value) ? " (not connected)" : ""}
+                </option>
+              ))}
             </select>
           </div>
+          {actionError && (
+            <p className="mt-1 text-xs text-destructive">{actionError}</p>
+          )}
         </div>
       </section>
     </div>

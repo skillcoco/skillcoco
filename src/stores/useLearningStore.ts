@@ -15,6 +15,7 @@ interface LearningState {
   selectTrack: (trackId: string) => Promise<void>;
   createTrack: (topic: string, domainModule: string, goal: string) => Promise<LearningTrack>;
   loadDueCards: () => Promise<void>;
+  completeExercises: (moduleId: string, trackId: string, scores: number[]) => Promise<import("@/types/learning").CompleteExercisesResult>;
 }
 
 export const useLearningStore = create<LearningState>((set, get) => ({
@@ -64,5 +65,13 @@ export const useLearningStore = create<LearningState>((set, get) => ({
     } catch (err) {
       console.error("Failed to load due cards:", err);
     }
+  },
+
+  completeExercises: async (moduleId, trackId, scores) => {
+    const result = await commands.completeModuleExercises(moduleId, trackId, scores);
+    // Refresh module progress to reflect mastery + unlocks
+    const progress = await commands.getModuleProgress(trackId);
+    set({ moduleProgress: progress });
+    return result;
   },
 }));

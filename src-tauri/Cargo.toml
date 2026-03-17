@@ -26,6 +26,7 @@ thiserror = "1"
 async-trait = "0.1"
 log = "0.4"
 env_logger = "0.11"
+open = "5"
 
 # AI provider auth + API calls
 zeroclaw = { path = "../../../../agentix/upstream/zeroclaw", default-features = false }
@@ -35,3 +36,6 @@ ruvector-core = { path = "../../../../agentix/upstream/ruvector/crates/ruvector-
 
 # Graph DB for learning path DAGs
 ruvector-graph = { path = "../../../../agentix/upstream/ruvector/crates/ruvector-graph", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"

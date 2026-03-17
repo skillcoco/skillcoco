@@ -123,6 +123,36 @@ export async function evaluateResponse(req: import("@/types/ai").EvaluateRespons
   return invoke("evaluate_response", { request: req });
 }
 
+// ── Module Completion ──
+
+export async function completeModuleExercises(
+  moduleId: string,
+  trackId: string,
+  scores: number[],
+): Promise<import("@/types/learning").CompleteExercisesResult> {
+  return invoke("complete_module_exercises", {
+    request: { moduleId, trackId, scores },
+  });
+}
+
+// ── OAuth ──
+
+export async function startOAuthLogin(provider: string): Promise<import("@/types/ai").OAuthStartResult> {
+  return invoke("start_oauth_login", { provider });
+}
+
+export async function checkOAuthStatus(provider: string): Promise<import("@/types/ai").OAuthStatusResult> {
+  return invoke("check_oauth_status", { provider });
+}
+
+export async function saveSetupToken(token: string): Promise<import("@/types/ai").OAuthStartResult> {
+  return invoke("save_setup_token", { token });
+}
+
+export async function detectSystemProviders(): Promise<import("@/types/ai").DetectedProvider[]> {
+  return invoke("detect_system_providers");
+}
+
 // ── Spaced Repetition ──
 
 export async function getDueCards(): Promise<SRCard[]> {

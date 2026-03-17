@@ -65,11 +65,21 @@ pub fn update_profile(
 ) -> Result<LearnerProfile, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
+    // Get the current profile's ID to scope the UPDATE
+    let profile_id: String = db
+        .conn
+        .query_row(
+            "SELECT id FROM learner_profiles LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("No profile found: {}", e))?;
+
     if let Some(name) = profile.get("displayName").and_then(|v| v.as_str()) {
         db.conn
             .execute(
-                "UPDATE learner_profiles SET display_name = ?1, updated_at = datetime('now')",
-                [name],
+                "UPDATE learner_profiles SET display_name = ?1, updated_at = datetime('now') WHERE id = ?2",
+                rusqlite::params![name, profile_id],
             )
             .map_err(|e| e.to_string())?;
     }

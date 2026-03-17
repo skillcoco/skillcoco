@@ -39,6 +39,7 @@ pub fn run() {
             let auth_dir = app_dir.join("auth");
             std::fs::create_dir_all(&auth_dir).expect("Failed to create auth dir");
             app.manage(AuthState::new(&auth_dir));
+            app.manage(crate::auth::oauth::OAuthFlowState::new());
 
             // Vector DB + Graph DB for semantic intelligence
             let vector_path = app_dir.join("vectors.db");
@@ -70,11 +71,19 @@ pub fn run() {
             commands::ai::generate_learning_path,
             commands::ai::send_tutor_message,
             commands::ai::generate_module_content,
+            commands::ai::get_exercises,
+            commands::ai::generate_exercise,
+            commands::ai::evaluate_response,
+            commands::ai::complete_module_exercises,
             // Auth commands
             auth::commands::get_auth_status,
             auth::commands::login_provider,
             auth::commands::set_active_provider,
             auth::commands::logout_provider,
+            auth::commands::detect_system_providers,
+            auth::oauth::start_oauth_login,
+            auth::oauth::check_oauth_status,
+            auth::oauth::save_setup_token,
             // Profile commands
             commands::tracks::get_or_create_profile,
             commands::tracks::update_profile,
