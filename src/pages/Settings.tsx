@@ -108,6 +108,7 @@ export function Settings() {
     const key = byokInputs[providerId];
     if (!key?.trim()) return;
 
+    setActionError(null);
     setLoading(providerId);
     try {
       const provider = PROVIDERS.find((p) => p.id === providerId);
@@ -122,7 +123,8 @@ export function Settings() {
       setExpandedBYOK(null);
       setByokInputs((prev) => ({ ...prev, [providerId]: "" }));
     } catch (err) {
-      console.error("Failed to save API key:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setActionError(msg);
     } finally {
       setLoading(null);
     }
@@ -183,6 +185,7 @@ export function Settings() {
 
   async function handleSaveSetupToken() {
     if (!setupTokenInput.trim()) return;
+    setActionError(null);
     setLoading("claude");
     try {
       await commands.saveSetupToken(setupTokenInput.trim());
@@ -190,7 +193,8 @@ export function Settings() {
       setSetupTokenExpanded(false);
       setSetupTokenInput("");
     } catch (err) {
-      console.error("Failed to save setup token:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setActionError(msg);
     } finally {
       setLoading(null);
     }
@@ -481,10 +485,16 @@ export function Settings() {
                     <button
                       onClick={handleSaveSetupToken}
                       disabled={!setupTokenInput.trim() || isLoading}
-                      className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Save and Connect
+                      {loading === "claude" && (
+                        <Loader2 size={12} className="animate-spin" />
+                      )}
+                      {loading === "claude" ? "Validating..." : "Save and Connect"}
                     </button>
+                    {actionError && (
+                      <p className="text-xs text-destructive">{actionError}</p>
+                    )}
                   </div>
                 )}
 
