@@ -38,7 +38,10 @@ pub fn run() {
             // Auth credential store
             let auth_dir = app_dir.join("auth");
             std::fs::create_dir_all(&auth_dir).expect("Failed to create auth dir");
-            app.manage(AuthState::new(&auth_dir));
+            let auth_state = AuthState::new(&auth_dir);
+            // Auto-import API keys from ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY
+            auth_state.detect_env_credentials();
+            app.manage(auth_state);
             app.manage(crate::auth::oauth::OAuthFlowState::new());
 
             // Vector DB + Graph DB for semantic intelligence

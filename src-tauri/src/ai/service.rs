@@ -26,7 +26,14 @@ pub struct AIServiceResponse {
 }
 
 /// Central AI request function. All AI calls go through here.
-/// Resolves the active provider credential and routes through zeroclaw.
+///
+/// Credential resolution strategy (subscription-first):
+/// 1. If stored credential has an explicit API key or OAuth token, pass it to zeroclaw
+/// 2. Otherwise pass None — zeroclaw resolves from env vars, OAuth tokens, CLI creds:
+///    - Anthropic: ANTHROPIC_OAUTH_TOKEN (setup-token) → ANTHROPIC_API_KEY
+///    - OpenAI:    OPENAI_API_KEY
+///    - Gemini:    GEMINI_API_KEY → GOOGLE_API_KEY → Gemini CLI OAuth → GCloud ADC
+///    - Ollama:    no key needed (local)
 pub async fn ai_request(
     auth: &AuthState,
     request: AIServiceRequest,
@@ -37,10 +44,13 @@ pub async fn ai_request(
 
     let provider_name = normalize_provider_name(&cred.provider);
 
-    // Route credential based on auth method: OAuth tokens take priority when method is OAuth
-    let credential = match cred.method {
-        crate::auth::AuthMethod::OAuth => cred.oauth_token.as_deref().or(cred.api_key.as_deref()),
-        _ => cred.api_key.as_deref().or(cred.oauth_token.as_deref()),
+    // Only pass explicit credentials from our store if the user provided them via BYOK.
+    // For OAuth/setup-token and env-based auth, pass None and let zeroclaw resolve
+    // from env vars, stored OAuth tokens, and CLI credentials automatically.
+    let stored_credential: Option<String> = match cred.method {
+        crate::auth::AuthMethod::ApiKey => cred.api_key.clone(),
+        crate::auth::AuthMethod::OAuth => cred.oauth_token.clone(),
+        crate::auth::AuthMethod::None => None, // Ollama — no key
     };
 
     let options = ProviderRuntimeOptions {
@@ -49,9 +59,17 @@ pub async fn ai_request(
     };
 
     let provider = if let Some(base_url) = &cred.base_url {
-        providers::create_provider_with_url(&provider_name, credential, Some(base_url))
+        providers::create_provider_with_url(
+            &provider_name,
+            stored_credential.as_deref(),
+            Some(base_url),
+        )
     } else {
-        providers::create_provider_with_options(&provider_name, credential, &options)
+        providers::create_provider_with_options(
+            &provider_name,
+            stored_credential.as_deref(),
+            &options,
+        )
     }
     .map_err(|e| format!("Failed to create AI provider: {}", e))?;
 
@@ -69,7 +87,6 @@ pub async fn ai_request(
     let model = cred.model.as_deref().unwrap_or("auto");
     let temperature = request.temperature.unwrap_or(0.7);
 
-    // Use chat_with_history for multi-turn, or chat_with_system for single-turn
     let response: ChatResponse = provider
         .chat(
             providers::ChatRequest {
