@@ -4,7 +4,6 @@ import {
   Sparkles,
   ArrowRight,
   ArrowLeft,
-  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -13,7 +12,7 @@ import {
   generateLearningPath,
 } from "@/lib/tauri-commands";
 
-type OnboardingStep = "topic" | "goals" | "assessment" | "generating";
+type OnboardingStep = "topic" | "goals" | "assessment";
 
 const domainModules = [
   { id: "programming", label: "Programming Language", examples: "Rust, Go, Python, TypeScript" },
@@ -41,11 +40,12 @@ export function Onboarding() {
   } | null>(null);
 
   // Generation state
-  const [generationPhase, setGenerationPhase] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleLevelSelected() {
-    if (!selectedLevel) return;
+    if (!selectedLevel || isGenerating) return;
+    setIsGenerating(true);
     setError(null);
 
     try {
@@ -61,23 +61,20 @@ export function Onboarding() {
         strengths: parsed.strengths || [],
       };
       setAssessmentResult(assessment);
-      // Immediately proceed to path generation
-      generatePath(assessment);
+      await generatePath(assessment);
     } catch (err) {
-      setError(`Assessment failed: ${err}`);
+      setError(`Failed to create learning path: ${err}`);
+      setIsGenerating(false);
     }
   }
 
   async function generatePath(overrideAssessment?: { level: string; gaps: string[]; strengths: string[] }) {
-    setStep("generating");
     setError(null);
     const assessment = overrideAssessment || assessmentResult;
 
     try {
-      setGenerationPhase("Creating your learning track...");
       const track = await createTrack(topic, selectedDomain, goal);
 
-      setGenerationPhase("AI is designing your personalized curriculum...");
       await generateLearningPath({
         trackId: track.id,
         topic,
@@ -88,11 +85,9 @@ export function Onboarding() {
         assessmentStrengths: assessment?.strengths || [],
       });
 
-      setGenerationPhase("Your learning path is ready!");
-      setTimeout(() => navigate(`/track/${track.id}`), 1500);
+      navigate(`/track/${track.id}`);
     } catch (err) {
-      setError(`Failed to generate path: ${err}`);
-      setGenerationPhase("");
+      setError(`Failed to create learning path: ${err}`);
     }
   }
 
@@ -107,31 +102,30 @@ export function Onboarding() {
             {step === "topic" && "Tell us what you want to learn"}
             {step === "goals" && "Set your learning goals"}
             {step === "assessment" && "Rate your experience level"}
-            {step === "generating" && "Creating your personalized path"}
           </p>
         </div>
 
         {/* Progress indicator */}
         <div className="flex items-center justify-center gap-2">
-          {(["topic", "goals", "assessment", "generating"] as const).map((s, i) => (
+          {(["topic", "goals", "assessment"] as const).map((s, i) => (
             <div key={s} className="flex items-center gap-2">
               <div
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium",
                   step === s
                     ? "bg-primary text-primary-foreground"
-                    : (["topic", "goals", "assessment", "generating"].indexOf(step) > i)
+                    : (["topic", "goals", "assessment"].indexOf(step) > i)
                       ? "bg-primary/20 text-primary"
                       : "bg-muted text-muted-foreground"
                 )}
               >
                 {i + 1}
               </div>
-              {i < 3 && (
+              {i < 2 && (
                 <div
                   className={cn(
                     "h-0.5 w-8",
-                    (["topic", "goals", "assessment", "generating"].indexOf(step) > i)
+                    (["topic", "goals", "assessment"].indexOf(step) > i)
                       ? "bg-primary/40"
                       : "bg-muted"
                   )}
@@ -290,48 +284,16 @@ export function Onboarding() {
               </button>
               <button
                 onClick={handleLevelSelected}
-                disabled={!selectedLevel}
+                disabled={!selectedLevel || isGenerating}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                Generate My Learning Path
+                {isGenerating ? "Creating..." : "Generate My Learning Path"}
                 <Sparkles size={16} />
               </button>
             </div>
           </div>
         )}
 
-        {/* Step: Generating */}
-        {step === "generating" && (
-          <div className="glass rounded-xl p-8">
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              {error ? (
-                <>
-                  <div className="mb-4 text-destructive text-lg">Generation failed</div>
-                  <button
-                    onClick={() => {
-                      setError(null);
-                      setStep("assessment");
-                    }}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    Go back and try again
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Loader2 className="mb-4 animate-spin text-primary" size={40} />
-                  <h2 className="text-lg font-medium text-foreground mb-2">
-                    {generationPhase || "Preparing..."}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    AI is creating a customized curriculum for {topic} based on your
-                    background and goals
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
