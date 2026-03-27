@@ -81,7 +81,7 @@ pub async fn assess_knowledge(
         request.topic
     );
 
-    let messages: Vec<ServiceMessage> = request
+    let mut messages: Vec<ServiceMessage> = request
         .messages
         .iter()
         .map(|m| ServiceMessage {
@@ -89,6 +89,17 @@ pub async fn assess_knowledge(
             content: m.content.clone(),
         })
         .collect();
+
+    // First assessment turn: no user messages yet, seed with topic intro
+    if messages.is_empty() {
+        messages.push(ServiceMessage {
+            role: "user".to_string(),
+            content: format!(
+                "I'd like to be assessed on my knowledge of {} in the {} domain. Please begin the assessment.",
+                request.topic, request.domain
+            ),
+        });
+    }
 
     let response = ai_request(
         auth.inner(),
