@@ -5,6 +5,30 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::State;
 
+/// Extract JSON from AI response that may be wrapped in markdown code fences.
+fn extract_json(text: &str) -> Result<serde_json::Value, String> {
+    let trimmed = text.trim();
+
+    // Try direct parse first
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        return Ok(v);
+    }
+
+    // Strip markdown code fences: ```json\n...\n``` or ```\n...\n```
+    let stripped = if let Some(start) = trimmed.find('{') {
+        if let Some(end) = trimmed.rfind('}') {
+            &trimmed[start..=end]
+        } else {
+            trimmed
+        }
+    } else {
+        trimmed
+    };
+
+    serde_json::from_str(stripped)
+        .map_err(|e| format!("{} (first 200 chars: {:?})", e, &trimmed[..trimmed.len().min(200)]))
+}
+
 // ── AI Config (legacy, kept for backward compat) ──
 
 #[tauri::command]
@@ -106,8 +130,8 @@ pub async fn generate_learning_path(
         "You are a curriculum designer creating a personalized learning path for {}. \
          The learner's level: {}. Their goal: {}. \
          Gaps: {:?}. Strengths: {:?}. \
-         Generate a learning path as a DAG of 8-15 modules. \
-         Return ONLY valid JSON in this format: \
+         Generate a learning path as a DAG of 6-10 modules. \
+         Return ONLY raw JSON, no markdown fences, no explanation. Format: \
          {{\"modules\": [{{\"id\": \"m1\", \"title\": \"...\", \"description\": \"...\", \
          \"difficulty\": 1, \"estimated_minutes\": 30, \"objectives\": [\"...\"]}}], \
          \"edges\": [{{\"from\": \"m1\", \"to\": \"m2\"}}]}} \
@@ -128,7 +152,7 @@ pub async fn generate_learning_path(
             messages: vec![ServiceMessage {
                 role: "user".to_string(),
                 content: format!(
-                    "Create my personalized learning path for {}. My goal: {}",
+                    "Create my personalized learning path for {}. My goal: {}. Return ONLY JSON.",
                     request.topic, request.goal
                 ),
             }],
@@ -139,8 +163,8 @@ pub async fn generate_learning_path(
     )
     .await?;
 
-    // Parse the AI response as JSON
-    let path_data: serde_json::Value = serde_json::from_str(&response.content)
+    // Extract JSON from response — AI may wrap it in markdown code fences
+    let path_data: serde_json::Value = extract_json(&response.content)
         .map_err(|e| format!("Failed to parse AI response as JSON: {}", e))?;
 
     // Validate DAG structure before persisting
@@ -454,7 +478,7 @@ pub async fn generate_exercise(
     )
     .await?;
 
-    let exercise_data: serde_json::Value = serde_json::from_str(&response.content)
+    let exercise_data: serde_json::Value = extract_json(&response.content)
         .map_err(|e| format!("Failed to parse exercise JSON: {}", e))?;
 
     // Persist to database
@@ -537,7 +561,7 @@ pub async fn evaluate_response(
     )
     .await?;
 
-    let result: serde_json::Value = serde_json::from_str(&response.content)
+    let result: serde_json::Value = extract_json(&response.content)
         .map_err(|e| format!("Failed to parse evaluation JSON: {}", e))?;
 
     Ok(result)
