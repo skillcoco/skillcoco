@@ -223,7 +223,7 @@ pub async fn save_setup_token(
         "claude",
         &trimmed,
         Some("Claude (Subscription)"),
-        Some("claude-sonnet-4-20250514"),
+        Some("claude-haiku-4-5-20251001"),
     )?;
 
     Ok(OAuthStartResult {

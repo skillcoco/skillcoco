@@ -38,7 +38,7 @@ const PROVIDERS: ProviderMeta[] = [
     company: "Anthropic",
     description: "Advanced reasoning and analysis. Recommended for learning paths.",
     keyPlaceholder: "sk-ant-api03-...",
-    defaultModel: "claude-sonnet-4-20250514",
+    defaultModel: "claude-haiku-4-5-20251001",
   },
   {
     id: "openai",
