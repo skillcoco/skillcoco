@@ -120,70 +120,90 @@ pub struct GeneratePathRequest {
     pub assessment_strengths: Vec<String>,
 }
 
-/// Build a template module with a unique ID.
-fn tmod(id: &str, title: String, desc: String, diff: i32, mins: i32) -> serde_json::Value {
-    json!({
-        "id": id,
-        "title": title,
-        "description": desc,
-        "difficulty": diff,
-        "estimated_minutes": mins,
-        "objectives": [desc]
-    })
-}
-
 #[tauri::command]
-pub fn generate_learning_path(
+pub async fn generate_learning_path(
+    auth: State<'_, AuthState>,
     state: State<'_, AppState>,
     request: GeneratePathRequest,
 ) -> Result<serde_json::Value, String> {
     let topic = &request.topic;
+    let system_prompt = format!(
+        "You are a curriculum designer. Create a learning path for {topic} ({domain}). \
+         Learner level: {level}. Goal: {goal}. \
+         Gaps: {gaps:?}. Strengths: {strengths:?}. \
+         \
+         Generate 6-10 modules with REAL topic-specific titles and descriptions. \
+         Each module ID MUST be a UUID (use format like \"mod-01\", \"mod-02\" etc). \
+         \
+         Return ONLY raw JSON, no markdown: \
+         {{\"modules\": [{{\"id\": \"mod-01\", \"title\": \"...\", \"description\": \"...\", \
+         \"difficulty\": 1, \"estimated_minutes\": 30, \"objectives\": [\"...\"]}}], \
+         \"edges\": [{{\"from\": \"mod-01\", \"to\": \"mod-02\"}}]}} \
+         \
+         Make titles SPECIFIC to {topic}, not generic. \
+         Example for Kubernetes beginner: \"Pods, Nodes, and Clusters\", not \"Introduction to Kubernetes\". \
+         Example for Rust intermediate: \"Ownership and Borrowing Patterns\", not \"Rust Patterns\". \
+         Order from foundational to advanced. Skip what the learner already knows.",
+        topic = topic,
+        domain = request.domain,
+        level = request.assessment_level,
+        goal = request.goal,
+        gaps = request.assessment_gaps,
+        strengths = request.assessment_strengths,
+    );
 
-    // Generate unique IDs for each module (avoids UNIQUE constraint on second track)
-    let ids: Vec<String> = (0..10).map(|_| uuid::Uuid::new_v4().to_string()).collect();
+    let response = ai_request(
+        auth.inner(),
+        AIServiceRequest {
+            system_prompt,
+            messages: vec![ServiceMessage {
+                role: "user".to_string(),
+                content: format!("Create my learning path for {}. Return ONLY JSON.", topic),
+            }],
+            max_tokens: Some(4096),
+            temperature: Some(0.5),
+            response_format: Some("json".to_string()),
+        },
+    )
+    .await?;
 
-    let modules: Vec<serde_json::Value> = match request.assessment_level.as_str() {
-        "intermediate" => vec![
-            tmod(&ids[0], format!("{} Quick Review", topic), format!("Refresh core {} concepts and identify gaps", topic), 3, 20),
-            tmod(&ids[1], format!("{} Patterns", topic), format!("Learn common patterns and idioms in {}", topic), 4, 30),
-            tmod(&ids[2], format!("{} Best Practices", topic), format!("Adopt industry-standard {} practices", topic), 5, 30),
-            tmod(&ids[3], format!("Advanced {} Concepts", topic), format!("Explore advanced features of {}", topic), 6, 40),
-            tmod(&ids[4], format!("Real-world {} Applications", topic), format!("Apply {} to real-world scenarios", topic), 6, 35),
-            tmod(&ids[5], format!("{} Optimization", topic), format!("Optimize {} solutions for performance", topic), 7, 35),
-            tmod(&ids[6], format!("{} Capstone Project", topic), format!("Build a production-quality {} project", topic), 7, 50),
-        ],
-        "advanced" => vec![
-            tmod(&ids[0], format!("{} Deep Dive", topic), format!("Explore {} internals and advanced mechanics", topic), 7, 30),
-            tmod(&ids[1], format!("{} Edge Cases", topic), format!("Handle edge cases and unusual scenarios in {}", topic), 8, 35),
-            tmod(&ids[2], format!("{} Performance", topic), format!("Master performance tuning for {}", topic), 8, 40),
-            tmod(&ids[3], format!("{} Architecture", topic), format!("Design scalable {} architectures", topic), 9, 45),
-            tmod(&ids[4], format!("{} System Design", topic), format!("Apply {} in large-scale system design", topic), 9, 40),
-            tmod(&ids[5], format!("{} Mastery Project", topic), format!("Demonstrate mastery through a complex {} project", topic), 10, 60),
-        ],
-        _ => vec![
-            tmod(&ids[0], format!("Introduction to {}", topic), format!("Understand what {} is and why it matters", topic), 1, 20),
-            tmod(&ids[1], format!("{} Fundamentals", topic), format!("Learn the core building blocks of {}", topic), 2, 30),
-            tmod(&ids[2], format!("{} Core Concepts", topic), format!("Master the essential concepts of {}", topic), 3, 35),
-            tmod(&ids[3], format!("Hands-on {} Practice", topic), format!("Apply {} concepts through guided exercises", topic), 3, 40),
-            tmod(&ids[4], format!("{} Building Blocks", topic), format!("Combine concepts to build real solutions with {}", topic), 4, 35),
-            tmod(&ids[5], format!("First {} Project", topic), format!("Build a complete project using {}", topic), 5, 45),
-        ],
-    };
+    let mut path_data: serde_json::Value = extract_json(&response.content)
+        .map_err(|e| format!("Failed to parse AI response: {}", e))?;
 
-    // Build edges as a linear chain using the actual UUIDs
-    let edges: Vec<serde_json::Value> = modules.windows(2)
-        .map(|pair| {
-            json!({
-                "from": pair[0]["id"].as_str().unwrap(),
-                "to": pair[1]["id"].as_str().unwrap()
-            })
-        })
-        .collect();
+    // Replace AI-generated IDs with UUIDs to avoid UNIQUE constraint collisions
+    if let Some(modules) = path_data["modules"].as_array_mut() {
+        let mut id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for module in modules.iter_mut() {
+            let old_id = module["id"].as_str().unwrap_or("").to_string();
+            let new_id = uuid::Uuid::new_v4().to_string();
+            id_map.insert(old_id, new_id.clone());
+            module["id"] = json!(new_id);
+        }
+        // Remap edge IDs
+        if let Some(edges) = path_data["edges"].as_array_mut() {
+            for edge in edges.iter_mut() {
+                if let Some(from) = edge["from"].as_str().map(String::from) {
+                    if let Some(new_from) = id_map.get(&from) {
+                        edge["from"] = json!(new_from);
+                    }
+                }
+                if let Some(to) = edge["to"].as_str().map(String::from) {
+                    if let Some(new_to) = id_map.get(&to) {
+                        edge["to"] = json!(new_to);
+                    }
+                }
+            }
+        }
+    }
 
-    // Validate DAG structure using existing validator
+    let empty_vec = vec![];
+    let modules_arr = path_data["modules"].as_array().ok_or("AI response missing 'modules' array")?;
+    let edges_arr = path_data["edges"].as_array().unwrap_or(&empty_vec);
+
+    // Validate DAG structure
     {
         use crate::learning::path::{PathNode, PathEdge};
-        let nodes: Vec<PathNode> = modules
+        let nodes: Vec<PathNode> = modules_arr
             .iter()
             .map(|m| PathNode {
                 id: m["id"].as_str().unwrap_or("").to_string(),
@@ -196,7 +216,7 @@ pub fn generate_learning_path(
                 prerequisites: vec![],
             })
             .collect();
-        let path_edges: Vec<PathEdge> = edges
+        let path_edges: Vec<PathEdge> = edges_arr
             .iter()
             .filter_map(|e| {
                 Some(PathEdge {
@@ -207,29 +227,25 @@ pub fn generate_learning_path(
             })
             .collect();
         crate::learning::path::validate_dag(&nodes, &path_edges)
-            .map_err(|e| format!("Template generated invalid learning path: {}", e))?;
+            .map_err(|e| format!("AI generated invalid learning path: {}", e))?;
     }
 
     // Persist to database
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let path_id = uuid::Uuid::new_v4().to_string();
 
-    let modules_json = serde_json::to_string(&modules).unwrap_or_else(|_| "[]".to_string());
-    let edges_json = serde_json::to_string(&edges).unwrap_or_else(|_| "[]".to_string());
+    let modules_json = serde_json::to_string(modules_arr).unwrap_or_else(|_| "[]".to_string());
+    let edges_json = serde_json::to_string(edges_arr).unwrap_or_else(|_| "[]".to_string());
 
     db.conn
         .execute(
             "INSERT INTO learning_paths (id, track_id, modules_json, edges_json, version, generated_by_model) VALUES (?1, ?2, ?3, ?4, 1, ?5)",
-            rusqlite::params![path_id, request.track_id, modules_json, edges_json, "template"],
+            rusqlite::params![path_id, request.track_id, modules_json, edges_json, response.model],
         )
         .map_err(|e| e.to_string())?;
 
-    // Insert modules into the modules table
-    for (i, module) in modules.iter().enumerate() {
-        let module_id = module["id"]
-            .as_str()
-            .map(String::from)
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    for (i, module) in modules_arr.iter().enumerate() {
+        let module_id = module["id"].as_str().unwrap_or("").to_string();
 
         db.conn
             .execute(
@@ -247,7 +263,6 @@ pub fn generate_learning_path(
             )
             .map_err(|e| e.to_string())?;
 
-        // First module is available, rest are locked
         let status = if i == 0 { "available" } else { "locked" };
         db.conn
             .execute(
@@ -261,8 +276,8 @@ pub fn generate_learning_path(
     Ok(serde_json::json!({
         "id": path_id,
         "trackId": request.track_id,
-        "modules": modules,
-        "edges": edges,
+        "modules": path_data["modules"],
+        "edges": path_data["edges"],
     }))
 }
 

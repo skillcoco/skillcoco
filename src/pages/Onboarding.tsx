@@ -4,6 +4,7 @@ import {
   Sparkles,
   ArrowRight,
   ArrowLeft,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -287,10 +288,22 @@ export function Onboarding() {
                 disabled={!selectedLevel || isGenerating}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                {isGenerating ? "Creating..." : "Generate My Learning Path"}
-                <Sparkles size={16} />
+                {isGenerating ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Building your {topic} curriculum...
+                  </>
+                ) : (
+                  <>
+                    Create Learning Path
+                    <Sparkles size={16} />
+                  </>
+                )}
               </button>
             </div>
+            {error && (
+              <p className="text-xs text-destructive">{error}</p>
+            )}
           </div>
         )}
 
