@@ -1,15 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Sparkles,
   ArrowRight,
   ArrowLeft,
   Loader2,
-  Send,
-  User,
-  Bot,
-  CheckCircle2,
-  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -17,7 +12,6 @@ import {
   assessKnowledge,
   generateLearningPath,
 } from "@/lib/tauri-commands";
-import type { AssessmentTurn } from "@/types/ai";
 
 type OnboardingStep = "topic" | "goals" | "assessment" | "generating";
 
@@ -29,10 +23,7 @@ const domainModules = [
   { id: "data", label: "Data & AI/ML", examples: "ML Engineering, Data Pipelines, LLMs" },
 ];
 
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
+type LevelOption = "beginner" | "intermediate" | "advanced";
 
 export function Onboarding() {
   const navigate = useNavigate();
@@ -42,117 +33,59 @@ export function Onboarding() {
   const [goal, setGoal] = useState("");
 
   // Assessment state
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [userInput, setUserInput] = useState("");
-  const [isAssessing, setIsAssessing] = useState(false);
-  const [assessmentComplete, setAssessmentComplete] = useState(false);
+  const [selectedLevel, setSelectedLevel] = useState<LevelOption | null>(null);
   const [assessmentResult, setAssessmentResult] = useState<{
     level: string;
     gaps: string[];
     strengths: string[];
   } | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Generation state
   const [generationPhase, setGenerationPhase] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
-
-  // Start assessment when entering the assessment step
-  useEffect(() => {
-    if (step === "assessment" && chatMessages.length === 0) {
-      startAssessment();
-    }
-  }, [step]);
-
-  async function startAssessment() {
-    setIsAssessing(true);
-    try {
-      const response = await assessKnowledge({
-        topic,
-        domain: selectedDomain,
-        messages: [],
-      });
-      setChatMessages([{ role: "assistant", content: response }]);
-    } catch (err) {
-      setError(`Assessment failed: ${err}`);
-    } finally {
-      setIsAssessing(false);
-    }
-  }
-
-  async function sendAssessmentMessage() {
-    if (!userInput.trim() || isAssessing) return;
-
-    const userMessage = userInput.trim();
-    setUserInput("");
-    const newMessages: ChatMessage[] = [
-      ...chatMessages,
-      { role: "user", content: userMessage },
-    ];
-    setChatMessages(newMessages);
-    setIsAssessing(true);
-
-    try {
-      const turns: AssessmentTurn[] = newMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      const response = await assessKnowledge({
-        topic,
-        domain: selectedDomain,
-        messages: turns,
-      });
-
-      setChatMessages([...newMessages, { role: "assistant", content: response }]);
-
-      // Check if assessment is complete by looking for the JSON block
-      const jsonMatch = response.match(/```json\s*(\{[\s\S]*?\})\s*```/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[1]);
-          if (parsed.assessment_complete) {
-            setAssessmentComplete(true);
-            setAssessmentResult({
-              level: parsed.level || "beginner",
-              gaps: parsed.gaps || [],
-              strengths: parsed.strengths || [],
-            });
-          }
-        } catch {
-          // Not valid JSON, assessment continues
-        }
-      }
-    } catch (err) {
-      setError(`Assessment failed: ${err}`);
-    } finally {
-      setIsAssessing(false);
-    }
-  }
-
-  async function generatePath() {
-    setStep("generating");
+  async function handleLevelSelected() {
+    if (!selectedLevel) return;
     setError(null);
 
     try {
-      // Create the track first
+      const response = await assessKnowledge({
+        topic,
+        domain: selectedDomain,
+        level: selectedLevel,
+      });
+      const parsed = JSON.parse(response);
+      const assessment = {
+        level: parsed.level || selectedLevel,
+        gaps: parsed.gaps || [],
+        strengths: parsed.strengths || [],
+      };
+      setAssessmentResult(assessment);
+      // Immediately proceed to path generation
+      generatePath(assessment);
+    } catch (err) {
+      setError(`Assessment failed: ${err}`);
+    }
+  }
+
+  async function generatePath(overrideAssessment?: { level: string; gaps: string[]; strengths: string[] }) {
+    setStep("generating");
+    setError(null);
+    const assessment = overrideAssessment || assessmentResult;
+
+    try {
       setGenerationPhase("Creating your learning track...");
       const track = await createTrack(topic, selectedDomain, goal);
 
-      // Generate the learning path
       setGenerationPhase("AI is designing your personalized curriculum...");
       await generateLearningPath({
         trackId: track.id,
         topic,
         domain: selectedDomain,
         goal,
-        assessmentLevel: assessmentResult?.level || "beginner",
-        assessmentGaps: assessmentResult?.gaps || [],
-        assessmentStrengths: assessmentResult?.strengths || [],
+        assessmentLevel: assessment?.level || "beginner",
+        assessmentGaps: assessment?.gaps || [],
+        assessmentStrengths: assessment?.strengths || [],
       });
 
       setGenerationPhase("Your learning path is ready!");
@@ -161,11 +94,6 @@ export function Onboarding() {
       setError(`Failed to generate path: ${err}`);
       setGenerationPhase("");
     }
-  }
-
-  function renderAssessmentMessage(content: string) {
-    // Strip the JSON block from display
-    return content.replace(/```json[\s\S]*?```/, "").trim();
   }
 
   return (
@@ -178,7 +106,7 @@ export function Onboarding() {
           <p className="text-sm text-muted-foreground">
             {step === "topic" && "Tell us what you want to learn"}
             {step === "goals" && "Set your learning goals"}
-            {step === "assessment" && "Let's assess your current knowledge"}
+            {step === "assessment" && "Rate your experience level"}
             {step === "generating" && "Creating your personalized path"}
           </p>
         </div>
@@ -304,117 +232,71 @@ export function Onboarding() {
                 disabled={!goal}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                Start Assessment
-                <Target size={16} />
+                Continue
+                <ArrowRight size={16} />
               </button>
             </div>
           </div>
         )}
 
-        {/* Step: AI Assessment (conversational chat) */}
+        {/* Step: Level Selection */}
         {step === "assessment" && (
-          <div className="glass rounded-xl overflow-hidden">
-            {/* Chat messages */}
-            <div className="h-96 overflow-y-auto p-4 space-y-4">
-              {chatMessages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "flex gap-3",
-                    msg.role === "user" ? "flex-row-reverse" : ""
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                      msg.role === "user"
-                        ? "bg-primary/20 text-primary"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    {msg.role === "user" ? <User size={14} /> : <Bot size={14} />}
-                  </div>
-                  <div
-                    className={cn(
-                      "rounded-lg px-4 py-3 text-sm max-w-[80%]",
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted/50 text-foreground"
-                    )}
-                  >
-                    <p className="whitespace-pre-wrap">{renderAssessmentMessage(msg.content)}</p>
-                  </div>
-                </div>
-              ))}
-              {isAssessing && (
-                <div className="flex gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                    <Bot size={14} />
-                  </div>
-                  <div className="rounded-lg bg-muted/50 px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  </div>
-                </div>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* Assessment complete banner */}
-            {assessmentComplete && assessmentResult && (
-              <div className="border-t border-border bg-primary/5 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium text-foreground">Assessment Complete</span>
-                </div>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Level: <span className="font-medium text-foreground capitalize">{assessmentResult.level}</span>
-                  {assessmentResult.strengths.length > 0 && (
-                    <> | Strengths: {assessmentResult.strengths.join(", ")}</>
-                  )}
-                </p>
-                <button
-                  onClick={generatePath}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  Generate My Learning Path
-                  <Sparkles size={16} />
-                </button>
-              </div>
-            )}
-
-            {/* Chat input */}
-            {!assessmentComplete && (
-              <div className="border-t border-border p-3">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={userInput}
-                    onChange={(e) => setUserInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendAssessmentMessage()}
-                    placeholder="Type your answer..."
-                    className="flex-1 rounded-lg border border-input bg-background px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    disabled={isAssessing}
-                    autoFocus
-                  />
+          <div className="glass rounded-xl p-6 space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-4">
+                How would you rate your current {topic} knowledge?
+              </label>
+              <div className="grid gap-3">
+                {([
+                  {
+                    level: "beginner" as const,
+                    title: "Beginner",
+                    description: `New to ${topic} or just getting started with the basics`,
+                  },
+                  {
+                    level: "intermediate" as const,
+                    title: "Intermediate",
+                    description: `Comfortable with ${topic} fundamentals, ready for deeper concepts`,
+                  },
+                  {
+                    level: "advanced" as const,
+                    title: "Advanced",
+                    description: `Experienced with ${topic}, looking to fill gaps and master edge cases`,
+                  },
+                ]).map((card) => (
                   <button
-                    onClick={sendAssessmentMessage}
-                    disabled={!userInput.trim() || isAssessing}
-                    className="flex items-center justify-center rounded-lg bg-primary px-3 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    key={card.level}
+                    onClick={() => setSelectedLevel(card.level)}
+                    className={cn(
+                      "flex flex-col items-start rounded-lg border p-4 text-left transition-colors",
+                      selectedLevel === card.level
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    )}
                   >
-                    <Send size={16} />
+                    <span className="font-medium text-foreground">{card.title}</span>
+                    <span className="text-xs text-muted-foreground mt-1">{card.description}</span>
                   </button>
-                </div>
-                <button
-                  onClick={() => {
-                    setAssessmentComplete(true);
-                    setAssessmentResult({ level: "beginner", gaps: [], strengths: [] });
-                  }}
-                  className="mt-2 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Skip assessment (start as beginner)
-                </button>
+                ))}
               </div>
-            )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStep("goals")}
+                className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm font-medium hover:bg-accent"
+              >
+                <ArrowLeft size={16} />
+                Back
+              </button>
+              <button
+                onClick={handleLevelSelected}
+                disabled={!selectedLevel}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                Generate My Learning Path
+                <Sparkles size={16} />
+              </button>
+            </div>
           </div>
         )}
 
