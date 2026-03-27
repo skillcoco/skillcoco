@@ -1,6 +1,6 @@
-use crate::auth::AuthState;
+use crate::auth::{AuthMethod, AuthState};
 use serde::{Deserialize, Serialize};
-use zeroclaw::providers::{self, ChatMessage, ChatResponse, ProviderRuntimeOptions};
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AIServiceRequest {
@@ -25,12 +25,10 @@ pub struct AIServiceResponse {
     pub output_tokens: Option<u64>,
 }
 
-/// Central AI request function. All AI calls go through here.
+/// Central AI request function — direct HTTP calls, no zeroclaw.
 ///
-/// Credential resolution: always uses explicitly stored credentials from the app.
-/// Never falls through to environment variables — BYOK/API keys must be
-/// configured explicitly by the user in Settings. Subscription tokens
-/// (setup-token, OAuth) are the primary auth method.
+/// Uses only explicitly stored credentials. Never reads environment variables.
+/// Subscription tokens (setup-token, OAuth) are the primary auth method.
 pub async fn ai_request(
     auth: &AuthState,
     request: AIServiceRequest,
@@ -39,20 +37,15 @@ pub async fn ai_request(
         .get_active_credential()?
         .ok_or("No AI provider configured. Go to Settings to connect one.")?;
 
-    let provider_name = normalize_provider_name(&cred.provider);
+    let provider = normalize_provider_name(&cred.provider);
 
-    // Always require an explicit credential from our store.
-    // Pass a sentinel placeholder for Ollama (no key needed).
-    // This prevents zeroclaw from auto-resolving env vars like ANTHROPIC_API_KEY
-    // which would charge the paid API instead of using the subscription.
-    let stored_credential: Option<String> = match cred.method {
-        crate::auth::AuthMethod::ApiKey => cred.api_key.clone(),
-        crate::auth::AuthMethod::OAuth => cred.oauth_token.clone(),
-        crate::auth::AuthMethod::None => None, // Ollama — local, no key
+    let credential: Option<String> = match cred.method {
+        AuthMethod::ApiKey => cred.api_key.clone(),
+        AuthMethod::OAuth => cred.oauth_token.clone(),
+        AuthMethod::None => None,
     };
 
-    // For cloud providers, a credential MUST exist in the store
-    if stored_credential.is_none() && provider_name != "ollama" {
+    if credential.is_none() && provider != "ollama" {
         return Err(format!(
             "No credentials stored for {}. Go to Settings and connect using \
              a subscription token (recommended) or API key.",
@@ -60,61 +53,300 @@ pub async fn ai_request(
         ));
     }
 
-    let options = ProviderRuntimeOptions {
-        max_tokens_override: request.max_tokens,
-        ..Default::default()
-    };
-
-    let provider = if let Some(base_url) = &cred.base_url {
-        providers::create_provider_with_url(
-            &provider_name,
-            stored_credential.as_deref(),
-            Some(base_url),
-        )
-    } else {
-        providers::create_provider_with_options(
-            &provider_name,
-            stored_credential.as_deref(),
-            &options,
-        )
-    }
-    .map_err(|e| format!("Failed to create AI provider: {}", e))?;
-
-    // Build message list with system prompt
-    let mut messages = Vec::with_capacity(request.messages.len() + 1);
-    messages.push(ChatMessage::system(&request.system_prompt));
-
-    for msg in &request.messages {
-        messages.push(ChatMessage {
-            role: msg.role.clone(),
-            content: msg.content.clone(),
-        });
-    }
-
     let model = cred.model.as_deref().unwrap_or("auto");
     let temperature = request.temperature.unwrap_or(0.7);
+    let max_tokens = request.max_tokens.unwrap_or(4096);
 
-    let response: ChatResponse = provider
-        .chat(
-            providers::ChatRequest {
-                messages: &messages,
-                tools: None,
-            },
-            model,
-            temperature,
-        )
-        .await
-        .map_err(|e| format!("AI request failed: {}", e))?;
+    match provider.as_str() {
+        "anthropic" => {
+            anthropic_chat(
+                credential.as_deref().unwrap(),
+                cred.method == AuthMethod::OAuth,
+                model,
+                max_tokens,
+                temperature,
+                &request.system_prompt,
+                &request.messages,
+            )
+            .await
+        }
+        "openai" => {
+            openai_chat(
+                credential.as_deref().unwrap(),
+                model,
+                max_tokens,
+                temperature,
+                &request.system_prompt,
+                &request.messages,
+            )
+            .await
+        }
+        "gemini" => {
+            gemini_chat(
+                credential.as_deref().unwrap(),
+                cred.method == AuthMethod::OAuth,
+                model,
+                max_tokens,
+                temperature,
+                &request.system_prompt,
+                &request.messages,
+            )
+            .await
+        }
+        "ollama" => {
+            let base_url = cred
+                .base_url
+                .as_deref()
+                .unwrap_or("http://localhost:11434");
+            ollama_chat(base_url, model, &request.system_prompt, &request.messages).await
+        }
+        _ => Err(format!("Unsupported provider: {}", provider)),
+    }
+}
+
+// ── Anthropic (Claude) ──
+
+async fn anthropic_chat(
+    credential: &str,
+    is_oauth: bool,
+    model: &str,
+    max_tokens: u32,
+    temperature: f64,
+    system_prompt: &str,
+    messages: &[ServiceMessage],
+) -> Result<AIServiceResponse, String> {
+    let client = reqwest::Client::new();
+    let mut req = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json");
+
+    if is_oauth {
+        req = req
+            .header("Authorization", format!("Bearer {}", credential))
+            .header("anthropic-beta", "oauth-2025-04-20");
+    } else {
+        req = req.header("x-api-key", credential);
+    }
+
+    let msgs: Vec<Value> = messages
+        .iter()
+        .map(|m| json!({"role": m.role, "content": m.content}))
+        .collect();
+
+    let body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "system": system_prompt,
+        "messages": msgs,
+    });
+
+    let res = req.json(&body).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let status = res.status().as_u16();
+    let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if status != 200 {
+        return Err(format!("Anthropic API error ({}): {}", status, text));
+    }
+
+    let json: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse Anthropic response: {}", e))?;
+
+    let content = json["content"]
+        .as_array()
+        .and_then(|arr| arr.iter().find(|b| b["type"] == "text"))
+        .and_then(|b| b["text"].as_str())
+        .unwrap_or("")
+        .to_string();
 
     Ok(AIServiceResponse {
-        content: response.text_or_empty().to_string(),
-        model: model.to_string(),
-        input_tokens: response.usage.as_ref().and_then(|u| u.input_tokens),
-        output_tokens: response.usage.as_ref().and_then(|u| u.output_tokens),
+        content,
+        model: json["model"].as_str().unwrap_or(model).to_string(),
+        input_tokens: json["usage"]["input_tokens"].as_u64(),
+        output_tokens: json["usage"]["output_tokens"].as_u64(),
     })
 }
 
-/// Normalize provider names to zeroclaw-compatible identifiers.
+// ── OpenAI (ChatGPT) ──
+
+async fn openai_chat(
+    credential: &str,
+    model: &str,
+    max_tokens: u32,
+    temperature: f64,
+    system_prompt: &str,
+    messages: &[ServiceMessage],
+) -> Result<AIServiceResponse, String> {
+    let client = reqwest::Client::new();
+
+    let mut msgs = vec![json!({"role": "system", "content": system_prompt})];
+    for m in messages {
+        msgs.push(json!({"role": m.role, "content": m.content}));
+    }
+
+    let body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": msgs,
+    });
+
+    let res = client
+        .post("https://api.openai.com/v1/chat/completions")
+        .header("Authorization", format!("Bearer {}", credential))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let status = res.status().as_u16();
+    let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if status != 200 {
+        return Err(format!("OpenAI API error ({}): {}", status, text));
+    }
+
+    let json: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse OpenAI response: {}", e))?;
+
+    let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    Ok(AIServiceResponse {
+        content,
+        model: json["model"].as_str().unwrap_or(model).to_string(),
+        input_tokens: json["usage"]["prompt_tokens"].as_u64(),
+        output_tokens: json["usage"]["completion_tokens"].as_u64(),
+    })
+}
+
+// ── Gemini ──
+
+async fn gemini_chat(
+    credential: &str,
+    is_oauth: bool,
+    model: &str,
+    max_tokens: u32,
+    _temperature: f64,
+    system_prompt: &str,
+    messages: &[ServiceMessage],
+) -> Result<AIServiceResponse, String> {
+    let client = reqwest::Client::new();
+
+    let url = if is_oauth {
+        format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+            model
+        )
+    } else {
+        format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            model, credential
+        )
+    };
+
+    let mut req = client
+        .post(&url)
+        .header("content-type", "application/json");
+
+    if is_oauth {
+        req = req.header("Authorization", format!("Bearer {}", credential));
+    }
+
+    let contents: Vec<Value> = messages
+        .iter()
+        .map(|m| {
+            let role = if m.role == "assistant" { "model" } else { "user" };
+            json!({"role": role, "parts": [{"text": m.content}]})
+        })
+        .collect();
+
+    let body = json!({
+        "contents": contents,
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "generationConfig": {"maxOutputTokens": max_tokens},
+    });
+
+    let res = req.json(&body).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let status = res.status().as_u16();
+    let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if status != 200 {
+        return Err(format!("Gemini API error ({}): {}", status, text));
+    }
+
+    let json: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
+
+    let content = json["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    Ok(AIServiceResponse {
+        content,
+        model: model.to_string(),
+        input_tokens: json["usageMetadata"]["promptTokenCount"].as_u64(),
+        output_tokens: json["usageMetadata"]["candidatesTokenCount"].as_u64(),
+    })
+}
+
+// ── Ollama (Local) ──
+
+async fn ollama_chat(
+    base_url: &str,
+    model: &str,
+    system_prompt: &str,
+    messages: &[ServiceMessage],
+) -> Result<AIServiceResponse, String> {
+    let client = reqwest::Client::new();
+
+    let mut msgs = vec![json!({"role": "system", "content": system_prompt})];
+    for m in messages {
+        msgs.push(json!({"role": m.role, "content": m.content}));
+    }
+
+    let body = json!({
+        "model": model,
+        "messages": msgs,
+        "stream": false,
+    });
+
+    let res = client
+        .post(format!("{}/api/chat", base_url))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Cannot reach Ollama at {}: {}", base_url, e))?;
+
+    let status = res.status().as_u16();
+    let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if status != 200 {
+        return Err(format!("Ollama error ({}): {}", status, text));
+    }
+
+    let json: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Failed to parse Ollama response: {}", e))?;
+
+    let content = json["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    Ok(AIServiceResponse {
+        content,
+        model: json["model"].as_str().unwrap_or(model).to_string(),
+        input_tokens: json["prompt_eval_count"].as_u64(),
+        output_tokens: json["eval_count"].as_u64(),
+    })
+}
+
 fn normalize_provider_name(name: &str) -> String {
     match name {
         "claude" | "anthropic" => "anthropic".to_string(),
@@ -190,9 +422,10 @@ mod tests {
     fn test_ai_service_request_defaults() {
         let req = AIServiceRequest {
             system_prompt: "You are helpful.".to_string(),
-            messages: vec![
-                ServiceMessage { role: "user".to_string(), content: "Hi".to_string() },
-            ],
+            messages: vec![ServiceMessage {
+                role: "user".to_string(),
+                content: "Hi".to_string(),
+            }],
             max_tokens: None,
             temperature: None,
             response_format: None,

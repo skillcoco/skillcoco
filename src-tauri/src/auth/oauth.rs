@@ -216,7 +216,8 @@ pub async fn save_setup_token(
 }
 
 /// Validate a setup-token by making a minimal API call to Anthropic.
-/// Returns Ok(()) if the token is valid, Err with a user-friendly message otherwise.
+/// A 200 or 400 means the token is valid (400 = authenticated but request issue).
+/// Only 401 (bad token) or 403 (OAuth not allowed) are real failures.
 async fn validate_anthropic_token(token: &str) -> Result<(), String> {
     let client = reqwest::Client::new();
     let res = client
@@ -225,13 +226,15 @@ async fn validate_anthropic_token(token: &str) -> Result<(), String> {
         .header("anthropic-beta", "oauth-2025-04-20")
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json")
-        .body(r#"{"model":"claude-sonnet-4-20250514","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"#)
+        .body(r#"{"model":"claude-sonnet-4-6","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"#)
         .send()
         .await
         .map_err(|e| format!("Network error validating token: {}", e))?;
 
     let status = res.status().as_u16();
-    if status == 200 {
+
+    // 200 = full success, 400 = token valid but request issue (fine for validation)
+    if status == 200 || status == 400 {
         return Ok(());
     }
 
@@ -249,7 +252,7 @@ async fn validate_anthropic_token(token: &str) -> Result<(), String> {
                 .to_string(),
         ),
         403 => Err(format!("Token rejected by Anthropic (403): {}", body)),
-        _ => Err(format!("Anthropic API returned {}: {}", status, body)),
+        _ => Err(format!("Anthropic API error ({}): {}", status, body)),
     }
 }
 
