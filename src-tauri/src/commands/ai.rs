@@ -85,6 +85,7 @@ pub fn assess_knowledge(request: AssessmentRequest) -> Result<String, String> {
 // ── Learning Path Generation ──
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GeneratePathRequest {
     pub track_id: String,
     pub topic: String,
@@ -291,6 +292,7 @@ pub async fn send_tutor_message(
 // ── Module Content Generation ──
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerateContentRequest {
     pub module_id: String,
     pub track_id: String,
@@ -408,6 +410,7 @@ pub fn get_exercises(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerateExerciseRequest {
     pub module_id: String,
     pub difficulty: i32,
@@ -488,6 +491,7 @@ pub async fn generate_exercise(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EvaluateResponseRequest {
     pub exercise_prompt: String,
     pub learner_response: String,
@@ -542,6 +546,7 @@ pub async fn evaluate_response(
 // ── Complete Module Exercises (adaptive loop closure) ──
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompleteExercisesRequest {
     pub module_id: String,
     pub track_id: String,
@@ -549,6 +554,7 @@ pub struct CompleteExercisesRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompleteExercisesResult {
     pub mastery_level: f64,
     pub module_completed: bool,
