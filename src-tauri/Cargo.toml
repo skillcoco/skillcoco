@@ -27,6 +27,7 @@ async-trait = "0.1"
 log = "0.4"
 env_logger = "0.11"
 open = "5"
+dirs = "5"
 
 # AI provider auth + API calls
 zeroclaw = { path = "../../../../agentix/upstream/zeroclaw", default-features = false }

@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::State;
 use zeroclaw::auth::oauth_common::generate_pkce_state;
-use zeroclaw::auth::{gemini_oauth, openai_oauth};
+use zeroclaw::auth::{gemini_oauth, openai_oauth, AuthService};
 
 /// Tracks in-flight OAuth flows.
 #[derive(Clone)]
@@ -86,6 +86,17 @@ async fn start_openai_oauth(auth: AuthState, flow: OAuthFlowState) -> Result<(),
                 let client = reqwest::Client::new();
                 match openai_oauth::exchange_code_for_tokens(&client, &code, &pkce).await {
                     Ok(token_set) => {
+                        // Store in zeroclaw's AuthService so openai-codex provider can use it
+                        // (with automatic token refresh support)
+                        let zeroclaw_auth = AuthService::new(&default_zeroclaw_dir(), false);
+                        if let Err(e) = zeroclaw_auth
+                            .store_openai_tokens("default", token_set.clone(), None, true)
+                            .await
+                        {
+                            eprintln!("Failed to store tokens in zeroclaw AuthService: {}", e);
+                        }
+
+                        // Also store in our credential store for UI status tracking
                         let token = token_set.access_token.clone();
                         let mut store = auth.store.lock().unwrap();
                         store.credentials.insert(
@@ -95,7 +106,7 @@ async fn start_openai_oauth(auth: AuthState, flow: OAuthFlowState) -> Result<(),
                                 method: AuthMethod::OAuth,
                                 api_key: None,
                                 oauth_token: Some(token),
-                                display_name: Some("OpenAI (OAuth)".to_string()),
+                                display_name: Some("ChatGPT (Subscription)".to_string()),
                                 model: Some("gpt-4o".to_string()),
                                 base_url: None,
                             },
@@ -122,6 +133,12 @@ async fn start_openai_oauth(auth: AuthState, flow: OAuthFlowState) -> Result<(),
     });
 
     Ok(())
+}
+
+fn default_zeroclaw_dir() -> std::path::PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".zeroclaw")
 }
 
 async fn start_gemini_oauth(auth: AuthState, flow: OAuthFlowState) -> Result<(), String> {

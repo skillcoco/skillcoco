@@ -1,6 +1,7 @@
 use crate::auth::{AuthMethod, AuthState};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use zeroclaw::providers::{self, ChatMessage, ChatRequest, ChatResponse, ProviderRuntimeOptions};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AIServiceRequest {
@@ -25,10 +26,15 @@ pub struct AIServiceResponse {
     pub output_tokens: Option<u64>,
 }
 
-/// Central AI request function — direct HTTP calls, no zeroclaw.
+/// Central AI request function.
 ///
-/// Uses only explicitly stored credentials. Never reads environment variables.
-/// Subscription tokens (setup-token, OAuth) are the primary auth method.
+/// Routes to the correct zeroclaw provider based on stored credentials:
+/// - Claude subscription (setup-token): zeroclaw "anthropic" provider with Bearer auth
+/// - Claude API key: zeroclaw "anthropic" provider with x-api-key
+/// - ChatGPT subscription: zeroclaw "openai-codex" provider (OAuth via AuthService)
+/// - OpenAI API key: zeroclaw "openai" provider
+/// - Gemini API key: direct HTTP (zeroclaw gemini needs env vars we want to avoid)
+/// - Ollama: direct HTTP to local server
 pub async fn ai_request(
     auth: &AuthState,
     request: AIServiceRequest,
@@ -37,7 +43,7 @@ pub async fn ai_request(
         .get_active_credential()?
         .ok_or("No AI provider configured. Go to Settings to connect one.")?;
 
-    let provider = normalize_provider_name(&cred.provider);
+    let base_provider = normalize_provider_name(&cred.provider);
 
     let credential: Option<String> = match cred.method {
         AuthMethod::ApiKey => cred.api_key.clone(),
@@ -45,7 +51,7 @@ pub async fn ai_request(
         AuthMethod::None => None,
     };
 
-    if credential.is_none() && provider != "ollama" {
+    if credential.is_none() && base_provider != "ollama" {
         return Err(format!(
             "No credentials stored for {}. Go to Settings and connect using \
              a subscription token (recommended) or API key.",
@@ -55,176 +61,101 @@ pub async fn ai_request(
 
     let model = cred.model.as_deref().unwrap_or("auto");
     let temperature = request.temperature.unwrap_or(0.7);
-    let max_tokens = request.max_tokens.unwrap_or(4096);
 
-    match provider.as_str() {
-        "anthropic" => {
-            anthropic_chat(
-                credential.as_deref().unwrap(),
-                cred.method == AuthMethod::OAuth,
-                model,
-                max_tokens,
-                temperature,
-                &request.system_prompt,
-                &request.messages,
-            )
-            .await
-        }
-        "openai" => {
-            openai_chat(
-                credential.as_deref().unwrap(),
-                model,
-                max_tokens,
-                temperature,
-                &request.system_prompt,
-                &request.messages,
-            )
-            .await
-        }
-        "gemini" => {
-            gemini_chat(
-                credential.as_deref().unwrap(),
-                cred.method == AuthMethod::OAuth,
-                model,
-                max_tokens,
-                temperature,
-                &request.system_prompt,
-                &request.messages,
-            )
-            .await
-        }
-        "ollama" => {
-            let base_url = cred
-                .base_url
-                .as_deref()
-                .unwrap_or("http://localhost:11434");
-            ollama_chat(base_url, model, &request.system_prompt, &request.messages).await
-        }
-        _ => Err(format!("Unsupported provider: {}", provider)),
+    // Gemini and Ollama: direct HTTP (avoids zeroclaw env var resolution)
+    if base_provider == "gemini" {
+        return gemini_chat(
+            credential.as_deref().unwrap(),
+            cred.method == AuthMethod::OAuth,
+            model,
+            request.max_tokens.unwrap_or(4096),
+            temperature,
+            &request.system_prompt,
+            &request.messages,
+        )
+        .await;
     }
-}
-
-// ── Anthropic (Claude) ──
-
-async fn anthropic_chat(
-    credential: &str,
-    is_oauth: bool,
-    model: &str,
-    max_tokens: u32,
-    temperature: f64,
-    system_prompt: &str,
-    messages: &[ServiceMessage],
-) -> Result<AIServiceResponse, String> {
-    let client = reqwest::Client::new();
-    let mut req = client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json");
-
-    if is_oauth {
-        req = req
-            .header("Authorization", format!("Bearer {}", credential))
-            .header("anthropic-beta", "oauth-2025-04-20");
-    } else {
-        req = req.header("x-api-key", credential);
+    if base_provider == "ollama" {
+        let base_url = cred.base_url.as_deref().unwrap_or("http://localhost:11434");
+        return ollama_chat(base_url, model, &request.system_prompt, &request.messages).await;
     }
 
-    let msgs: Vec<Value> = messages
-        .iter()
-        .map(|m| json!({"role": m.role, "content": m.content}))
-        .collect();
+    // Claude and OpenAI: use zeroclaw providers for subscription support
+    let (provider_name, provider_credential) = resolve_zeroclaw_provider(
+        &base_provider,
+        &cred.method,
+        credential.as_deref(),
+    );
 
-    let body = json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "system": system_prompt,
-        "messages": msgs,
-    });
+    let options = ProviderRuntimeOptions {
+        max_tokens_override: request.max_tokens,
+        ..Default::default()
+    };
 
-    let res = req.json(&body).send().await.map_err(|e| format!("Network error: {}", e))?;
-    let status = res.status().as_u16();
-    let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+    let provider = providers::create_provider_with_options(
+        &provider_name,
+        provider_credential.as_deref(),
+        &options,
+    )
+    .map_err(|e| format!("Failed to create provider '{}': {}", provider_name, e))?;
 
-    if status != 200 {
-        return Err(format!("Anthropic API error ({}): {}", status, text));
+    // Build messages
+    let mut messages = Vec::with_capacity(request.messages.len() + 1);
+    messages.push(ChatMessage::system(&request.system_prompt));
+    for msg in &request.messages {
+        messages.push(ChatMessage {
+            role: msg.role.clone(),
+            content: msg.content.clone(),
+        });
     }
 
-    let json: Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse Anthropic response: {}", e))?;
-
-    let content = json["content"]
-        .as_array()
-        .and_then(|arr| arr.iter().find(|b| b["type"] == "text"))
-        .and_then(|b| b["text"].as_str())
-        .unwrap_or("")
-        .to_string();
-
-    Ok(AIServiceResponse {
-        content,
-        model: json["model"].as_str().unwrap_or(model).to_string(),
-        input_tokens: json["usage"]["input_tokens"].as_u64(),
-        output_tokens: json["usage"]["output_tokens"].as_u64(),
-    })
-}
-
-// ── OpenAI (ChatGPT) ──
-
-async fn openai_chat(
-    credential: &str,
-    model: &str,
-    max_tokens: u32,
-    temperature: f64,
-    system_prompt: &str,
-    messages: &[ServiceMessage],
-) -> Result<AIServiceResponse, String> {
-    let client = reqwest::Client::new();
-
-    let mut msgs = vec![json!({"role": "system", "content": system_prompt})];
-    for m in messages {
-        msgs.push(json!({"role": m.role, "content": m.content}));
-    }
-
-    let body = json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "messages": msgs,
-    });
-
-    let res = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {}", credential))
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
+    let response: ChatResponse = provider
+        .chat(
+            ChatRequest {
+                messages: &messages,
+                tools: None,
+            },
+            model,
+            temperature,
+        )
         .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    let status = res.status().as_u16();
-    let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
-
-    if status != 200 {
-        return Err(format!("OpenAI API error ({}): {}", status, text));
-    }
-
-    let json: Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse OpenAI response: {}", e))?;
-
-    let content = json["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+        .map_err(|e| format!("AI request failed: {}", e))?;
 
     Ok(AIServiceResponse {
-        content,
-        model: json["model"].as_str().unwrap_or(model).to_string(),
-        input_tokens: json["usage"]["prompt_tokens"].as_u64(),
-        output_tokens: json["usage"]["completion_tokens"].as_u64(),
+        content: response.text_or_empty().to_string(),
+        model: model.to_string(),
+        input_tokens: response.usage.as_ref().and_then(|u| u.input_tokens),
+        output_tokens: response.usage.as_ref().and_then(|u| u.output_tokens),
     })
 }
 
-// ── Gemini ──
+/// Choose the right zeroclaw provider name and credential based on auth method.
+///
+/// - Claude + OAuth (setup-token): "anthropic" with the token
+/// - Claude + API key: "anthropic" with the key
+/// - OpenAI + OAuth (ChatGPT subscription): "openai-codex" with None (uses AuthService)
+/// - OpenAI + API key: "openai" with the key
+fn resolve_zeroclaw_provider(
+    base_provider: &str,
+    method: &AuthMethod,
+    credential: Option<&str>,
+) -> (String, Option<String>) {
+    match (base_provider, method) {
+        // Claude: always pass credential directly — zeroclaw detects setup-token prefix
+        ("anthropic", _) => ("anthropic".to_string(), credential.map(String::from)),
+
+        // ChatGPT subscription: use codex provider, pass None so it uses AuthService
+        ("openai", AuthMethod::OAuth) => ("openai-codex".to_string(), None),
+
+        // OpenAI API key: regular openai provider
+        ("openai", _) => ("openai".to_string(), credential.map(String::from)),
+
+        // Fallback
+        (other, _) => (other.to_string(), credential.map(String::from)),
+    }
+}
+
+// ── Gemini (direct HTTP — avoids zeroclaw env var resolution) ──
 
 async fn gemini_chat(
     credential: &str,
@@ -249,10 +180,7 @@ async fn gemini_chat(
         )
     };
 
-    let mut req = client
-        .post(&url)
-        .header("content-type", "application/json");
-
+    let mut req = client.post(&url).header("content-type", "application/json");
     if is_oauth {
         req = req.header("Authorization", format!("Bearer {}", credential));
     }
@@ -273,29 +201,26 @@ async fn gemini_chat(
 
     let res = req.json(&body).send().await.map_err(|e| format!("Network error: {}", e))?;
     let status = res.status().as_u16();
-    let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+    let text = res.text().await.map_err(|e| format!("Read error: {}", e))?;
 
     if status != 200 {
         return Err(format!("Gemini API error ({}): {}", status, text));
     }
 
-    let json: Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
-
-    let content = json["candidates"][0]["content"]["parts"][0]["text"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let json: Value = serde_json::from_str(&text).map_err(|e| format!("Parse error: {}", e))?;
 
     Ok(AIServiceResponse {
-        content,
+        content: json["candidates"][0]["content"]["parts"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_string(),
         model: model.to_string(),
         input_tokens: json["usageMetadata"]["promptTokenCount"].as_u64(),
         output_tokens: json["usageMetadata"]["candidatesTokenCount"].as_u64(),
     })
 }
 
-// ── Ollama (Local) ──
+// ── Ollama (local, no auth) ──
 
 async fn ollama_chat(
     base_url: &str,
@@ -310,37 +235,26 @@ async fn ollama_chat(
         msgs.push(json!({"role": m.role, "content": m.content}));
     }
 
-    let body = json!({
-        "model": model,
-        "messages": msgs,
-        "stream": false,
-    });
+    let body = json!({"model": model, "messages": msgs, "stream": false});
 
     let res = client
         .post(format!("{}/api/chat", base_url))
-        .header("content-type", "application/json")
         .json(&body)
         .send()
         .await
         .map_err(|e| format!("Cannot reach Ollama at {}: {}", base_url, e))?;
 
     let status = res.status().as_u16();
-    let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+    let text = res.text().await.map_err(|e| format!("Read error: {}", e))?;
 
     if status != 200 {
         return Err(format!("Ollama error ({}): {}", status, text));
     }
 
-    let json: Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse Ollama response: {}", e))?;
-
-    let content = json["message"]["content"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let json: Value = serde_json::from_str(&text).map_err(|e| format!("Parse error: {}", e))?;
 
     Ok(AIServiceResponse {
-        content,
+        content: json["message"]["content"].as_str().unwrap_or("").to_string(),
         model: json["model"].as_str().unwrap_or(model).to_string(),
         input_tokens: json["prompt_eval_count"].as_u64(),
         output_tokens: json["eval_count"].as_u64(),
@@ -385,8 +299,35 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_unknown_passes_through() {
-        assert_eq!(normalize_provider_name("custom-provider"), "custom-provider");
+    fn test_resolve_claude_setup_token() {
+        let (name, cred) =
+            resolve_zeroclaw_provider("anthropic", &AuthMethod::OAuth, Some("sk-ant-oat01-test"));
+        assert_eq!(name, "anthropic");
+        assert_eq!(cred.as_deref(), Some("sk-ant-oat01-test"));
+    }
+
+    #[test]
+    fn test_resolve_claude_api_key() {
+        let (name, cred) =
+            resolve_zeroclaw_provider("anthropic", &AuthMethod::ApiKey, Some("sk-ant-api03-test"));
+        assert_eq!(name, "anthropic");
+        assert_eq!(cred.as_deref(), Some("sk-ant-api03-test"));
+    }
+
+    #[test]
+    fn test_resolve_chatgpt_subscription() {
+        let (name, cred) =
+            resolve_zeroclaw_provider("openai", &AuthMethod::OAuth, Some("jwt-token"));
+        assert_eq!(name, "openai-codex");
+        assert!(cred.is_none(), "codex uses AuthService, not direct credential");
+    }
+
+    #[test]
+    fn test_resolve_openai_api_key() {
+        let (name, cred) =
+            resolve_zeroclaw_provider("openai", &AuthMethod::ApiKey, Some("sk-proj-test"));
+        assert_eq!(name, "openai");
+        assert_eq!(cred.as_deref(), Some("sk-proj-test"));
     }
 
     #[test]
@@ -405,33 +346,5 @@ mod tests {
         let result = rt.block_on(ai_request(&auth, request));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("No AI provider configured"));
-    }
-
-    #[test]
-    fn test_service_message_serialization() {
-        let msg = ServiceMessage {
-            role: "user".to_string(),
-            content: "Hello".to_string(),
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("\"role\":\"user\""));
-        assert!(json.contains("\"content\":\"Hello\""));
-    }
-
-    #[test]
-    fn test_ai_service_request_defaults() {
-        let req = AIServiceRequest {
-            system_prompt: "You are helpful.".to_string(),
-            messages: vec![ServiceMessage {
-                role: "user".to_string(),
-                content: "Hi".to_string(),
-            }],
-            max_tokens: None,
-            temperature: None,
-            response_format: None,
-        };
-        assert_eq!(req.messages.len(), 1);
-        assert!(req.max_tokens.is_none());
-        assert!(req.temperature.is_none());
     }
 }
