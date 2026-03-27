@@ -121,57 +121,188 @@ pub struct GeneratePathRequest {
 }
 
 #[tauri::command]
-pub async fn generate_learning_path(
-    auth: State<'_, AuthState>,
+pub fn generate_learning_path(
     state: State<'_, AppState>,
     request: GeneratePathRequest,
 ) -> Result<serde_json::Value, String> {
-    let system_prompt = format!(
-        "You are a curriculum designer creating a personalized learning path for {}. \
-         The learner's level: {}. Their goal: {}. \
-         Gaps: {:?}. Strengths: {:?}. \
-         Generate a learning path as a DAG of 6-10 modules. \
-         Return ONLY raw JSON, no markdown fences, no explanation. Format: \
-         {{\"modules\": [{{\"id\": \"m1\", \"title\": \"...\", \"description\": \"...\", \
-         \"difficulty\": 1, \"estimated_minutes\": 30, \"objectives\": [\"...\"]}}], \
-         \"edges\": [{{\"from\": \"m1\", \"to\": \"m2\"}}]}} \
-         Order modules from foundational to advanced. \
-         Skip topics the learner already knows based on their strengths. \
-         Add extra depth for identified knowledge gaps.",
-        request.topic,
-        request.assessment_level,
-        request.goal,
-        request.assessment_gaps,
-        request.assessment_strengths,
-    );
+    // Build template modules based on assessment level (no AI call)
+    let topic = &request.topic;
+    let modules: Vec<serde_json::Value> = match request.assessment_level.as_str() {
+        "intermediate" => vec![
+            json!({
+                "id": "m1",
+                "title": format!("{} Quick Review", topic),
+                "description": format!("Refresh core {} concepts and identify gaps", topic),
+                "difficulty": 3,
+                "estimated_minutes": 20,
+                "objectives": [format!("Refresh core {} concepts and identify gaps", topic)]
+            }),
+            json!({
+                "id": "m2",
+                "title": format!("{} Patterns", topic),
+                "description": format!("Learn common patterns and idioms in {}", topic),
+                "difficulty": 4,
+                "estimated_minutes": 30,
+                "objectives": [format!("Learn common patterns and idioms in {}", topic)]
+            }),
+            json!({
+                "id": "m3",
+                "title": format!("{} Best Practices", topic),
+                "description": format!("Adopt industry-standard {} practices", topic),
+                "difficulty": 5,
+                "estimated_minutes": 30,
+                "objectives": [format!("Adopt industry-standard {} practices", topic)]
+            }),
+            json!({
+                "id": "m4",
+                "title": format!("Advanced {} Concepts", topic),
+                "description": format!("Explore advanced features of {}", topic),
+                "difficulty": 6,
+                "estimated_minutes": 40,
+                "objectives": [format!("Explore advanced features of {}", topic)]
+            }),
+            json!({
+                "id": "m5",
+                "title": format!("Real-world {} Applications", topic),
+                "description": format!("Apply {} to real-world scenarios", topic),
+                "difficulty": 6,
+                "estimated_minutes": 35,
+                "objectives": [format!("Apply {} to real-world scenarios", topic)]
+            }),
+            json!({
+                "id": "m6",
+                "title": format!("{} Optimization", topic),
+                "description": format!("Optimize {} solutions for performance", topic),
+                "difficulty": 7,
+                "estimated_minutes": 35,
+                "objectives": [format!("Optimize {} solutions for performance", topic)]
+            }),
+            json!({
+                "id": "m7",
+                "title": format!("{} Capstone Project", topic),
+                "description": format!("Build a production-quality {} project", topic),
+                "difficulty": 7,
+                "estimated_minutes": 50,
+                "objectives": [format!("Build a production-quality {} project", topic)]
+            }),
+        ],
+        "advanced" => vec![
+            json!({
+                "id": "m1",
+                "title": format!("{} Deep Dive", topic),
+                "description": format!("Explore {} internals and advanced mechanics", topic),
+                "difficulty": 7,
+                "estimated_minutes": 30,
+                "objectives": [format!("Explore {} internals and advanced mechanics", topic)]
+            }),
+            json!({
+                "id": "m2",
+                "title": format!("{} Edge Cases", topic),
+                "description": format!("Handle edge cases and unusual scenarios in {}", topic),
+                "difficulty": 8,
+                "estimated_minutes": 35,
+                "objectives": [format!("Handle edge cases and unusual scenarios in {}", topic)]
+            }),
+            json!({
+                "id": "m3",
+                "title": format!("{} Performance", topic),
+                "description": format!("Master performance tuning for {}", topic),
+                "difficulty": 8,
+                "estimated_minutes": 40,
+                "objectives": [format!("Master performance tuning for {}", topic)]
+            }),
+            json!({
+                "id": "m4",
+                "title": format!("{} Architecture", topic),
+                "description": format!("Design scalable {} architectures", topic),
+                "difficulty": 9,
+                "estimated_minutes": 45,
+                "objectives": [format!("Design scalable {} architectures", topic)]
+            }),
+            json!({
+                "id": "m5",
+                "title": format!("{} System Design", topic),
+                "description": format!("Apply {} in large-scale system design", topic),
+                "difficulty": 9,
+                "estimated_minutes": 40,
+                "objectives": [format!("Apply {} in large-scale system design", topic)]
+            }),
+            json!({
+                "id": "m6",
+                "title": format!("{} Mastery Project", topic),
+                "description": format!("Demonstrate mastery through a complex {} project", topic),
+                "difficulty": 10,
+                "estimated_minutes": 60,
+                "objectives": [format!("Demonstrate mastery through a complex {} project", topic)]
+            }),
+        ],
+        _ => {
+            // beginner (default)
+            vec![
+                json!({
+                    "id": "m1",
+                    "title": format!("Introduction to {}", topic),
+                    "description": format!("Understand what {} is and why it matters", topic),
+                    "difficulty": 1,
+                    "estimated_minutes": 20,
+                    "objectives": [format!("Understand what {} is and why it matters", topic)]
+                }),
+                json!({
+                    "id": "m2",
+                    "title": format!("{} Fundamentals", topic),
+                    "description": format!("Learn the core building blocks of {}", topic),
+                    "difficulty": 2,
+                    "estimated_minutes": 30,
+                    "objectives": [format!("Learn the core building blocks of {}", topic)]
+                }),
+                json!({
+                    "id": "m3",
+                    "title": format!("{} Core Concepts", topic),
+                    "description": format!("Master the essential concepts of {}", topic),
+                    "difficulty": 3,
+                    "estimated_minutes": 35,
+                    "objectives": [format!("Master the essential concepts of {}", topic)]
+                }),
+                json!({
+                    "id": "m4",
+                    "title": format!("Hands-on {} Practice", topic),
+                    "description": format!("Apply {} concepts through guided exercises", topic),
+                    "difficulty": 3,
+                    "estimated_minutes": 40,
+                    "objectives": [format!("Apply {} concepts through guided exercises", topic)]
+                }),
+                json!({
+                    "id": "m5",
+                    "title": format!("{} Building Blocks", topic),
+                    "description": format!("Combine concepts to build real solutions with {}", topic),
+                    "difficulty": 4,
+                    "estimated_minutes": 35,
+                    "objectives": [format!("Combine concepts to build real solutions with {}", topic)]
+                }),
+                json!({
+                    "id": "m6",
+                    "title": format!("First {} Project", topic),
+                    "description": format!("Build a complete project using {}", topic),
+                    "difficulty": 5,
+                    "estimated_minutes": 45,
+                    "objectives": [format!("Build a complete project using {}", topic)]
+                }),
+            ]
+        }
+    };
 
-    let response = ai_request(
-        auth.inner(),
-        AIServiceRequest {
-            system_prompt,
-            messages: vec![ServiceMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "Create my personalized learning path for {}. My goal: {}. Return ONLY JSON.",
-                    request.topic, request.goal
-                ),
-            }],
-            max_tokens: Some(4096),
-            temperature: Some(0.5),
-            response_format: Some("json".to_string()),
-        },
-    )
-    .await?;
+    // Build edges as a linear chain: m1 -> m2 -> m3 -> ...
+    let edges: Vec<serde_json::Value> = (0..modules.len().saturating_sub(1))
+        .map(|i| {
+            json!({
+                "from": format!("m{}", i + 1),
+                "to": format!("m{}", i + 2)
+            })
+        })
+        .collect();
 
-    // Extract JSON from response — AI may wrap it in markdown code fences
-    let path_data: serde_json::Value = extract_json(&response.content)
-        .map_err(|e| format!("Failed to parse AI response as JSON: {}", e))?;
-
-    // Validate DAG structure before persisting
-    if let (Some(modules), Some(edges)) = (
-        path_data["modules"].as_array(),
-        path_data["edges"].as_array(),
-    ) {
+    // Validate DAG structure using existing validator
+    {
         use crate::learning::path::{PathNode, PathEdge};
         let nodes: Vec<PathNode> = modules
             .iter()
@@ -197,64 +328,62 @@ pub async fn generate_learning_path(
             })
             .collect();
         crate::learning::path::validate_dag(&nodes, &path_edges)
-            .map_err(|e| format!("AI generated invalid learning path: {}", e))?;
+            .map_err(|e| format!("Template generated invalid learning path: {}", e))?;
     }
 
     // Persist to database
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let path_id = uuid::Uuid::new_v4().to_string();
 
-    let modules_json = serde_json::to_string(&path_data["modules"]).unwrap_or_else(|_| "[]".to_string());
-    let edges_json = serde_json::to_string(&path_data["edges"]).unwrap_or_else(|_| "[]".to_string());
+    let modules_json = serde_json::to_string(&modules).unwrap_or_else(|_| "[]".to_string());
+    let edges_json = serde_json::to_string(&edges).unwrap_or_else(|_| "[]".to_string());
 
     db.conn
         .execute(
             "INSERT INTO learning_paths (id, track_id, modules_json, edges_json, version, generated_by_model) VALUES (?1, ?2, ?3, ?4, 1, ?5)",
-            rusqlite::params![path_id, request.track_id, modules_json, edges_json, response.model],
+            rusqlite::params![path_id, request.track_id, modules_json, edges_json, "template"],
         )
         .map_err(|e| e.to_string())?;
 
     // Insert modules into the modules table
-    if let Some(modules) = path_data["modules"].as_array() {
-        for (i, module) in modules.iter().enumerate() {
-            let module_id = module["id"]
-                .as_str()
-                .map(String::from)
-                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    for (i, module) in modules.iter().enumerate() {
+        let module_id = module["id"]
+            .as_str()
+            .map(String::from)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-            db.conn
-                .execute(
-                    "INSERT INTO modules (id, path_id, title, description, difficulty, estimated_minutes, objectives_json, ordering) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    rusqlite::params![
-                        module_id,
-                        path_id,
-                        module["title"].as_str().unwrap_or("Untitled"),
-                        module["description"].as_str().unwrap_or(""),
-                        module["difficulty"].as_i64().unwrap_or(1),
-                        module["estimated_minutes"].as_i64().unwrap_or(30),
-                        serde_json::to_string(&module["objectives"]).unwrap_or_default(),
-                        i as i32,
-                    ],
-                )
-                .map_err(|e| e.to_string())?;
+        db.conn
+            .execute(
+                "INSERT INTO modules (id, path_id, title, description, difficulty, estimated_minutes, objectives_json, ordering) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    module_id,
+                    path_id,
+                    module["title"].as_str().unwrap_or("Untitled"),
+                    module["description"].as_str().unwrap_or(""),
+                    module["difficulty"].as_i64().unwrap_or(1),
+                    module["estimated_minutes"].as_i64().unwrap_or(30),
+                    serde_json::to_string(&module["objectives"]).unwrap_or_default(),
+                    i as i32,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
 
-            // First module is available, rest are locked
-            let status = if i == 0 { "available" } else { "locked" };
-            db.conn
-                .execute(
-                    "INSERT INTO module_progress (id, module_id, learner_id, status) \
-                     VALUES (?1, ?2, (SELECT id FROM learner_profiles LIMIT 1), ?3)",
-                    rusqlite::params![uuid::Uuid::new_v4().to_string(), module_id, status],
-                )
-                .map_err(|e| e.to_string())?;
-        }
+        // First module is available, rest are locked
+        let status = if i == 0 { "available" } else { "locked" };
+        db.conn
+            .execute(
+                "INSERT INTO module_progress (id, module_id, learner_id, status) \
+                 VALUES (?1, ?2, (SELECT id FROM learner_profiles LIMIT 1), ?3)",
+                rusqlite::params![uuid::Uuid::new_v4().to_string(), module_id, status],
+            )
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(serde_json::json!({
         "id": path_id,
         "trackId": request.track_id,
-        "modules": path_data["modules"],
-        "edges": path_data["edges"],
+        "modules": modules,
+        "edges": edges,
     }))
 }
 
