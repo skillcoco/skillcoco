@@ -120,183 +120,62 @@ pub struct GeneratePathRequest {
     pub assessment_strengths: Vec<String>,
 }
 
+/// Build a template module with a unique ID.
+fn tmod(id: &str, title: String, desc: String, diff: i32, mins: i32) -> serde_json::Value {
+    json!({
+        "id": id,
+        "title": title,
+        "description": desc,
+        "difficulty": diff,
+        "estimated_minutes": mins,
+        "objectives": [desc]
+    })
+}
+
 #[tauri::command]
 pub fn generate_learning_path(
     state: State<'_, AppState>,
     request: GeneratePathRequest,
 ) -> Result<serde_json::Value, String> {
-    // Build template modules based on assessment level (no AI call)
     let topic = &request.topic;
+
+    // Generate unique IDs for each module (avoids UNIQUE constraint on second track)
+    let ids: Vec<String> = (0..10).map(|_| uuid::Uuid::new_v4().to_string()).collect();
+
     let modules: Vec<serde_json::Value> = match request.assessment_level.as_str() {
         "intermediate" => vec![
-            json!({
-                "id": "m1",
-                "title": format!("{} Quick Review", topic),
-                "description": format!("Refresh core {} concepts and identify gaps", topic),
-                "difficulty": 3,
-                "estimated_minutes": 20,
-                "objectives": [format!("Refresh core {} concepts and identify gaps", topic)]
-            }),
-            json!({
-                "id": "m2",
-                "title": format!("{} Patterns", topic),
-                "description": format!("Learn common patterns and idioms in {}", topic),
-                "difficulty": 4,
-                "estimated_minutes": 30,
-                "objectives": [format!("Learn common patterns and idioms in {}", topic)]
-            }),
-            json!({
-                "id": "m3",
-                "title": format!("{} Best Practices", topic),
-                "description": format!("Adopt industry-standard {} practices", topic),
-                "difficulty": 5,
-                "estimated_minutes": 30,
-                "objectives": [format!("Adopt industry-standard {} practices", topic)]
-            }),
-            json!({
-                "id": "m4",
-                "title": format!("Advanced {} Concepts", topic),
-                "description": format!("Explore advanced features of {}", topic),
-                "difficulty": 6,
-                "estimated_minutes": 40,
-                "objectives": [format!("Explore advanced features of {}", topic)]
-            }),
-            json!({
-                "id": "m5",
-                "title": format!("Real-world {} Applications", topic),
-                "description": format!("Apply {} to real-world scenarios", topic),
-                "difficulty": 6,
-                "estimated_minutes": 35,
-                "objectives": [format!("Apply {} to real-world scenarios", topic)]
-            }),
-            json!({
-                "id": "m6",
-                "title": format!("{} Optimization", topic),
-                "description": format!("Optimize {} solutions for performance", topic),
-                "difficulty": 7,
-                "estimated_minutes": 35,
-                "objectives": [format!("Optimize {} solutions for performance", topic)]
-            }),
-            json!({
-                "id": "m7",
-                "title": format!("{} Capstone Project", topic),
-                "description": format!("Build a production-quality {} project", topic),
-                "difficulty": 7,
-                "estimated_minutes": 50,
-                "objectives": [format!("Build a production-quality {} project", topic)]
-            }),
+            tmod(&ids[0], format!("{} Quick Review", topic), format!("Refresh core {} concepts and identify gaps", topic), 3, 20),
+            tmod(&ids[1], format!("{} Patterns", topic), format!("Learn common patterns and idioms in {}", topic), 4, 30),
+            tmod(&ids[2], format!("{} Best Practices", topic), format!("Adopt industry-standard {} practices", topic), 5, 30),
+            tmod(&ids[3], format!("Advanced {} Concepts", topic), format!("Explore advanced features of {}", topic), 6, 40),
+            tmod(&ids[4], format!("Real-world {} Applications", topic), format!("Apply {} to real-world scenarios", topic), 6, 35),
+            tmod(&ids[5], format!("{} Optimization", topic), format!("Optimize {} solutions for performance", topic), 7, 35),
+            tmod(&ids[6], format!("{} Capstone Project", topic), format!("Build a production-quality {} project", topic), 7, 50),
         ],
         "advanced" => vec![
-            json!({
-                "id": "m1",
-                "title": format!("{} Deep Dive", topic),
-                "description": format!("Explore {} internals and advanced mechanics", topic),
-                "difficulty": 7,
-                "estimated_minutes": 30,
-                "objectives": [format!("Explore {} internals and advanced mechanics", topic)]
-            }),
-            json!({
-                "id": "m2",
-                "title": format!("{} Edge Cases", topic),
-                "description": format!("Handle edge cases and unusual scenarios in {}", topic),
-                "difficulty": 8,
-                "estimated_minutes": 35,
-                "objectives": [format!("Handle edge cases and unusual scenarios in {}", topic)]
-            }),
-            json!({
-                "id": "m3",
-                "title": format!("{} Performance", topic),
-                "description": format!("Master performance tuning for {}", topic),
-                "difficulty": 8,
-                "estimated_minutes": 40,
-                "objectives": [format!("Master performance tuning for {}", topic)]
-            }),
-            json!({
-                "id": "m4",
-                "title": format!("{} Architecture", topic),
-                "description": format!("Design scalable {} architectures", topic),
-                "difficulty": 9,
-                "estimated_minutes": 45,
-                "objectives": [format!("Design scalable {} architectures", topic)]
-            }),
-            json!({
-                "id": "m5",
-                "title": format!("{} System Design", topic),
-                "description": format!("Apply {} in large-scale system design", topic),
-                "difficulty": 9,
-                "estimated_minutes": 40,
-                "objectives": [format!("Apply {} in large-scale system design", topic)]
-            }),
-            json!({
-                "id": "m6",
-                "title": format!("{} Mastery Project", topic),
-                "description": format!("Demonstrate mastery through a complex {} project", topic),
-                "difficulty": 10,
-                "estimated_minutes": 60,
-                "objectives": [format!("Demonstrate mastery through a complex {} project", topic)]
-            }),
+            tmod(&ids[0], format!("{} Deep Dive", topic), format!("Explore {} internals and advanced mechanics", topic), 7, 30),
+            tmod(&ids[1], format!("{} Edge Cases", topic), format!("Handle edge cases and unusual scenarios in {}", topic), 8, 35),
+            tmod(&ids[2], format!("{} Performance", topic), format!("Master performance tuning for {}", topic), 8, 40),
+            tmod(&ids[3], format!("{} Architecture", topic), format!("Design scalable {} architectures", topic), 9, 45),
+            tmod(&ids[4], format!("{} System Design", topic), format!("Apply {} in large-scale system design", topic), 9, 40),
+            tmod(&ids[5], format!("{} Mastery Project", topic), format!("Demonstrate mastery through a complex {} project", topic), 10, 60),
         ],
-        _ => {
-            // beginner (default)
-            vec![
-                json!({
-                    "id": "m1",
-                    "title": format!("Introduction to {}", topic),
-                    "description": format!("Understand what {} is and why it matters", topic),
-                    "difficulty": 1,
-                    "estimated_minutes": 20,
-                    "objectives": [format!("Understand what {} is and why it matters", topic)]
-                }),
-                json!({
-                    "id": "m2",
-                    "title": format!("{} Fundamentals", topic),
-                    "description": format!("Learn the core building blocks of {}", topic),
-                    "difficulty": 2,
-                    "estimated_minutes": 30,
-                    "objectives": [format!("Learn the core building blocks of {}", topic)]
-                }),
-                json!({
-                    "id": "m3",
-                    "title": format!("{} Core Concepts", topic),
-                    "description": format!("Master the essential concepts of {}", topic),
-                    "difficulty": 3,
-                    "estimated_minutes": 35,
-                    "objectives": [format!("Master the essential concepts of {}", topic)]
-                }),
-                json!({
-                    "id": "m4",
-                    "title": format!("Hands-on {} Practice", topic),
-                    "description": format!("Apply {} concepts through guided exercises", topic),
-                    "difficulty": 3,
-                    "estimated_minutes": 40,
-                    "objectives": [format!("Apply {} concepts through guided exercises", topic)]
-                }),
-                json!({
-                    "id": "m5",
-                    "title": format!("{} Building Blocks", topic),
-                    "description": format!("Combine concepts to build real solutions with {}", topic),
-                    "difficulty": 4,
-                    "estimated_minutes": 35,
-                    "objectives": [format!("Combine concepts to build real solutions with {}", topic)]
-                }),
-                json!({
-                    "id": "m6",
-                    "title": format!("First {} Project", topic),
-                    "description": format!("Build a complete project using {}", topic),
-                    "difficulty": 5,
-                    "estimated_minutes": 45,
-                    "objectives": [format!("Build a complete project using {}", topic)]
-                }),
-            ]
-        }
+        _ => vec![
+            tmod(&ids[0], format!("Introduction to {}", topic), format!("Understand what {} is and why it matters", topic), 1, 20),
+            tmod(&ids[1], format!("{} Fundamentals", topic), format!("Learn the core building blocks of {}", topic), 2, 30),
+            tmod(&ids[2], format!("{} Core Concepts", topic), format!("Master the essential concepts of {}", topic), 3, 35),
+            tmod(&ids[3], format!("Hands-on {} Practice", topic), format!("Apply {} concepts through guided exercises", topic), 3, 40),
+            tmod(&ids[4], format!("{} Building Blocks", topic), format!("Combine concepts to build real solutions with {}", topic), 4, 35),
+            tmod(&ids[5], format!("First {} Project", topic), format!("Build a complete project using {}", topic), 5, 45),
+        ],
     };
 
-    // Build edges as a linear chain: m1 -> m2 -> m3 -> ...
-    let edges: Vec<serde_json::Value> = (0..modules.len().saturating_sub(1))
-        .map(|i| {
+    // Build edges as a linear chain using the actual UUIDs
+    let edges: Vec<serde_json::Value> = modules.windows(2)
+        .map(|pair| {
             json!({
-                "from": format!("m{}", i + 1),
-                "to": format!("m{}", i + 2)
+                "from": pair[0]["id"].as_str().unwrap(),
+                "to": pair[1]["id"].as_str().unwrap()
             })
         })
         .collect();
