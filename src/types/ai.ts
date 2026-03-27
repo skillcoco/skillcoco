@@ -50,22 +50,17 @@ export interface LoginRequest {
 
 // ── Assessment Types ──
 
-export interface AssessmentTurn {
-  role: string;
-  content: string;
-}
-
 export interface AssessmentRequest {
   topic: string;
   domain: string;
-  messages: AssessmentTurn[];
+  level: "beginner" | "intermediate" | "advanced";
 }
 
-export interface AssessKnowledgeResponse {
-  skillLevel: Record<string, number>;
-  knowledgeGaps: string[];
-  recommendedStartingPoint: string;
-  overallLevel: string;
+export interface AssessmentResult {
+  assessment_complete: boolean;
+  level: string;
+  gaps: string[];
+  strengths: string[];
 }
 
 // ── Path Generation ──

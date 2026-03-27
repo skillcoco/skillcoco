@@ -53,67 +53,33 @@ pub fn update_ai_config(state: State<AppState>, config: crate::db::models::AICon
 pub struct AssessmentRequest {
     pub topic: String,
     pub domain: String,
-    pub messages: Vec<AssessmentTurn>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AssessmentTurn {
-    pub role: String,
-    pub content: String,
+    pub level: String, // "beginner" | "intermediate" | "advanced"
 }
 
 #[tauri::command]
-pub async fn assess_knowledge(
-    auth: State<'_, AuthState>,
-    request: AssessmentRequest,
-) -> Result<String, String> {
-    let system_prompt = format!(
-        "You are an expert tutor assessing a learner's knowledge of {}. \
-         Conduct a conversational assessment through 3-5 questions. \
-         Use the Socratic method: ask probing questions based on their responses. \
-         Gauge depth of understanding, not just surface knowledge. \
-         After sufficient assessment, end your response with a JSON block:\n\
-         ```json\n\
-         {{\"assessment_complete\": true, \"level\": \"beginner|intermediate|advanced\", \
-         \"gaps\": [...], \"strengths\": [...], \"recommended_start\": \"...\"}}\n\
-         ```\n\
-         Until assessment is complete, just ask your next question naturally.",
-        request.topic
-    );
-
-    let mut messages: Vec<ServiceMessage> = request
-        .messages
-        .iter()
-        .map(|m| ServiceMessage {
-            role: m.role.clone(),
-            content: m.content.clone(),
-        })
-        .collect();
-
-    // First assessment turn: no user messages yet, seed with topic intro
-    if messages.is_empty() {
-        messages.push(ServiceMessage {
-            role: "user".to_string(),
-            content: format!(
-                "I'd like to be assessed on my knowledge of {} in the {} domain. Please begin the assessment.",
-                request.topic, request.domain
-            ),
-        });
-    }
-
-    let response = ai_request(
-        auth.inner(),
-        AIServiceRequest {
-            system_prompt,
-            messages,
-            max_tokens: Some(1024),
-            temperature: Some(0.7),
-            response_format: None,
-        },
-    )
-    .await?;
-
-    Ok(response.content)
+pub fn assess_knowledge(request: AssessmentRequest) -> Result<String, String> {
+    let (gaps, strengths) = match request.level.as_str() {
+        "intermediate" => (
+            vec!["advanced patterns", "performance optimization"],
+            vec!["core concepts", "basic usage"],
+        ),
+        "advanced" => (
+            vec!["niche edge cases"],
+            vec!["core concepts", "patterns", "best practices", "performance"],
+        ),
+        _ => (
+            // beginner
+            vec!["core concepts", "basic syntax", "fundamental patterns"],
+            vec![],
+        ),
+    };
+    let result = serde_json::json!({
+        "assessment_complete": true,
+        "level": request.level,
+        "gaps": gaps,
+        "strengths": strengths,
+    });
+    Ok(result.to_string())
 }
 
 // ── Learning Path Generation ──
