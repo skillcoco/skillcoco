@@ -206,6 +206,103 @@ fn get_track_inner(db: &crate::db::Database, track_id: &str) -> Result<LearningT
         .map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::db::schema::CREATE_TABLES;
+    use crate::db::migrations::apply_migrations;
+    use rusqlite::Connection;
+
+    fn setup_test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(CREATE_TABLES).unwrap();
+        apply_migrations(&conn).expect("migrations must succeed");
+        conn
+    }
+
+    /// TEST-01: round-trip test — create a profile, create a track, list tracks.
+    /// Verifies: DB persistence, camelCase serde, streak column defaults.
+    #[test]
+    fn round_trip() {
+        let conn = setup_test_db();
+
+        // Seed a learner profile
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Alice')",
+            [],
+        ).unwrap();
+
+        // Create a track directly (bypassing Tauri State for unit testing)
+        let track_id = "track-round-trip".to_string();
+        conn.execute(
+            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES (?1, 'lp1', 'Kubernetes', 'devops', 'Pass CKA')",
+            [&track_id],
+        ).unwrap();
+
+        // List tracks using the raw query logic (mirrors list_tracks command)
+        let mut stmt = conn.prepare(
+            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at, COALESCE(streak_days, 0), last_activity_date FROM learning_tracks ORDER BY updated_at DESC",
+        ).unwrap();
+
+        let tracks = stmt.query_map([], |row| {
+            Ok(crate::db::models::LearningTrack {
+                id: row.get(0)?,
+                learner_id: row.get(1)?,
+                topic: row.get(2)?,
+                domain_module: row.get(3)?,
+                status: row.get(4)?,
+                goal: row.get(5)?,
+                current_module_id: row.get(6)?,
+                progress_percent: row.get(7)?,
+                total_time_spent: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                streak_days: row.get(11)?,
+                last_activity_date: row.get(12)?,
+            })
+        }).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+
+        assert_eq!(tracks.len(), 1, "one track should be returned");
+        assert_eq!(tracks[0].id, track_id);
+        assert_eq!(tracks[0].topic, "Kubernetes");
+        assert_eq!(tracks[0].learner_id, "lp1");
+        assert_eq!(tracks[0].streak_days, 0, "new track starts with streak_days=0");
+        assert!(tracks[0].last_activity_date.is_none(), "new track has no last_activity_date");
+
+        // Verify camelCase serde — TypeScript receives camelCase field names
+        let json = serde_json::to_string(&tracks[0]).unwrap();
+        assert!(json.contains("\"learnerId\""), "learnerId must be camelCase in JSON");
+        assert!(json.contains("\"domainModule\""), "domainModule must be camelCase in JSON");
+        assert!(json.contains("\"progressPercent\""), "progressPercent must be camelCase in JSON");
+        assert!(json.contains("\"streakDays\""), "streakDays must be camelCase in JSON");
+    }
+
+    /// TEST-01: active_credential_round_trip — store API key, retrieve via get_active_credential.
+    /// Note: full auth coverage already exists in auth::mod::tests (12 tests).
+    /// This test explicitly covers the active_credential flow per TEST-01 requirements.
+    #[test]
+    fn active_credential_round_trip() {
+        // Uses temp file to avoid touching the real credentials store
+        let dir = tempfile::tempdir().unwrap();
+        let auth = crate::auth::AuthState::new(&dir.path().to_path_buf());
+
+        // Empty state: no active credential
+        assert!(auth.get_active_credential().unwrap().is_none(),
+            "fresh store has no active credential");
+
+        // Store an API key
+        auth.store_api_key("anthropic", "sk-test-key", Some("claude-haiku")).unwrap();
+
+        // Retrieve via get_active_credential
+        let cred = auth.get_active_credential().unwrap().unwrap();
+        assert_eq!(cred.provider, "anthropic");
+        assert_eq!(cred.api_key.as_deref(), Some("sk-test-key"));
+        assert_eq!(cred.model.as_deref(), Some("claude-haiku"));
+
+        // Active provider is set
+        assert_eq!(auth.get_active_provider().unwrap().as_deref(), Some("anthropic"));
+    }
+}
+
 #[tauri::command]
 pub fn update_track_status(
     state: State<AppState>,
