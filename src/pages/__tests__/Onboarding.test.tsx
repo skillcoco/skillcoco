@@ -95,9 +95,10 @@ describe("Onboarding", () => {
     expect(screen.getByText("Tell us what you want to learn")).toBeInTheDocument();
   });
 
-  it("navigates to assessment step after setting a goal", async () => {
+  it("navigates to level-selection step after setting a goal", async () => {
+    // Quick task 1 replaced Socratic assessment with self-rating level picker.
+    // The goals step button now says "Continue" (not "Start Assessment").
     const user = userEvent.setup();
-    vi.mocked(assessKnowledge).mockResolvedValue("What do you already know about Kubernetes?");
 
     renderOnboarding();
 
@@ -106,56 +107,58 @@ describe("Onboarding", () => {
     await user.click(screen.getByText("DevOps & Infrastructure"));
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Goals step
+    // Goals step — button now says "Continue", leads to level-selection ("assessment")
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn fundamentals");
-    await user.click(screen.getByRole("button", { name: /start assessment/i }));
+    await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Assessment step
+    // Level selection step
     await waitFor(() => {
-      expect(screen.getByText(/assess your current knowledge/i)).toBeInTheDocument();
+      expect(screen.getByText(/rate your experience level/i)).toBeInTheDocument();
     });
   });
 
-  it("shows skip assessment button on the assessment step", async () => {
+  it("shows level selection options on the assessment step", async () => {
+    // Quick task 1: level picker shows Beginner / Intermediate / Advanced cards
     const user = userEvent.setup();
-    vi.mocked(assessKnowledge).mockResolvedValue("Tell me what you know.");
 
     renderOnboarding();
 
-    // Navigate to assessment
+    // Navigate to level selection
     await user.type(screen.getByPlaceholderText(/kubernetes/i), "Kubernetes");
     await user.click(screen.getByText("DevOps & Infrastructure"));
     await user.click(screen.getByRole("button", { name: /continue/i }));
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn fundamentals");
-    await user.click(screen.getByRole("button", { name: /start assessment/i }));
+    await user.click(screen.getByRole("button", { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/skip assessment/i)).toBeInTheDocument();
+      expect(screen.getByText("Beginner")).toBeInTheDocument();
+      expect(screen.getByText("Intermediate")).toBeInTheDocument();
+      expect(screen.getByText("Advanced")).toBeInTheDocument();
     });
   });
 
-  it("marks assessment complete after clicking skip", async () => {
+  it("enables Generate Path button after selecting a level", async () => {
+    // Quick task 1: selecting a level card enables the Generate Path button
     const user = userEvent.setup();
-    vi.mocked(assessKnowledge).mockResolvedValue("Tell me what you know.");
 
     renderOnboarding();
 
-    // Navigate to assessment
+    // Navigate to level selection
     await user.type(screen.getByPlaceholderText(/kubernetes/i), "Kubernetes");
     await user.click(screen.getByText("DevOps & Infrastructure"));
     await user.click(screen.getByRole("button", { name: /continue/i }));
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn fundamentals");
-    await user.click(screen.getByRole("button", { name: /start assessment/i }));
+    await user.click(screen.getByRole("button", { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/skip assessment/i)).toBeInTheDocument();
+      expect(screen.getByText("Beginner")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByText(/skip assessment/i));
+    // Select Beginner level
+    await user.click(screen.getByText("Beginner"));
 
-    await waitFor(() => {
-      expect(screen.getByText(/assessment complete/i)).toBeInTheDocument();
-      expect(screen.getByText(/generate my learning path/i)).toBeInTheDocument();
-    });
+    // "Create Learning Path" button should now be enabled
+    const generateBtn = screen.getByRole("button", { name: /create learning path/i });
+    expect(generateBtn).not.toBeDisabled();
   });
 });
