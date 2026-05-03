@@ -1,3 +1,4 @@
+pub mod migrations;
 pub mod models;
 pub mod schema;
 
@@ -23,7 +24,10 @@ impl Database {
     }
 
     fn run_migrations(&self) -> Result<(), rusqlite::Error> {
+        // Step 1: Apply base schema idempotently (CREATE TABLE IF NOT EXISTS)
         self.conn.execute_batch(schema::CREATE_TABLES)?;
+        // Step 2: Apply version-gated migrations (ALTER TABLE, new columns, etc.)
+        migrations::apply_migrations(&self.conn)?;
         log::info!("Database migrations completed");
         Ok(())
     }
