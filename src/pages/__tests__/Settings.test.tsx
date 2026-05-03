@@ -79,9 +79,9 @@ describe("Settings", () => {
 
     renderSettings();
 
-    // Wait for page to load
+    // Wait for page to load — use getAllByText since "Claude" appears in header and select
     await waitFor(() => {
-      expect(screen.getByText(/claude/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/claude/i).length).toBeGreaterThan(0);
     });
 
     // Find and click login button
@@ -91,7 +91,7 @@ describe("Settings", () => {
     }
 
     // After polling, the error should surface as an alert/banner
-    // This assertion FAILS today — Settings.tsx ignores the error field
+    // checkOAuthStatus is pre-mocked to return error: "Invalid bearer token"
     await waitFor(
       () => {
         expect(screen.getByText(/invalid bearer token/i)).toBeInTheDocument();
@@ -106,7 +106,7 @@ describe("Settings", () => {
     renderSettings();
 
     await waitFor(() => {
-      expect(screen.getByText(/claude/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/claude/i).length).toBeGreaterThan(0);
     });
 
     const loginButtons = screen.queryAllByRole("button", { name: /login|connect|setup/i });

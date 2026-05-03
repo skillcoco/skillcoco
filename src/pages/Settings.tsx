@@ -78,6 +78,21 @@ export function Settings() {
   const [oauthPending, setOauthPending] = useState<string | null>(null);
   const [setupTokenExpanded, setSetupTokenExpanded] = useState(false);
   const [setupTokenInput, setSetupTokenInput] = useState("");
+  // FIX-01: OAuth error state — populated from OAuthStatusResult.error
+  const [oauthErrors, setOauthErrors] = useState<Record<string, string>>({});
+
+  function setProviderOAuthError(providerId: string, message: string) {
+    setOauthErrors((prev) => ({ ...prev, [providerId]: message }));
+    setOauthPending(null);
+  }
+
+  function clearProviderOAuthError(providerId: string) {
+    setOauthErrors((prev) => {
+      const next = { ...prev };
+      delete next[providerId];
+      return next;
+    });
+  }
 
   async function loadAuthStatus() {
     try {
@@ -88,8 +103,26 @@ export function Settings() {
     }
   }
 
+  // Check for pending OAuth errors on mount (picks up errors from any in-progress flow).
+  // Only surfaces the error for the matching provider (status.provider == provider.id).
+  async function checkPendingOAuthErrors() {
+    for (const provider of PROVIDERS) {
+      try {
+        const status = await commands.checkOAuthStatus(provider.id);
+        // Only store the error if the status is actually for THIS provider
+        if (status.error && status.provider === provider.id) {
+          setOauthErrors((prev) => ({ ...prev, [provider.id]: status.error! }));
+        }
+      } catch {
+        // Ignore check errors — no in-flight flow for this provider
+      }
+    }
+  }
+
   useEffect(() => {
     loadAuthStatus();
+    checkPendingOAuthErrors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Derived State ──
@@ -201,15 +234,22 @@ export function Settings() {
   }
 
   async function handleOAuthLogin(providerId: string) {
+    // Clear any prior error for this provider before starting fresh
+    clearProviderOAuthError(providerId);
     setOauthPending(providerId);
     try {
       await commands.startOAuthLogin(providerId);
 
-      // Poll for completion
+      // Poll for completion (FIX-01: stop polling on error)
       const maxAttempts = 30; // 60 seconds at 2s intervals
       for (let i = 0; i < maxAttempts; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const status = await commands.checkOAuthStatus(providerId);
+        if (status.error) {
+          // Error received — surface it and stop polling
+          setProviderOAuthError(providerId, status.error);
+          return;
+        }
         if (status.completed) {
           await loadAuthStatus();
           setOauthPending(null);
@@ -414,7 +454,7 @@ export function Settings() {
                           ) : (
                             <>
                               <ExternalLink size={12} />
-                              Sign in with {provider.name}
+                              Connect with {provider.name}
                             </>
                           )}
                         </button>
@@ -424,6 +464,7 @@ export function Settings() {
                       {provider.id === "claude" && (
                         <button
                           onClick={() => setSetupTokenExpanded(!setupTokenExpanded)}
+                          aria-label={setupTokenExpanded ? "Hide token input" : "Show token input"}
                           className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                         >
                           <Shield size={12} />
@@ -528,6 +569,33 @@ export function Settings() {
                       className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       Save and Connect
+                    </button>
+                  </div>
+                )}
+
+                {/* FIX-01: OAuth error banner — shown when OAuthStatusResult.error is set */}
+                {oauthErrors[provider.id] && (
+                  <div
+                    role="alert"
+                    className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5"
+                  >
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle
+                        size={14}
+                        className="mt-0.5 shrink-0 text-destructive"
+                      />
+                      <p className="text-xs leading-relaxed text-destructive">
+                        {oauthErrors[provider.id]}
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        clearProviderOAuthError(provider.id);
+                        await handleOAuthLogin(provider.id);
+                      }}
+                      className="shrink-0 rounded px-2 py-1 text-[11px] font-medium text-destructive underline underline-offset-2 hover:no-underline"
+                    >
+                      Try again
                     </button>
                   </div>
                 )}
