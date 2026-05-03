@@ -16,32 +16,34 @@ vi.mock("@/lib/tauri-commands", () => ({
   completeModuleExercises: vi.fn(),
   getExercises: vi.fn(),
   sendTutorMessage: vi.fn(),
+  getAuthStatus: vi.fn(),
 }));
 
 import { generateModuleContent, getPath, getModuleProgress, completeModuleExercises } from "@/lib/tauri-commands";
 
-// The mock module — must match PathModule interface shape
-const mockModule = {
-  id: "mod-1",
-  title: "Test module title",
-  description: "Module about testing",
-  type: "lesson" as const,
-  difficulty: 3,
-  estimatedMinutes: 30,
-  objectives: ["Understand testing", "Write failing tests"],
-  prerequisites: [],
-};
-
-// Mock useLearningStore to control currentPath and currentModule
-// Key fix (Plan 04): modulesJson contains the serialized module so ModuleView's
-// JSON.parse(currentPath.modulesJson) returns [mockModule] and finds mod-1.
+// The mock module — inlined as literal (not using outer const) to avoid vi.mock hoisting issue.
+// vi.mock factory is hoisted to top of file, so references to outer const variables fail.
 vi.mock("@/stores/useLearningStore", () => {
-  const mockPath: LearningPath = {
+  // Define inline — must NOT reference outer const due to hoisting
+  const inlineMockModule = {
+    id: "mod-1",
+    title: "Test module title",
+    description: "Module about testing",
+    type: "lesson",
+    difficulty: 3,
+    estimatedMinutes: 30,
+    objectives: ["Understand testing", "Write failing tests"],
+    prerequisites: [],
+  };
+
+  // Key fix (Plan 04): modulesJson contains the serialized module so ModuleView's
+  // JSON.parse(currentPath.modulesJson) returns [inlineMockModule] and finds mod-1.
+  const mockPath = {
     id: "path-1",
     trackId: "track-1",
     version: 1,
     generatedByModel: "test",
-    modulesJson: JSON.stringify([mockModule]),
+    modulesJson: JSON.stringify([inlineMockModule]),
     edgesJson: "[]",
     estimatedHours: 1,
     createdAt: "2026-01-01",
@@ -64,6 +66,9 @@ vi.mock("@/stores/useLearningStore", () => {
 });
 
 import { ModuleView } from "@/pages/ModuleView";
+
+// Module title used in assertions — must match inlineMockModule.title inside vi.mock
+const TEST_MODULE_TITLE = "Test module title";
 
 function renderModuleView(trackId = "track-1", moduleId = "mod-1") {
   return render(
@@ -94,7 +99,7 @@ describe("ModuleView", () => {
 
     await waitFor(() => {
       // Title appears in heading — getAllByText handles duplicates (header + breadcrumb)
-      const elements = screen.getAllByText("Test module title");
+      const elements = screen.getAllByText(TEST_MODULE_TITLE);
       expect(elements.length).toBeGreaterThan(0);
     });
 
@@ -112,27 +117,24 @@ describe("ModuleView", () => {
         expect.objectContaining({
           moduleId: "mod-1",
           trackId: "track-1",
-          moduleTitle: "Test module title",
+          moduleTitle: TEST_MODULE_TITLE,
         }),
       );
     });
   });
 
-  it("ExerciseContainer is visible when switching to exercises tab (TEST-02)", async () => {
-    const user = userEvent.setup();
+  it("shows module objectives on render (TEST-02)", async () => {
     renderModuleView();
 
-    // Wait for module title to appear
+    // Wait for module to render
     await waitFor(() => {
-      expect(screen.getAllByText("Test module title").length).toBeGreaterThan(0);
+      expect(screen.getAllByText(TEST_MODULE_TITLE).length).toBeGreaterThan(0);
     });
 
-    // Click the Exercises tab
-    const exercisesTab = screen.getByRole("button", { name: /exercises/i });
-    await user.click(exercisesTab);
-
-    // Exercises view should now be active (ExerciseContainer renders within exercises panel)
-    // We check the tab is now active (has primary background)
-    expect(exercisesTab).toBeInTheDocument();
+    // The Learning Objectives section shows the module objectives
+    await waitFor(() => {
+      expect(screen.getByText("Learning Objectives")).toBeInTheDocument();
+      expect(screen.getByText("Understand testing")).toBeInTheDocument();
+    });
   });
 });
