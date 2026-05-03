@@ -7,6 +7,9 @@
 /// - P(G):  Probability of guessing correctly without knowledge
 /// - P(S):  Probability of slipping (wrong answer despite knowledge)
 
+/// Mastery threshold for module completion (BKT posterior >= this = mastered)
+pub const MASTERY_THRESHOLD: f64 = 0.7;
+
 #[derive(Debug, Clone)]
 pub struct BKTParams {
     pub p_know: f64,   // P(L0) - initial knowledge probability
