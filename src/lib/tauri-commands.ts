@@ -9,7 +9,6 @@ import type {
   LearningPath,
   ModuleProgress,
   SRCard,
-  ReviewResult,
 } from "@/types";
 import type {
   AssessmentRequest,

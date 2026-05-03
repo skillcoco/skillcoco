@@ -1,6 +1,5 @@
-// Wave 0 scaffold — Plan 03 (LOOP-04) makes the queue and interval-delta assertions green.
-// Existing tests (loading, empty state, reveal, rating) pass today.
-// Wave 0 additions (re-fetch after rating, interval delta display) FAIL today.
+// Plan 03 (LOOP-04) — queue-based ReviewSession with re-fetch and interval delta.
+// All tests in this file should be GREEN after Plan 03.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
@@ -30,6 +29,13 @@ const MOCK_CARD = {
   lastReview: null,
 };
 
+// SubmitReviewResult shape from Plan 01-03 Rust changes
+const MOCK_REVIEW_RESULT = {
+  newIntervalDays: 3,
+  nextReview: new Date(Date.now() + 3 * 86400 * 1000).toISOString(),
+  easeFactor: 2.5,
+};
+
 function renderReviewSession() {
   return render(
     <MemoryRouter>
@@ -52,7 +58,8 @@ describe("ReviewSession", () => {
   it("shows empty state when no cards due", async () => {
     mockGetDueCards.mockResolvedValue([]);
     renderReviewSession();
-    expect(await screen.findByText(/no cards due/i)).toBeInTheDocument();
+    // "All caught up" heading shown when no cards are due
+    expect(await screen.findByRole("heading", { name: /all caught up/i })).toBeInTheDocument();
   });
 
   it("shows card front initially", async () => {
@@ -81,8 +88,11 @@ describe("ReviewSession", () => {
   });
 
   it("shows completion when all cards reviewed", async () => {
-    mockGetDueCards.mockResolvedValue([MOCK_CARD]);
-    mockSubmitReview.mockResolvedValue({ ...MOCK_CARD, intervalDays: 6 });
+    // First getDueCards returns [card], after submit returns []
+    mockGetDueCards
+      .mockResolvedValueOnce([MOCK_CARD])
+      .mockResolvedValueOnce([]);
+    mockSubmitReview.mockResolvedValue(MOCK_REVIEW_RESULT);
     renderReviewSession();
 
     // Reveal
@@ -93,22 +103,20 @@ describe("ReviewSession", () => {
     const goodBtn = await screen.findByText("Good");
     fireEvent.click(goodBtn);
 
-    // Should show completion
+    // Should show completion after re-fetch returns empty
     expect(await screen.findByText(/session complete/i)).toBeInTheDocument();
   });
 
-  // ── Wave 0 scaffolds — Plan 03 (LOOP-04) makes these green ──
+  // ── LOOP-04: queue re-fetch + interval delta ──
 
   it("re-fetches due cards after each rating submission", async () => {
-    // FAILING TODAY — Plan 03 (LOOP-04) will implement queue re-fetch after submit.
-    // Today ReviewSession uses index-based nav and does not re-fetch after rating.
     const card2 = { ...MOCK_CARD, id: "card-2", front: "What is a Deployment?" };
 
     // First call returns [card1, card2], second call (after rating) returns [card2]
     mockGetDueCards
       .mockResolvedValueOnce([MOCK_CARD, card2])
       .mockResolvedValueOnce([card2]);
-    mockSubmitReview.mockResolvedValue({ ...MOCK_CARD, intervalDays: 3 });
+    mockSubmitReview.mockResolvedValue(MOCK_REVIEW_RESULT);
 
     renderReviewSession();
 
@@ -119,17 +127,14 @@ describe("ReviewSession", () => {
     fireEvent.click(goodBtn);
 
     // After rating, getDueCards must be called again (2 total: mount + after submit)
-    // This assertion FAILS today — Plan 03 LOOP-04 must wire re-fetch in submit handler
     await waitFor(() => {
       expect(mockGetDueCards).toHaveBeenCalledTimes(2);
     }, { timeout: 2000 });
   });
 
   it("displays interval delta after rating (e.g., 'Next review in N days')", async () => {
-    // FAILING TODAY — Plan 03 (LOOP-04) will implement interval delta display.
-    // After rating, the review session should show "Next review in 3 days" or similar.
     mockGetDueCards.mockResolvedValue([MOCK_CARD]);
-    mockSubmitReview.mockResolvedValue({ ...MOCK_CARD, intervalDays: 3 });
+    mockSubmitReview.mockResolvedValue(MOCK_REVIEW_RESULT); // newIntervalDays: 3
 
     renderReviewSession();
 
@@ -139,7 +144,6 @@ describe("ReviewSession", () => {
     fireEvent.click(goodBtn);
 
     // Expect interval delta text after rating
-    // This assertion FAILS today — Plan 03 LOOP-04 must add "Next review in N days" UI
     await waitFor(() => {
       expect(screen.getByText(/next review in \d+ days?/i)).toBeInTheDocument();
     }, { timeout: 2000 });

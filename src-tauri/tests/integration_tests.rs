@@ -1,11 +1,14 @@
-// Wave 0 scaffold — Plan 03 (LOOP-01..04) makes this green.
-// Today: The assertions for mastery_level > 0.0, module unlock, and SR card generation
-// all FAIL because LOOP-01 (BKT wiring), LOOP-02 (unlock), and LOOP-03 (SR gen) are
-// not yet wired into the data pipeline.
+// Full pipeline integration test — Plan 01-03 (LOOP-01..04) makes this fully green.
 //
-// This test exercises the full data pipeline against an in-memory SQLite DB:
+// This test exercises the full data pipeline against a temp-file SQLite DB:
 //   profile -> track -> path (template) -> exercise -> mastery -> unlock -> SR -> review
+//
+// Uses the new helpers from Plan 01-03:
+//   apply_mastery_update() — LOOP-01
+//   check_unlock_modules() — LOOP-02
+//   generate_sr_cards_for_module() — LOOP-03
 
+use learnforge_lib::commands::learning::{apply_mastery_update, check_unlock_modules, generate_sr_cards_for_module};
 use learnforge_lib::db::Database;
 use rusqlite::params;
 use tempfile::TempDir;
@@ -114,18 +117,21 @@ fn test_full_pipeline_profile_to_review() {
         .expect("Module progress must exist");
     assert_eq!(initial_mastery, 0.0, "Initial mastery must be 0.0");
 
-    // ── 6. ASSERT mastery_level > 0.0 after exercise attempt ──
-    // Simulate what LOOP-01 will wire: update mastery after exercise completion
-    // For now, manually update mastery (as LOOP-01 will do from complete_module_exercises)
-    let bkt_params = learnforge_lib::learning::adaptive::BKTParams::default();
-    let new_mastery = learnforge_lib::learning::adaptive::update_mastery(&bkt_params, 0.0, true); // score 90% -> correct
-
-    db.conn
-        .execute(
-            "UPDATE module_progress SET mastery_level = ?1, status = 'completed' WHERE module_id = ?2 AND learner_id = ?3",
-            params![new_mastery, mod_a, profile_id],
-        )
-        .expect("Failed to update mastery");
+    // ── 6. LOOP-01: apply_mastery_update — ASSERT mastery_level > 0.0 ──
+    // Simulate exercise completion: 10 correct answers to push mastery above 0.7 threshold
+    let mut prior = 0.0;
+    let mut became_completed = false;
+    for _ in 0..20 {
+        let transition = apply_mastery_update(&db.conn, &profile_id, &mod_a, prior, true)
+            .expect("apply_mastery_update must succeed");
+        if transition.became_completed {
+            became_completed = true;
+        }
+        prior = transition.new_mastery;
+        if prior >= 0.7 {
+            break;
+        }
+    }
 
     let stored_mastery: f64 = db.conn
         .query_row(
@@ -135,16 +141,24 @@ fn test_full_pipeline_profile_to_review() {
         )
         .expect("Module progress must exist");
 
-    // ASSERTS PASS once LOOP-01 wires update_mastery() into complete_module_exercises()
-    // For this scaffold: mastery update is done manually above, so this PASSES as a baseline
     assert!(
         stored_mastery > 0.0,
-        "mastery_level must be > 0.0 after exercise — Plan 03 LOOP-01 must wire update_mastery in complete_module_exercises"
+        "mastery_level must be > 0.0 after correct exercise attempts (LOOP-01)"
+    );
+    assert!(
+        became_completed,
+        "became_completed must flip true when mastery crosses 0.7 threshold"
     );
 
-    // ── 7. ASSERT mod_b status = 'available' after mod_a completed ──
-    // Today this FAILS — LOOP-02 (unlock logic) is not yet invoked after exercise completion.
-    // The code currently requires manual unlock. Plan 03 LOOP-02 will wire the DAG unlock.
+    // ── 7. LOOP-02: check_unlock_modules — ASSERT mod_b status = 'available' ──
+    let unlocked = check_unlock_modules(&db.conn, &profile_id, &path_id, &mod_a)
+        .expect("check_unlock_modules must succeed");
+
+    assert!(
+        unlocked.contains(&mod_b),
+        "mod_b must be in the unlocked list after mod_a crosses mastery threshold (LOOP-02)"
+    );
+
     let mod_b_status: String = db.conn
         .query_row(
             "SELECT status FROM module_progress WHERE module_id = ?1 AND learner_id = ?2",
@@ -153,15 +167,19 @@ fn test_full_pipeline_profile_to_review() {
         )
         .expect("mod_b progress must exist");
 
-    // After plan 03 LOOP-02, this will be "available". Currently "locked".
-    // Scaffold assertion: plan 03 must change this to pass.
     assert_eq!(
         mod_b_status, "available",
-        "mod_b must unlock when mod_a is completed — Plan 03 LOOP-02 must wire unlock logic"
+        "mod_b must be 'available' after unlock (LOOP-02)"
     );
 
-    // ── 8. ASSERT sr_cards COUNT >= 1 for mod_a ──
-    // Today this FAILS — LOOP-03 (SR card generation) is not yet wired.
+    // ── 8. LOOP-03: generate_sr_cards_for_module — ASSERT sr_cards COUNT >= 1 ──
+    // Module A has objectives: ["Understand ownership"]
+    let objectives = vec!["Understand ownership".to_string()];
+    let cards_created = generate_sr_cards_for_module(&db.conn, &mod_a, &objectives)
+        .expect("generate_sr_cards_for_module must succeed");
+
+    assert!(cards_created >= 1, "At least 1 SR card must be created for mod_a (LOOP-03)");
+
     let card_count: i64 = db.conn
         .query_row(
             "SELECT COUNT(*) FROM sr_cards WHERE module_id = ?1",
@@ -170,10 +188,9 @@ fn test_full_pipeline_profile_to_review() {
         )
         .unwrap_or(0);
 
-    // After plan 03 LOOP-03, this will be >= 1. Currently 0.
     assert!(
         card_count >= 1,
-        "At least one SR card must exist for mod_a after mastery >= 0.7 — Plan 03 LOOP-03 must auto-generate cards"
+        "sr_cards table must have at least 1 card for mod_a (LOOP-03)"
     );
 
     // ── 9. Simulate review of one SR card (SM-2 already wired) ──
@@ -189,7 +206,9 @@ fn test_full_pipeline_profile_to_review() {
         .expect("Failed to insert SR card");
 
     // SM-2 calculation (already wired in submit_review command)
-    let sm2 = learnforge_lib::learning::spaced_repetition::sm2_calculate(4, 0, 2.5, 1.0);
+    // Use repetitions=1 so new_interval = 6.0 (second review, quality=4)
+    // Note: SM-2 with repetitions=0 gives interval=1.0 (first review, always 1 day)
+    let sm2 = learnforge_lib::learning::spaced_repetition::sm2_calculate(4, 1, 2.5, 1.0);
     db.conn
         .execute(
             "UPDATE sr_cards SET interval_days = ?1, ease_factor = ?2, repetitions = ?3, \
@@ -207,10 +226,10 @@ fn test_full_pipeline_profile_to_review() {
         )
         .expect("Card must exist after update");
 
-    // SM-2 is wired — this assertion PASSES today
+    // SM-2 is wired — quality=4, repetitions=1 produces interval=6.0 (second review)
     assert!(
         interval_after > 1.0,
-        "next_review must be updated by SM-2 (interval > 1.0 for quality=4)"
+        "next_review must be updated by SM-2 (interval > 1.0 for quality=4 second review)"
     );
 
     drop(dir); // Keep TempDir alive until end

@@ -279,6 +279,161 @@ pub fn update_module_progress(
     Ok(())
 }
 
+// ── LOOP-01..03: Complete Module Exercises (relocated from commands/ai.rs) ──
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompleteExercisesRequest {
+    pub module_id: String,
+    pub track_id: String,
+    pub scores: Vec<f64>,
+}
+
+/// Result returned after completing module exercises.
+///
+/// Extended in Plan 01-03 with `newly_unlocked_module_ids` and `mastery_level` so the
+/// frontend can update state without a full reload.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompleteExercisesResult {
+    pub mastery_level: f64,
+    pub module_completed: bool,
+    pub newly_unlocked_module_ids: Vec<String>,
+    pub cards_created: usize,
+}
+
+/// Complete module exercises: update BKT mastery (LOOP-01), unlock dependents (LOOP-02),
+/// and auto-generate SR cards on first mastery crossing (LOOP-03).
+///
+/// Mutex lock semantics (from RESEARCH.md Pitfall 2):
+/// - Lock acquired ONCE before step 1.
+/// - No `.await` in this function (it is `fn`, not `async fn`), so no deadlock risk.
+/// - Lock is held for the full synchronous operation (all DB reads/writes in one lock).
+///
+/// Note: Phase 1 does not call AI for scoring — scores are passed in from the frontend
+/// (which receives them from the evaluate_response IPC call). This function processes
+/// the aggregated scores.
+#[tauri::command]
+pub fn complete_module_exercises(
+    state: State<AppState>,
+    request: CompleteExercisesRequest,
+) -> Result<CompleteExercisesResult, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // 1. Get learner profile ID
+    let learner_id: String = db.conn
+        .query_row("SELECT id FROM learner_profiles LIMIT 1", [], |row| row.get(0))
+        .map_err(|e| format!("No profile found: {}", e))?;
+
+    // 2. Read prior mastery from DB
+    let prior_mastery: f64 = db.conn
+        .query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = ?1 AND learner_id = ?2",
+            rusqlite::params![request.module_id, learner_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0.0);
+
+    // 3. Compute aggregate score and is_correct from passed-in scores
+    let avg_score = if request.scores.is_empty() {
+        0.0
+    } else {
+        request.scores.iter().sum::<f64>() / request.scores.len() as f64
+    };
+    // Scores come in 0-100 range from evaluate_response
+    let is_correct = avg_score >= 70.0;
+
+    // 4. Ensure module_progress row exists (upsert)
+    let progress_id = uuid::Uuid::new_v4().to_string();
+    db.conn.execute(
+        "INSERT INTO module_progress (id, module_id, learner_id, status, score, started_at)
+         VALUES (?1, ?2, ?3, 'in_progress', ?4, datetime('now'))
+         ON CONFLICT(module_id, learner_id) DO UPDATE SET
+           score = ?4",
+        rusqlite::params![progress_id, request.module_id, learner_id, avg_score],
+    ).map_err(|e| e.to_string())?;
+
+    // 5. Apply BKT mastery update (LOOP-01)
+    let transition = apply_mastery_update(&db.conn, &learner_id, &request.module_id, prior_mastery, is_correct)?;
+
+    let mut newly_unlocked = Vec::new();
+    let mut cards_created = 0;
+
+    if transition.became_completed {
+        // 6. Find the path_id for the track so check_unlock_modules can load edges_json
+        let path_id: Option<String> = db.conn.query_row(
+            "SELECT id FROM learning_paths WHERE track_id = ?1 ORDER BY version DESC LIMIT 1",
+            [&request.track_id],
+            |row| row.get(0),
+        ).ok();
+
+        if let Some(path_id) = path_id {
+            // 7. Unlock dependent modules (LOOP-02)
+            newly_unlocked = check_unlock_modules(
+                &db.conn,
+                &learner_id,
+                &path_id,
+                &request.module_id,
+            )?;
+        }
+
+        // 8. Auto-generate SR cards from module objectives (LOOP-03)
+        // Load objectives_json from the modules table
+        let objectives_json: String = db.conn
+            .query_row(
+                "SELECT objectives_json FROM modules WHERE id = ?1",
+                [&request.module_id],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "[]".to_string());
+
+        let objectives: Vec<String> = serde_json::from_str(&objectives_json)
+            .unwrap_or_default();
+
+        cards_created = generate_sr_cards_for_module(&db.conn, &request.module_id, &objectives)?;
+        log::info!(
+            "complete_module_exercises: module {} mastered, {} SR cards generated",
+            request.module_id,
+            cards_created
+        );
+
+        // 9. Update track progress_percent
+        let total_modules: i64 = db.conn
+            .query_row(
+                "SELECT COUNT(*) FROM modules m JOIN learning_paths lp ON m.path_id = lp.id WHERE lp.track_id = ?1",
+                [&request.track_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(1);
+        let completed_modules: i64 = db.conn
+            .query_row(
+                "SELECT COUNT(*) FROM module_progress mp
+                 JOIN modules m ON mp.module_id = m.id
+                 JOIN learning_paths lp ON m.path_id = lp.id
+                 WHERE lp.track_id = ?1 AND mp.status = 'completed'",
+                [&request.track_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let pct = if total_modules > 0 {
+            (completed_modules as f64 / total_modules as f64) * 100.0
+        } else {
+            0.0
+        };
+        db.conn.execute(
+            "UPDATE learning_tracks SET progress_percent = ?1, updated_at = datetime('now') WHERE id = ?2",
+            rusqlite::params![pct, request.track_id],
+        ).ok();
+    }
+
+    Ok(CompleteExercisesResult {
+        mastery_level: transition.new_mastery,
+        module_completed: transition.became_completed || transition.new_mastery >= MASTERY_THRESHOLD,
+        newly_unlocked_module_ids: newly_unlocked,
+        cards_created,
+    })
+}
+
 #[tauri::command]
 pub fn get_due_cards(state: State<AppState>) -> Result<Vec<SRCard>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
