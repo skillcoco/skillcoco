@@ -22,16 +22,22 @@ impl OAuthFlowState {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OAuthStartResult {
     pub started: bool,
     pub provider: String,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OAuthStatusResult {
     pub completed: bool,
     pub provider: String,
     pub authenticated: bool,
+    /// Optional error message from the OAuth flow. Populated by Plan 02 (FIX-01).
+    /// Serialized only when Some — frontend checks for `error` field presence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Start an OAuth login flow for the given provider.
@@ -292,5 +298,49 @@ pub fn check_oauth_status(
         completed: is_completed,
         provider,
         authenticated: has_credential,
+        error: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_oauth_status_serializes_error() {
+        let result = OAuthStatusResult {
+            completed: false,
+            provider: "claude".to_string(),
+            authenticated: false,
+            error: Some("Invalid token".to_string()),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(
+            json.contains("\"error\":\"Invalid token\""),
+            "Expected error field in JSON, got: {}",
+            json
+        );
+        // Also verify camelCase for authenticated field
+        assert!(
+            json.contains("\"authenticated\""),
+            "Expected authenticated field, got: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn test_oauth_status_omits_error_when_none() {
+        let result = OAuthStatusResult {
+            completed: true,
+            provider: "claude".to_string(),
+            authenticated: true,
+            error: None,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(
+            !json.contains("\"error\""),
+            "error key must be absent when None, got: {}",
+            json
+        );
+    }
 }

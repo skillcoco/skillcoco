@@ -1,6 +1,19 @@
 use crate::db::models::{LearningPath, ModuleProgress, SRCard};
 use crate::AppState;
+use serde::Deserialize;
 use tauri::State;
+
+/// Typed request struct for update_module_progress.
+/// Replaces the prior serde_json::Value approach to ensure camelCase IPC contract.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct UpdateProgressRequest {
+    pub module_id: String,
+    pub status: String,
+    pub score: Option<f64>,
+    pub time_spent: Option<i64>,
+}
 
 #[tauri::command]
 pub fn get_path(state: State<AppState>, track_id: String) -> Result<LearningPath, String> {
@@ -69,17 +82,14 @@ pub fn get_module_progress(
 #[tauri::command]
 pub fn update_module_progress(
     state: State<AppState>,
-    progress: serde_json::Value,
+    progress: UpdateProgressRequest,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-
-    let module_id = progress["moduleId"].as_str().ok_or("Missing moduleId")?;
-    let status = progress["status"].as_str().unwrap_or("in_progress");
 
     db.conn
         .execute(
             "UPDATE module_progress SET status = ?1, updated_at = datetime('now') WHERE module_id = ?2",
-            rusqlite::params![status, module_id],
+            rusqlite::params![progress.status, progress.module_id],
         )
         .map_err(|e| e.to_string())?;
 
@@ -199,4 +209,32 @@ pub fn submit_review(state: State<AppState>, result: serde_json::Value) -> Resul
             },
         )
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_update_progress_request_deserializes_camel_case() {
+        // Simulates TypeScript sending: { trackId, moduleId, status, score, timeSpent }
+        let json = r#"{"moduleId":"m1","status":"completed","score":0.9,"timeSpent":120}"#;
+        let req: UpdateProgressRequest = serde_json::from_str(json)
+            .expect("UpdateProgressRequest must deserialize from camelCase JSON");
+        assert_eq!(req.module_id, "m1");
+        assert_eq!(req.status, "completed");
+        assert_eq!(req.score, Some(0.9));
+        assert_eq!(req.time_spent, Some(120));
+    }
+
+    #[test]
+    fn test_update_progress_request_optional_fields() {
+        // Minimal payload — score and timeSpent are optional
+        let json = r#"{"moduleId":"m2","status":"in_progress"}"#;
+        let req: UpdateProgressRequest = serde_json::from_str(json)
+            .expect("UpdateProgressRequest must accept missing optional fields");
+        assert_eq!(req.module_id, "m2");
+        assert_eq!(req.score, None);
+        assert_eq!(req.time_spent, None);
+    }
 }

@@ -1,6 +1,14 @@
 use crate::db::models::{LearnerProfile, LearningTrack};
 use crate::AppState;
+use serde::Deserialize;
 use tauri::State;
+
+/// Typed request for updating the learner profile.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProfileRequest {
+    pub display_name: Option<String>,
+}
 
 #[tauri::command]
 pub fn get_or_create_profile(state: State<AppState>) -> Result<LearnerProfile, String> {
@@ -61,7 +69,7 @@ pub fn get_or_create_profile(state: State<AppState>) -> Result<LearnerProfile, S
 #[tauri::command]
 pub fn update_profile(
     state: State<AppState>,
-    profile: serde_json::Value,
+    profile: UpdateProfileRequest,
 ) -> Result<LearnerProfile, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
@@ -75,7 +83,7 @@ pub fn update_profile(
         )
         .map_err(|e| format!("No profile found: {}", e))?;
 
-    if let Some(name) = profile.get("displayName").and_then(|v| v.as_str()) {
+    if let Some(name) = profile.display_name {
         db.conn
             .execute(
                 "UPDATE learner_profiles SET display_name = ?1, updated_at = datetime('now') WHERE id = ?2",
