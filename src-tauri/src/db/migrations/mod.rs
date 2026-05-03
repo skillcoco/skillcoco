@@ -28,6 +28,7 @@ use rusqlite::Connection;
 
 pub mod v001_initial;
 pub mod v002_drop_ai_config;
+pub mod v003_streak_columns;
 
 /// A single schema migration.
 pub struct Migration {
@@ -49,6 +50,11 @@ fn registered_migrations() -> Vec<Migration> {
             version: v002_drop_ai_config::VERSION,
             name: v002_drop_ai_config::NAME,
             up: v002_drop_ai_config::up,
+        },
+        Migration {
+            version: v003_streak_columns::VERSION,
+            name: v003_streak_columns::NAME,
+            up: v003_streak_columns::up,
         },
     ]
 }
@@ -139,7 +145,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 2, "After all migrations, version must be 2 (v1 baseline + v2 drop_ai_config)");
+        assert_eq!(version, 3, "After all migrations, version must be 3 (v1 baseline + v2 drop_ai_config + v3 streak_columns)");
     }
 
     #[test]
@@ -156,7 +162,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 2, "Idempotent: exactly two rows in schema_migrations (v1 and v2)");
+        assert_eq!(count, 3, "Idempotent: exactly three rows in schema_migrations (v1, v2, v3)");
     }
 
     #[test]
@@ -177,11 +183,12 @@ mod tests {
             "INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (1, 'initial_baseline')",
             [],
         ).unwrap();
-        apply_migrations(&conn).expect("apply_migrations must succeed when v1 is already applied");
+        apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // Version is max of 1 and 2 = 2 (from the pre-inserted fake row)
-        assert_eq!(version, 2, "current_version returns MAX(version) = 2");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3 (streak_columns).
+        // Max is now 3.
+        assert_eq!(version, 3, "current_version returns MAX(version) = 3 after v3 is applied");
     }
 
     #[test]

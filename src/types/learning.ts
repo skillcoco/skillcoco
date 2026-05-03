@@ -35,6 +35,10 @@ export interface LearningTrack {
   totalTimeSpent: number; // seconds
   createdAt: string;
   updatedAt: string;
+  /** Days of consecutive daily activity on this track (FIX-04). 0 until first completion. */
+  streakDays?: number;
+  /** ISO datetime of last activity on this track (FIX-04). null until first completion. */
+  lastActivityDate?: string | null;
 }
 
 export type DomainModule = "programming" | "devops" | "concepts" | "data" | "cloud";

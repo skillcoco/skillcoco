@@ -122,7 +122,7 @@ pub fn list_tracks(state: State<AppState>) -> Result<Vec<LearningTrack>, String>
     let mut stmt = db
         .conn
         .prepare(
-            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at FROM learning_tracks ORDER BY updated_at DESC",
+            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at, COALESCE(streak_days, 0), last_activity_date FROM learning_tracks ORDER BY updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
 
@@ -140,6 +140,8 @@ pub fn list_tracks(state: State<AppState>) -> Result<Vec<LearningTrack>, String>
                 total_time_spent: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                streak_days: row.get(11)?,
+                last_activity_date: row.get(12)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -181,7 +183,7 @@ pub fn get_track(state: State<AppState>, track_id: String) -> Result<LearningTra
 fn get_track_inner(db: &crate::db::Database, track_id: &str) -> Result<LearningTrack, String> {
     db.conn
         .query_row(
-            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at FROM learning_tracks WHERE id = ?1",
+            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at, COALESCE(streak_days, 0), last_activity_date FROM learning_tracks WHERE id = ?1",
             [track_id],
             |row| {
                 Ok(LearningTrack {
@@ -196,6 +198,8 @@ fn get_track_inner(db: &crate::db::Database, track_id: &str) -> Result<LearningT
                     total_time_spent: row.get(8)?,
                     created_at: row.get(9)?,
                     updated_at: row.get(10)?,
+                    streak_days: row.get(11)?,
+                    last_activity_date: row.get(12)?,
                 })
             },
         )

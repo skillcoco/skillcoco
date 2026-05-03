@@ -26,6 +26,10 @@ pub struct LearningTrack {
     pub total_time_spent: i64,
     pub created_at: String,
     pub updated_at: String,
+    /// Days of consecutive daily activity on this track (FIX-04). Default 0.
+    pub streak_days: i32,
+    /// ISO datetime of last activity on this track (FIX-04). NULL until first completion.
+    pub last_activity_date: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -114,6 +118,8 @@ mod tests {
             total_time_spent: 3600,
             created_at: "2026-01-01".to_string(),
             updated_at: "2026-01-01".to_string(),
+            streak_days: 3,
+            last_activity_date: Some("2026-01-01T10:00:00".to_string()),
         };
         let json = serde_json::to_string(&track).unwrap();
         assert!(json.contains("\"learnerId\""), "Expected learnerId, got: {}", json);

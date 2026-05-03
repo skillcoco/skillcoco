@@ -186,6 +186,80 @@ pub fn generate_sr_cards_for_module(
     Ok(inserted)
 }
 
+// ── FIX-04: Streak Update Helper ──
+
+/// Update the streak on `learning_tracks` for the given track.
+///
+/// Logic:
+/// - If `last_activity_date` IS NULL: first activity ever — set `streak_days = 1`.
+/// - If `date(last_activity_date) = date('now')`: same calendar day — no-op (don't double-count).
+/// - If `last_activity_date >= datetime('now', '-1 day')` AND different calendar day (yesterday):
+///   increment `streak_days += 1`.
+/// - If `last_activity_date < datetime('now', '-1 day')` (gap > 24h, missed day):
+///   reset `streak_days = 1`.
+///
+/// In all non-no-op cases, also sets `last_activity_date = datetime('now')`.
+///
+/// Returns the resulting `streak_days` value after the update.
+pub fn update_streak(conn: &rusqlite::Connection, track_id: &str) -> Result<i32, String> {
+    // Read current streak state
+    let (current_streak, last_activity): (i32, Option<String>) = conn
+        .query_row(
+            "SELECT COALESCE(streak_days, 0), last_activity_date FROM learning_tracks WHERE id = ?1",
+            [track_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| format!("update_streak: failed to read track {}: {}", track_id, e))?;
+
+    match last_activity {
+        None => {
+            // First activity ever
+            conn.execute(
+                "UPDATE learning_tracks SET streak_days = 1, last_activity_date = datetime('now') WHERE id = ?1",
+                [track_id],
+            ).map_err(|e| format!("update_streak: {}", e))?;
+            Ok(1)
+        }
+        Some(_) => {
+            // Check if last_activity_date is today (same calendar day — no-op)
+            let is_today: bool = conn
+                .query_row(
+                    "SELECT date(last_activity_date) = date('now') FROM learning_tracks WHERE id = ?1",
+                    [track_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+
+            if is_today {
+                // Same calendar day — idempotent, don't double count
+                return Ok(current_streak);
+            }
+
+            // Check if last_activity_date was within the past 24h (yesterday's streak continues)
+            let within_24h: bool = conn
+                .query_row(
+                    "SELECT last_activity_date >= datetime('now', '-1 day') FROM learning_tracks WHERE id = ?1",
+                    [track_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+
+            let new_streak = if within_24h {
+                current_streak + 1
+            } else {
+                1 // Gap > 24h — reset
+            };
+
+            conn.execute(
+                "UPDATE learning_tracks SET streak_days = ?1, last_activity_date = datetime('now') WHERE id = ?2",
+                rusqlite::params![new_streak, track_id],
+            ).map_err(|e| format!("update_streak: {}", e))?;
+
+            Ok(new_streak)
+        }
+    }
+}
+
 /// Typed request struct for update_module_progress.
 /// Replaces the prior serde_json::Value approach to ensure camelCase IPC contract.
 #[derive(Debug, Deserialize)]
@@ -397,7 +471,12 @@ pub fn complete_module_exercises(
             cards_created
         );
 
-        // 9. Update track progress_percent
+        // 9. Update streak (FIX-04) — called when module mastered for first time
+        if let Err(e) = update_streak(&db.conn, &request.track_id) {
+            log::warn!("update_streak failed for track {}: {}", request.track_id, e);
+        }
+
+        // 10. Update track progress_percent
         let total_modules: i64 = db.conn
             .query_row(
                 "SELECT COUNT(*) FROM modules m JOIN learning_paths lp ON m.path_id = lp.id WHERE lp.track_id = ?1",
@@ -799,6 +878,100 @@ mod tests {
             |row| row.get(0),
         ).unwrap();
         assert_eq!(total, 1, "total cards must remain 1 after idempotent second call");
+    }
+
+    // ── FIX-04: update_streak tests ──
+
+    fn setup_streak_db() -> Connection {
+        let conn = setup_test_db();
+        // Apply migrations so learning_tracks has streak_days + last_activity_date
+        crate::db::migrations::apply_migrations(&conn).expect("migrations must succeed for streak tests");
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Tester')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('tk1', 'lp1', 'Rust', 'programming', 'Learn Rust')",
+            [],
+        ).unwrap();
+        conn
+    }
+
+    #[test]
+    fn update_streak_first_activity() {
+        // NULL last_activity_date → streak=1, last_activity_date set to now
+        let conn = setup_streak_db();
+
+        let new_streak = update_streak(&conn, "tk1").expect("update_streak should succeed");
+        assert_eq!(new_streak, 1, "first activity must set streak_days=1");
+
+        let (streak, last_date): (i32, Option<String>) = conn.query_row(
+            "SELECT streak_days, last_activity_date FROM learning_tracks WHERE id = 'tk1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(streak, 1);
+        assert!(last_date.is_some(), "last_activity_date must be set after first activity");
+    }
+
+    #[test]
+    fn update_streak_within_24h() {
+        // last_activity_date 12h ago + different calendar day → increment
+        // Seed with yesterday's date and streak=3
+        let conn = setup_streak_db();
+        conn.execute(
+            "UPDATE learning_tracks SET streak_days = 3, last_activity_date = datetime('now', '-12 hours') WHERE id = 'tk1'",
+            [],
+        ).unwrap();
+
+        // Only run this test if 12h ago was actually a different calendar day
+        let is_diff_day: bool = conn.query_row(
+            "SELECT date(datetime('now', '-12 hours')) != date('now')",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(false);
+
+        if is_diff_day {
+            let new_streak = update_streak(&conn, "tk1").expect("update_streak should succeed");
+            assert_eq!(new_streak, 4, "streak within 24h on different calendar day should increment to 4");
+        } else {
+            // Same calendar day — no-op path, streak stays at 3
+            let new_streak = update_streak(&conn, "tk1").expect("update_streak should succeed");
+            assert_eq!(new_streak, 3, "same-day no-op: streak stays at 3");
+        }
+    }
+
+    #[test]
+    fn update_streak_after_24h() {
+        // last_activity_date 30h ago → reset to 1
+        let conn = setup_streak_db();
+        conn.execute(
+            "UPDATE learning_tracks SET streak_days = 5, last_activity_date = datetime('now', '-30 hours') WHERE id = 'tk1'",
+            [],
+        ).unwrap();
+
+        let new_streak = update_streak(&conn, "tk1").expect("update_streak should succeed");
+        assert_eq!(new_streak, 1, "gap > 24h must reset streak to 1");
+
+        let stored: i32 = conn.query_row(
+            "SELECT streak_days FROM learning_tracks WHERE id = 'tk1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(stored, 1);
+    }
+
+    #[test]
+    fn update_streak_same_day_idempotent() {
+        // last_activity_date 5 minutes ago → same calendar day → no-op, streak stays at 2
+        let conn = setup_streak_db();
+        conn.execute(
+            "UPDATE learning_tracks SET streak_days = 2, last_activity_date = datetime('now', '-5 minutes') WHERE id = 'tk1'",
+            [],
+        ).unwrap();
+
+        let new_streak = update_streak(&conn, "tk1").expect("update_streak should succeed");
+        assert_eq!(new_streak, 2, "same-day completion must not increment streak (no double-count)");
     }
 
     // ── Prior tests (IPC deserialization) ──
