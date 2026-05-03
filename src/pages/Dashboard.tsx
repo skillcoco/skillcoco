@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Target, BarChart3, Flame, BookOpen, Layers } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
@@ -53,7 +53,14 @@ export function Dashboard() {
 
   const totalModulesAll = Object.values(moduleCounts).reduce((s, c) => s + c.total, 0);
   const completedModulesAll = Object.values(moduleCounts).reduce((s, c) => s + c.completed, 0);
-  const bestStreak = { days: 0, trackName: "" }; // placeholder until streak tracking is wired
+
+  // Best streak: MAX of streakDays across all tracks (FIX-04)
+  const bestStreak = useMemo(() => {
+    const ranked = [...tracks].sort((a, b) => (b.streakDays ?? 0) - (a.streakDays ?? 0));
+    const top = ranked[0];
+    return { days: top?.streakDays ?? 0, trackName: top?.topic ?? "" };
+  }, [tracks]);
+
   const displayName = profile?.displayName || "Learner";
 
   // Summary for subtitle
@@ -84,8 +91,8 @@ export function Dashboard() {
         )}
       </div>
 
-      {/* Smart Session Card */}
-      {dueCards.length > 0 && (
+      {/* Smart Session Card — show when there are due cards OR an active track */}
+      {(dueCards.length > 0 || activeTracks.length > 0) && (
         <SmartSessionCard
           dueCount={dueCards.length}
           nextModuleName={nextModule}
@@ -164,7 +171,7 @@ export function Dashboard() {
                   dueReviews={dueCards.length}
                   totalModules={trackCounts.total}
                   completedModules={trackCounts.completed}
-                  streakDays={0}
+                  streakDays={track.streakDays ?? 0}
                   nextModuleName={track.currentModuleId ? "Continue" : null}
                 />
               );

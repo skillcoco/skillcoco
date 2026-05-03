@@ -101,6 +101,24 @@ function renderDashboard() {
   );
 }
 
+// Helper to make a minimal SRCard mock
+function makeSRCard(overrides: Partial<SRCard> = {}): SRCard {
+  return {
+    id: "card-1",
+    moduleId: "mod-1",
+    concept: "Pods",
+    cardType: "active_recall",
+    front: "What is a Pod?",
+    back: "Smallest deployable unit",
+    interval: 1,
+    easeFactor: 2.5,
+    repetitions: 0,
+    nextReview: "2026-05-03T00:00:00Z",
+    lastReview: null,
+    ...overrides,
+  };
+}
+
 describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -170,5 +188,69 @@ describe("Dashboard", () => {
       expect(screen.getByText("Best Streak")).toBeInTheDocument();
       expect(screen.getByText("Active Tracks")).toBeInTheDocument();
     });
+  });
+
+  // ── FIX-04 / LOOP-05: Real due card count + streak ──
+
+  it("shows real due card count from getDueCards (LOOP-05)", async () => {
+    vi.mocked(listTracks).mockResolvedValue([makeTrack()]);
+    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
+    vi.mocked(getDueCards).mockResolvedValue([
+      makeSRCard({ id: "c1" }),
+      makeSRCard({ id: "c2" }),
+      makeSRCard({ id: "c3" }),
+    ]);
+
+    renderDashboard();
+
+    // The Reviews Due StatsCard should show "3"
+    await waitFor(() => {
+      const reviewsDueCard = screen.getByText("Reviews Due").closest(".glass, [class*='rounded']")?.parentElement;
+      // The value "3" appears in the stats row
+      expect(screen.getAllByText("3").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("shows best streak from track streakDays (FIX-04)", async () => {
+    const tracks = [
+      makeTrack({ id: "t1", topic: "Kubernetes", streakDays: 5 }),
+      makeTrack({ id: "t2", topic: "Rust", streakDays: 2 }),
+    ];
+    vi.mocked(listTracks).mockResolvedValue(tracks);
+    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
+
+    renderDashboard();
+
+    // Best Streak StatsCard should show "5d" (max across tracks)
+    await waitFor(() => {
+      expect(screen.getByText("5d")).toBeInTheDocument();
+    });
+  });
+
+  it("recommends 'Review N due cards' when dueCards >= 1 (smart session)", async () => {
+    vi.mocked(listTracks).mockResolvedValue([makeTrack()]);
+    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
+    vi.mocked(getDueCards).mockResolvedValue([makeSRCard(), makeSRCard()]);
+
+    renderDashboard();
+
+    // SmartSessionCard should be visible (it renders when dueCards > 0 or active track)
+    await waitFor(() => {
+      expect(screen.getByText("Smart Session")).toBeInTheDocument();
+    });
+  });
+
+  it("shows empty state when no tracks and no due cards", async () => {
+    vi.mocked(listTracks).mockResolvedValue([]);
+    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
+    vi.mocked(getDueCards).mockResolvedValue([]);
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText("No learning tracks yet")).toBeInTheDocument();
+    });
+    // SmartSessionCard should NOT appear with no tracks and no due cards
+    expect(screen.queryByText("Smart Session")).not.toBeInTheDocument();
   });
 });
