@@ -65,7 +65,8 @@ mod tests {
         assert!(tables.contains(&"module_progress".to_string()));
         assert!(tables.contains(&"sr_cards".to_string()));
         assert!(tables.contains(&"exercises".to_string()));
-        assert!(tables.contains(&"ai_config".to_string()));
+        // ai_config table removed in FIX-03 — auth flows through AuthState
+        assert!(!tables.contains(&"ai_config".to_string()), "ai_config must NOT exist after FIX-03 migration");
     }
 
     #[test]
@@ -76,13 +77,17 @@ mod tests {
     }
 
     #[test]
-    fn test_default_ai_config_inserted() {
+    fn test_ai_config_table_removed() {
+        // FIX-03: ai_config table must be absent after migrations run
         let db = test_db();
-        let provider: String = db
-            .conn
-            .query_row("SELECT provider_type FROM ai_config WHERE id = 1", [], |row| row.get(0))
+        let count: i32 = db.conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ai_config'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
-        assert_eq!(provider, "claude");
+        assert_eq!(count, 0, "ai_config table must be removed by FIX-03 migration v002");
     }
 
     #[test]

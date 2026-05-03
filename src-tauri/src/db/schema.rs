@@ -132,19 +132,8 @@ CREATE TABLE IF NOT EXISTS adaptation_events (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- AI provider configuration
-CREATE TABLE IF NOT EXISTS ai_config (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    provider_type TEXT NOT NULL DEFAULT 'claude',
-    api_key TEXT NOT NULL DEFAULT '',
-    model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
-    base_url TEXT NOT NULL DEFAULT '',
-    max_tokens INTEGER NOT NULL DEFAULT 4096,
-    temperature REAL NOT NULL DEFAULT 0.7
-);
-
--- Insert default AI config if not exists
-INSERT OR IGNORE INTO ai_config (id) VALUES (1);
+-- ai_config table removed in FIX-03; auth flows through AuthState (auth/mod.rs).
+-- Existing databases: table is dropped by migration v002_drop_ai_config.
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_tracks_learner ON learning_tracks(learner_id);

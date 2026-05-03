@@ -327,10 +327,20 @@ export function TrackView() {
     [moduleProgress],
   );
 
+  // Parse modulesJson/edgesJson from backend (they arrive as JSON strings)
+  const pathModules = useMemo(
+    () => (currentPath ? (JSON.parse(currentPath.modulesJson || "[]") as import("@/types/learning").PathModule[]) : []),
+    [currentPath],
+  );
+  const pathEdges = useMemo(
+    () => (currentPath ? (JSON.parse(currentPath.edgesJson || "[]") as import("@/types/learning").PathEdge[]) : []),
+    [currentPath],
+  );
+
   const layout = useMemo(() => {
     if (!currentPath) return null;
-    return layoutDAG(currentPath.modules, currentPath.edges);
-  }, [currentPath]);
+    return layoutDAG(pathModules, pathEdges);
+  }, [currentPath, pathModules, pathEdges]);
 
   if (isLoading || !currentTrack) {
     return (
@@ -341,7 +351,7 @@ export function TrackView() {
   }
 
   const accentColor = getTrackColor(currentTrack.topic);
-  const modules = currentPath?.modules ?? [];
+  const modules = pathModules;
   const completedCount = modules.filter(
     (m) => progressMap.get(m.id)?.status === "completed",
   ).length;

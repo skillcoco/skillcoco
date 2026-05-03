@@ -2,16 +2,7 @@
 // AI Provider Types
 // ═══════════════════════════════════════════
 
-export type AIProviderType = "anthropic" | "openai" | "gemini" | "ollama" | "custom";
-
-export interface AIProviderConfig {
-  type: AIProviderType;
-  apiKey?: string;
-  model: string;
-  baseUrl?: string;
-  maxTokens: number;
-  temperature: number;
-}
+// AIProviderConfig removed in FIX-03 — auth flows through AuthState, not ai_config table.
 
 export interface AIMessage {
   role: "system" | "user" | "assistant";
@@ -137,4 +128,6 @@ export interface OAuthStatusResult {
   completed: boolean;
   provider: string;
   authenticated: boolean;
+  /** Populated by FIX-01 when OAuth flow encounters an error. Absent on success. */
+  error?: string;
 }

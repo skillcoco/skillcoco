@@ -7,7 +7,8 @@ export interface LearnerProfile {
   displayName: string;
   learningStyle: LearningStyle;
   experienceLevel: ExperienceLevel;
-  preferences: LearnerPreferences;
+  /** JSON-encoded preferences string as sent by Rust backend (preferencesJson: String). */
+  preferencesJson: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -44,8 +45,14 @@ export interface LearningPath {
   trackId: string;
   version: number;
   generatedByModel: string;
-  modules: PathModule[];
-  edges: PathEdge[];
+  /** JSON-encoded modules array as sent by Rust backend (get_path returns modulesJson). */
+  modulesJson: string;
+  /** JSON-encoded edges array as sent by Rust backend (get_path returns edgesJson). */
+  edgesJson: string;
+  /** @deprecated Pages should parse modulesJson instead. Kept for compatibility. */
+  modules?: PathModule[];
+  /** @deprecated Pages should parse edgesJson instead. Kept for compatibility. */
+  edges?: PathEdge[];
   estimatedHours: number;
   createdAt: string;
 }
@@ -149,6 +156,8 @@ export type AdaptationEventType =
 export interface CompleteExercisesResult {
   masteryLevel: number;
   moduleCompleted: boolean;
-  unlockedModules: string[];
+  /** Module IDs that were unlocked by this completion (LOOP-02) */
+  newlyUnlockedModuleIds: string[];
+  /** SR cards created during this completion (LOOP-03) */
   cardsCreated: number;
 }

@@ -12,7 +12,6 @@ import type {
   ReviewResult,
 } from "@/types";
 import type {
-  AIProviderConfig,
   AssessmentRequest,
   GeneratePathRequest,
   GenerateContentRequest,
@@ -82,14 +81,7 @@ export async function logoutProvider(provider: string): Promise<void> {
 }
 
 // ── AI ──
-
-export async function getAIConfig(): Promise<AIProviderConfig> {
-  return invoke("get_ai_config");
-}
-
-export async function updateAIConfig(config: AIProviderConfig): Promise<void> {
-  return invoke("update_ai_config", { config });
-}
+// getAIConfig / updateAIConfig removed in FIX-03 — auth flows through AuthState commands.
 
 export async function assessKnowledge(request: AssessmentRequest): Promise<string> {
   return invoke("assess_knowledge", { request });
@@ -159,6 +151,16 @@ export async function getDueCards(): Promise<SRCard[]> {
   return invoke("get_due_cards");
 }
 
-export async function submitReview(result: ReviewResult): Promise<SRCard> {
-  return invoke("submit_review", { result });
+/// Result returned by `submit_review` — maps to Rust SubmitReviewResult (camelCase).
+export interface SubmitReviewResult {
+  newIntervalDays: number;
+  nextReview: string; // ISO datetime
+  easeFactor: number;
+}
+
+/// Submit a review for an SR card.
+/// @param cardId  — the card ID to review
+/// @param quality — SM-2 quality rating (1-5; 1=Again, 3=Hard, 4=Good, 5=Easy)
+export async function submitReview(cardId: string, quality: number): Promise<SubmitReviewResult> {
+  return invoke("submit_review", { result: { cardId, quality } });
 }

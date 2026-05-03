@@ -72,15 +72,8 @@ pub struct SRCard {
     pub last_review: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AIConfig {
-    pub provider_type: String,
-    pub api_key: String,
-    pub model: String,
-    pub base_url: String,
-    pub max_tokens: i32,
-    pub temperature: f64,
-}
+// AIConfig struct removed in FIX-03. Auth flows through AuthState (auth/mod.rs).
+// get_ai_config / update_ai_config commands removed from commands/ai.rs and lib.rs.
 
 #[cfg(test)]
 mod tests {

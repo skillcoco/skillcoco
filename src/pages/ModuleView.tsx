@@ -35,8 +35,9 @@ export function ModuleView() {
     }
   }, [trackId, currentTrack, selectTrack]);
 
-  // Find the current module in the path
-  const currentModule = currentPath?.modules.find((m) => m.id === moduleId);
+  // Find the current module in the path (parse modulesJson from backend)
+  const pathModules = currentPath ? (JSON.parse(currentPath.modulesJson || "[]") as import("@/types/learning").PathModule[]) : [];
+  const currentModule = pathModules.find((m) => m.id === moduleId);
   const progress = moduleProgress.find((p) => p.moduleId === moduleId);
 
   // Generate or load module content

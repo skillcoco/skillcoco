@@ -1,6 +1,6 @@
 mod ai;
 mod auth;
-mod commands;
+pub mod commands;
 pub mod db;
 mod labs;
 pub mod learning;
@@ -64,9 +64,9 @@ pub fn run() {
             commands::learning::update_module_progress,
             commands::learning::get_due_cards,
             commands::learning::submit_review,
-            // AI commands
-            commands::ai::get_ai_config,
-            commands::ai::update_ai_config,
+            commands::learning::complete_module_exercises,
+            // AI commands (get_ai_config / update_ai_config removed in FIX-03;
+            // complete_module_exercises relocated to commands::learning in Plan 01-03)
             commands::ai::assess_knowledge,
             commands::ai::generate_learning_path,
             commands::ai::send_tutor_message,
@@ -74,7 +74,6 @@ pub fn run() {
             commands::ai::get_exercises,
             commands::ai::generate_exercise,
             commands::ai::evaluate_response,
-            commands::ai::complete_module_exercises,
             // Auth commands
             auth::commands::get_auth_status,
             auth::commands::login_provider,

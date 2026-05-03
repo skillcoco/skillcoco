@@ -27,6 +27,7 @@
 use rusqlite::Connection;
 
 pub mod v001_initial;
+pub mod v002_drop_ai_config;
 
 /// A single schema migration.
 pub struct Migration {
@@ -38,11 +39,18 @@ pub struct Migration {
 /// Returns the ordered list of all registered migrations.
 /// New migrations must be appended in version order.
 fn registered_migrations() -> Vec<Migration> {
-    vec![Migration {
-        version: v001_initial::VERSION,
-        name: v001_initial::NAME,
-        up: v001_initial::up,
-    }]
+    vec![
+        Migration {
+            version: v001_initial::VERSION,
+            name: v001_initial::NAME,
+            up: v001_initial::up,
+        },
+        Migration {
+            version: v002_drop_ai_config::VERSION,
+            name: v002_drop_ai_config::NAME,
+            up: v002_drop_ai_config::up,
+        },
+    ]
 }
 
 /// Creates the schema_migrations table if it does not yet exist.
@@ -120,8 +128,8 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_migrations_records_v1() {
-        // Test 1: after apply_migrations on fresh DB, MAX(version) = 1
+    fn test_apply_migrations_records_latest_version() {
+        // Test 1: after apply_migrations on fresh DB, MAX(version) = 2 (v1 + v2)
         let conn = fresh_conn();
         apply_migrations(&conn).expect("apply_migrations must not fail on fresh DB");
         let version: i32 = conn
@@ -131,7 +139,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 1, "After v1 migration, version must be 1");
+        assert_eq!(version, 2, "After all migrations, version must be 2 (v1 baseline + v2 drop_ai_config)");
     }
 
     #[test]
@@ -148,7 +156,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 1, "Idempotent: exactly one row in schema_migrations");
+        assert_eq!(count, 2, "Idempotent: exactly two rows in schema_migrations (v1 and v2)");
     }
 
     #[test]
