@@ -1,9 +1,9 @@
 mod ai;
 mod auth;
 mod commands;
-mod db;
+pub mod db;
 mod labs;
-mod learning;
+pub mod learning;
 mod vector;
 
 use auth::AuthState;
