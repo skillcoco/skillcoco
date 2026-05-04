@@ -424,7 +424,128 @@ pub struct GenerateExerciseRequest {
     pub difficulty: i32,
     #[serde(rename = "type")]
     pub exercise_type: String,
+    /// Optional learner-supplied context (e.g. "focus on networking"). The
+    /// authoritative module/track context is fetched from the DB regardless.
+    #[serde(default)]
     pub context: String,
+}
+
+/// Resolved learner + module context used to build a grounded exercise prompt.
+/// Populated from the DB inside `generate_exercise` so the frontend cannot
+/// accidentally pass an empty/wrong context (the original bug — see
+/// `.planning/phases/01-stabilize-adaptive-loop/01-04-SUMMARY.md`).
+#[derive(Debug, Clone)]
+struct ExerciseContext {
+    topic: String,
+    domain: String,
+    goal: String,
+    module_title: String,
+    module_description: String,
+    objectives: Vec<String>,
+    content_excerpt: String,
+}
+
+const EXERCISE_CONTENT_EXCERPT_MAX: usize = 2000;
+
+/// Build the system prompt for exercise generation. Pure function — no IO.
+/// Tested in `mod tests`. The prompt MUST anchor the LLM to the specific
+/// module so it cannot drift into unrelated subjects.
+fn build_exercise_system_prompt(
+    exercise_type: &str,
+    difficulty: i32,
+    ctx: &ExerciseContext,
+) -> String {
+    let objectives_block = if ctx.objectives.is_empty() {
+        "  (none specified)".to_string()
+    } else {
+        ctx.objectives
+            .iter()
+            .map(|o| format!("  - {}", o))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let content_section = if ctx.content_excerpt.trim().is_empty() {
+        String::new()
+    } else {
+        let excerpt = if ctx.content_excerpt.len() > EXERCISE_CONTENT_EXCERPT_MAX {
+            // Take the LAST N chars — most recent reading is most relevant.
+            let start = ctx.content_excerpt.len() - EXERCISE_CONTENT_EXCERPT_MAX;
+            // Find a char boundary at or after `start` so we don't slice mid-utf8.
+            let safe_start = ctx
+                .content_excerpt
+                .char_indices()
+                .map(|(i, _)| i)
+                .find(|&i| i >= start)
+                .unwrap_or(start);
+            &ctx.content_excerpt[safe_start..]
+        } else {
+            ctx.content_excerpt.as_str()
+        };
+        format!("\n\nMODULE CONTENT (recent excerpt):\n{}", excerpt)
+    };
+
+    format!(
+        "You are creating a {exercise_type} exercise at difficulty {difficulty}/10 \
+for a learner studying {topic}.\n\n\
+LEARNING TRACK:\n\
+- Topic: {topic}\n\
+- Domain: {domain}\n\
+- Goal: {goal}\n\n\
+CURRENT MODULE:\n\
+- Title: {module_title}\n\
+- Description: {module_description}\n\
+- Learning Objectives:\n{objectives_block}{content_section}\n\n\
+The exercise MUST be specifically about \"{module_title}\" within {topic}. \
+Do NOT generate exercises about unrelated subjects.\n\n\
+Return ONLY valid JSON in this format: \
+{{\"prompt\": \"...\", \"hints\": [\"...\"], \"metadata\": {{}}}} \
+For code_challenge, include starterCode and testCases in metadata. \
+For multiple_choice, include options and correctIndices in metadata. \
+For fill_in_blank, include template and blanks in metadata.",
+        exercise_type = exercise_type,
+        difficulty = difficulty,
+        topic = ctx.topic,
+        domain = ctx.domain,
+        goal = ctx.goal,
+        module_title = ctx.module_title,
+        module_description = ctx.module_description,
+        objectives_block = objectives_block,
+        content_section = content_section,
+    )
+}
+
+/// Fetch module + parent track context from the DB. Holds the lock briefly
+/// and drops it before any `.await` (mutex-across-await pattern from
+/// 01-RESEARCH.md § Pitfall 2).
+fn load_exercise_context(
+    state: &AppState,
+    module_id: &str,
+) -> Result<ExerciseContext, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.conn
+        .query_row(
+            "SELECT t.topic, t.domain_module, t.goal, \
+                    m.title, m.description, m.objectives_json, COALESCE(m.content, '') \
+             FROM modules m \
+             JOIN learning_paths p ON p.id = m.path_id \
+             JOIN learning_tracks t ON t.id = p.track_id \
+             WHERE m.id = ?1",
+            [module_id],
+            |row| {
+                let objectives_json: String = row.get(5)?;
+                Ok(ExerciseContext {
+                    topic: row.get(0)?,
+                    domain: row.get(1)?,
+                    goal: row.get(2)?,
+                    module_title: row.get(3)?,
+                    module_description: row.get(4)?,
+                    objectives: serde_json::from_str(&objectives_json).unwrap_or_default(),
+                    content_excerpt: row.get(6)?,
+                })
+            },
+        )
+        .map_err(|e| format!("module not found or context lookup failed: {}", e))
 }
 
 #[tauri::command]
@@ -433,16 +554,27 @@ pub async fn generate_exercise(
     state: State<'_, AppState>,
     request: GenerateExerciseRequest,
 ) -> Result<serde_json::Value, String> {
-    let system_prompt = format!(
-        "You are creating a {} exercise at difficulty level {}/10. \
-         Context: {}. \
-         Return ONLY valid JSON in this format: \
-         {{\"prompt\": \"...\", \"hints\": [\"...\"], \"metadata\": {{}}}} \
-         For code_challenge, include starterCode and testCases in metadata. \
-         For multiple_choice, include options and correctIndices in metadata. \
-         For fill_in_blank, include template and blanks in metadata.",
-        request.exercise_type, request.difficulty, request.context,
-    );
+    let ctx = load_exercise_context(state.inner(), &request.module_id)?;
+
+    let system_prompt =
+        build_exercise_system_prompt(&request.exercise_type, request.difficulty, &ctx);
+
+    let user_message = if request.context.trim().is_empty() {
+        format!(
+            "Generate a {} exercise at difficulty {}/10 about \"{}\" within {}.",
+            request.exercise_type, request.difficulty, ctx.module_title, ctx.topic
+        )
+    } else {
+        format!(
+            "Generate a {} exercise at difficulty {}/10 about \"{}\" within {}. \
+             Additional learner context: {}",
+            request.exercise_type,
+            request.difficulty,
+            ctx.module_title,
+            ctx.topic,
+            request.context
+        )
+    };
 
     let response = ai_request(
         auth.inner(),
@@ -450,10 +582,7 @@ pub async fn generate_exercise(
             system_prompt,
             messages: vec![ServiceMessage {
                 role: "user".to_string(),
-                content: format!(
-                    "Generate a {} exercise at difficulty {}/10",
-                    request.exercise_type, request.difficulty
-                ),
+                content: user_message,
             }],
             max_tokens: Some(2048),
             temperature: Some(0.7),
@@ -557,6 +686,7 @@ pub async fn evaluate_response(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::learning::adaptive::{BKTParams, update_mastery};
 
     #[test]
@@ -570,5 +700,106 @@ mod tests {
         }
         assert!(mastery > 0.3, "Mastery should increase with 2/3 correct");
         assert!(mastery < 1.0);
+    }
+
+    fn k8s_pods_context() -> ExerciseContext {
+        ExerciseContext {
+            topic: "Kubernetes".to_string(),
+            domain: "devops".to_string(),
+            goal: "Pass the CKA exam".to_string(),
+            module_title: "Pods, Nodes and Clusters".to_string(),
+            module_description: "Understand the smallest deployable unit in K8s".to_string(),
+            objectives: vec![
+                "Define what a Pod is".to_string(),
+                "Explain Pod lifecycle".to_string(),
+            ],
+            content_excerpt: "A Pod is the smallest deployable unit in Kubernetes...".to_string(),
+        }
+    }
+
+    #[test]
+    fn exercise_prompt_includes_module_title() {
+        let ctx = k8s_pods_context();
+        let prompt = build_exercise_system_prompt("conceptual_qa", 5, &ctx);
+        assert!(
+            prompt.contains("Pods, Nodes and Clusters"),
+            "system prompt must include module title; got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn exercise_prompt_includes_track_topic() {
+        let ctx = k8s_pods_context();
+        let prompt = build_exercise_system_prompt("conceptual_qa", 5, &ctx);
+        assert!(
+            prompt.contains("Kubernetes"),
+            "system prompt must include track topic; got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn exercise_prompt_includes_learning_objectives() {
+        let ctx = k8s_pods_context();
+        let prompt = build_exercise_system_prompt("conceptual_qa", 5, &ctx);
+        assert!(
+            prompt.contains("Define what a Pod is"),
+            "system prompt must include learning objectives; got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn exercise_prompt_forbids_unrelated_topics() {
+        let ctx = k8s_pods_context();
+        let prompt = build_exercise_system_prompt("conceptual_qa", 5, &ctx);
+        let lower = prompt.to_lowercase();
+        assert!(
+            lower.contains("must be specifically about") || lower.contains("do not generate"),
+            "prompt should explicitly constrain the model to the module topic; got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn exercise_prompt_includes_content_excerpt_when_present() {
+        let ctx = k8s_pods_context();
+        let prompt = build_exercise_system_prompt("conceptual_qa", 5, &ctx);
+        assert!(
+            prompt.contains("smallest deployable unit"),
+            "system prompt should include the module content excerpt; got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn exercise_prompt_handles_empty_content_excerpt() {
+        let mut ctx = k8s_pods_context();
+        ctx.content_excerpt = String::new();
+        let prompt = build_exercise_system_prompt("conceptual_qa", 5, &ctx);
+        // No panic, still includes title
+        assert!(prompt.contains("Pods, Nodes and Clusters"));
+    }
+
+    #[test]
+    fn exercise_prompt_truncates_long_content() {
+        let mut ctx = k8s_pods_context();
+        ctx.content_excerpt = "x".repeat(10_000);
+        let prompt = build_exercise_system_prompt("conceptual_qa", 5, &ctx);
+        // Excerpt itself capped at EXERCISE_CONTENT_EXCERPT_MAX (2000); a few
+        // boilerplate x's (the word "exercise", "exam" in goal) push total
+        // slightly above. Verify we don't blow up to the full 10k input.
+        let xs = prompt.matches('x').count();
+        assert!(
+            xs <= EXERCISE_CONTENT_EXCERPT_MAX + 50,
+            "content excerpt should be truncated; got {} x's (cap {})",
+            xs, EXERCISE_CONTENT_EXCERPT_MAX
+        );
+        assert!(
+            xs < 9000,
+            "content excerpt was not actually truncated; got {} x's",
+            xs
+        );
     }
 }

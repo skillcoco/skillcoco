@@ -34,11 +34,14 @@ export function ExerciseContainer({ moduleId, onAllComplete }: ExerciseContainer
           const generated = [];
           for (const type of types) {
             try {
+              // Module + track context is fetched server-side from moduleId.
+              // The optional `context` field is for learner-supplied hints only
+              // (e.g. "focus on networking"); leave empty for default behavior.
               const ex = await generateExercise({
                 moduleId,
                 difficulty: 5,
                 type,
-                context: `Module exercises for adaptive learning`,
+                context: "",
               });
               generated.push(ex as unknown as Exercise);
             } catch (genErr) {
