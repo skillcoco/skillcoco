@@ -181,7 +181,7 @@ export async function generateModuleBlocks(
 }
 
 export async function markLessonComplete(moduleId: string, blockId: string): Promise<void> {
-  return invoke("mark_lesson_complete", { request: { moduleId, blockId } });
+  return invoke("mark_lesson_complete", { req: { moduleId, blockId } });
 }
 
 export async function submitQuiz(
