@@ -84,6 +84,31 @@ export function FillInBlank({ exercise, onComplete }: FillInBlankProps) {
     setIsSubmitted(false);
   }, [blanks]);
 
+  // If the AI returns fill_in_blank with no blanks defined, render a clear
+  // fallback rather than silently 0-scoring or rendering an unfillable form.
+  if (blanks.length === 0) {
+    return (
+      <div className="space-y-3">
+        <div className="glass rounded-lg p-5">
+          <p className="text-sm leading-7 text-foreground/90">{exercise.prompt}</p>
+        </div>
+        <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-4 text-sm">
+          <p className="font-medium text-foreground">No blanks were generated for this exercise.</p>
+          <p className="mt-1 text-muted-foreground">
+            The AI didn't produce a usable fill-in-the-blank template. You can
+            skip to the next exercise.
+          </p>
+          <button
+            onClick={() => onComplete(0)}
+            className="mt-3 rounded-md bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+          >
+            Mark as skipped
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const allFilled = blankStates.every((b) => b.value.trim() !== "");
   const correctCount = blankStates.filter((b) => b.isCorrect === true).length;
   const totalBlanks = blanks.length;

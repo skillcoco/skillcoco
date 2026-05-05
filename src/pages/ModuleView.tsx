@@ -12,6 +12,7 @@ import { useLearningStore } from "@/stores/useLearningStore";
 import { generateModuleContent } from "@/lib/tauri-commands";
 import { MarkdownRenderer } from "@/components/learning/MarkdownRenderer";
 import { TutorSidebar } from "@/components/learning/TutorSidebar";
+import { CourseSidebar } from "@/components/learning/CourseSidebar";
 import { ExerciseContainer } from "@/components/exercises/ExerciseContainer";
 import { cn } from "@/lib/utils";
 
@@ -74,15 +75,21 @@ export function ModuleView() {
     return () => { cancelled = true; };
   }, [currentModule, trackId, moduleId, content, currentTrack, progress]);
 
+  const [completionError, setCompletionError] = useState<string | null>(null);
+
   const handleExercisesComplete = useCallback(async (scores: number[]) => {
     if (!trackId || !moduleId) return;
     try {
       const result = await completeExercises(moduleId, trackId, scores);
       if (result.moduleCompleted) {
-        navigate(`/track/${trackId}`);
+        // Defer navigation so the score state has fully committed before
+        // unmounting ExerciseContainer — avoids race where setState fires
+        // on an unmounted tree.
+        setTimeout(() => navigate(`/track/${trackId}`), 0);
       }
     } catch (err) {
       console.error("Failed to complete exercises:", err);
+      setCompletionError(String(err));
     }
   }, [trackId, moduleId, completeExercises, navigate]);
 
@@ -99,7 +106,20 @@ export function ModuleView() {
   }
 
   return (
-    <div className={cn("mx-auto max-w-4xl space-y-6", tutorOpen && "mr-96")}>
+    <div className="-m-6 flex h-[calc(100vh-3rem)] overflow-hidden">
+      {/* Course (LMS) sidebar — modules list, click to navigate */}
+      {currentTrack && (
+        <CourseSidebar
+          track={currentTrack}
+          modules={pathModules}
+          progress={moduleProgress}
+          currentModuleId={moduleId}
+        />
+      )}
+
+      {/* Main scrollable content area */}
+      <div className={cn("flex-1 overflow-y-auto", tutorOpen && "lg:mr-96")}>
+        <div className="mx-auto max-w-4xl space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link
@@ -222,6 +242,20 @@ export function ModuleView() {
         </>
       )}
 
+      {/* Completion error banner */}
+      {completionError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-foreground">
+          <p className="font-medium">Couldn't save your exercise scores</p>
+          <p className="mt-1 text-muted-foreground">{completionError}</p>
+          <button
+            onClick={() => setCompletionError(null)}
+            className="mt-2 text-xs underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Exercises area */}
       {viewMode === "exercises" && moduleId && (
         <div className="glass rounded-lg p-6">
@@ -231,8 +265,10 @@ export function ModuleView() {
           />
         </div>
       )}
+        </div>
+      </div>
 
-      {/* AI Tutor toggle button */}
+      {/* AI Tutor toggle button (fixed-position, outside scroll container) */}
       <button
         onClick={() => setTutorOpen((prev) => !prev)}
         className={cn(
@@ -246,7 +282,7 @@ export function ModuleView() {
         <MessageCircle size={20} />
       </button>
 
-      {/* AI Tutor sidebar */}
+      {/* AI Tutor sidebar (fixed-position overlay) */}
       <TutorSidebar
         isOpen={tutorOpen}
         onClose={() => setTutorOpen(false)}

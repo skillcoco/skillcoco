@@ -85,7 +85,16 @@ export function ExerciseContainer({ moduleId, onAllComplete }: ExerciseContainer
         // Check if all exercises are now complete
         if (next.size === exercises.length && onAllComplete) {
           const allScores = exercises.map((ex) => next.get(ex.id) ?? 0);
-          setTimeout(() => onAllComplete(allScores), 0);
+          // Defer + isolate: parent's onAllComplete is async and may throw.
+          // Wrap in Promise.resolve + .catch so an unhandled rejection
+          // never propagates up and blanks the React tree.
+          setTimeout(() => {
+            Promise.resolve()
+              .then(() => onAllComplete(allScores))
+              .catch((err) => {
+                console.error("onAllComplete failed:", err);
+              });
+          }, 0);
         }
 
         return next;
