@@ -800,81 +800,160 @@ pub async fn generate_module_blocks_inner(
 }
 
 /// Tauri-command-facing inner for fresh generation using Arc<Mutex<Database>>.
+///
+/// Routing order (one short DB lock per phase — never held across `.await`,
+/// never re-entered while still held):
+///
+/// 1. Cache hit: all rows `ready` → return immediately (no LLM call).
+/// 2. Resume:    some rows are `pending`/`failed`/`generating` → spawn
+///               background generation for the non-`ready` ones, return
+///               current state.
+/// 3. Legacy:    no `module_blocks` rows but `modules.content` is non-empty
+///               → wrap as a single synthetic `section` block, return it.
+/// 4. Fresh:     truly empty module → run PagePlanner, insert skeleton, spawn
+///               background generation, return skeleton (status=pending).
+///
+/// Critical: each `db_arc.lock()` block must end before any `.await`, before
+/// any further `.lock()` call, and before any `tokio::spawn` whose body locks
+/// the same Mutex. `std::sync::Mutex` is non-reentrant — re-locking from the
+/// same thread (or holding while a spawned task tries to lock) deadlocks.
 async fn generate_module_blocks_fresh(
     db_arc: Arc<Mutex<crate::db::Database>>,
     auth: Arc<AuthState>,
     req: GenerateModuleBlocksRequest,
 ) -> Result<GenerateModuleBlocksResult, String> {
-    // Check cache first (brief lock)
-    {
+    // Single-purpose enum returned from the lock scope so we can decide what
+    // to do with the lock fully released.
+    enum Decision {
+        ReturnReady(Vec<ModuleBlock>),
+        Resume(Vec<ModuleBlock>),
+        ReturnLegacy(ModuleBlock),
+        Fresh,
+    }
+
+    let decision: Decision = {
         let db = db_arc.lock().map_err(|e| e.to_string())?;
-        let existing = list_blocks_by_module(&db.conn, &req.module_id).map_err(|e| e.to_string())?;
+        let existing =
+            list_blocks_by_module(&db.conn, &req.module_id).map_err(|e| e.to_string())?;
 
         if !existing.is_empty() {
-            let all_ready = existing.iter().all(|b| b.status == "ready");
-            if all_ready {
-                return Ok(GenerateModuleBlocksResult { blocks: existing });
+            if existing.iter().all(|b| b.status == "ready") {
+                Decision::ReturnReady(existing)
+            } else {
+                // Resume any block that isn't already `ready`. Includes `pending`,
+                // `failed`, AND `generating` (orphaned from a prior crashed task).
+                let to_generate: Vec<ModuleBlock> = existing
+                    .iter()
+                    .filter(|b| b.status != "ready")
+                    .cloned()
+                    .collect();
+                Decision::Resume(to_generate)
             }
-
-            // Has non-ready blocks — resume (return current state; caller polls)
-            let has_non_ready = existing.iter().any(|b| b.status != "ready");
-            if has_non_ready {
-                // Spawn generation for pending/failed blocks
-                let pending: Vec<ModuleBlock> = existing.into_iter().filter(|b| b.status == "pending" || b.status == "failed").collect();
-                if !pending.is_empty() {
-                    let db2 = Arc::clone(&db_arc);
-                    let auth2 = Arc::clone(&auth);
-                    let title = req.module_title.clone();
-                    tokio::spawn(async move {
-                        let client = Arc::new(ProductionAIClient { auth: auth2 });
-                        let _ = generate_blocks_in_parallel_with_client(db2, client, pending, title).await;
-                    });
-                }
-                // Re-fetch all blocks to return current state
-                let db = db_arc.lock().map_err(|e| e.to_string())?;
-                let blocks = list_blocks_by_module(&db.conn, &req.module_id).map_err(|e| e.to_string())?;
-                return Ok(GenerateModuleBlocksResult { blocks });
+        } else {
+            // No rows — try legacy wrap.
+            match wrap_legacy_content_as_block(&db.conn, &req.module_id)? {
+                Some(block) => Decision::ReturnLegacy(block),
+                None => Decision::Fresh,
             }
         }
-
-        // Try legacy wrap
-        let legacy = wrap_legacy_content_as_block(&db.conn, &req.module_id)?;
-        if let Some(block) = legacy {
-            return Ok(GenerateModuleBlocksResult { blocks: vec![block] });
-        }
-    }
-    // Lock dropped
-
-    // Fresh module: run PagePlanner (synchronous — must finish before we have skeleton)
-    let outline = run_page_planner(auth.as_ref(), &req.module_title, &req.objectives, &req.learner_level).await?;
-
-    // Insert skeleton (brief lock) — blocks now exist in DB with status=pending
-    let skeleton = {
-        let db = db_arc.lock().map_err(|e| e.to_string())?;
-        insert_skeleton_blocks(&db.conn, &req.module_id, &outline)?
+        // `db` guard drops here — lock released before we spawn or re-lock.
     };
 
-    // Spawn parallel generation in the background — IPC returns immediately so the
-    // frontend's polling loop picks up per-block transitions (pending → generating
-    // → ready/failed) instead of blocking on a 60-90s synchronous await. Mirrors
-    // the resume-path pattern above (line ~828).
-    let db_for_task = Arc::clone(&db_arc);
-    let auth_for_task = Arc::clone(&auth);
-    let title = req.module_title.clone();
-    let skeleton_for_task = skeleton.clone();
-    tokio::spawn(async move {
-        let client = Arc::new(ProductionAIClient { auth: auth_for_task });
-        let _ = generate_blocks_in_parallel_with_client(
-            db_for_task,
-            client,
-            skeleton_for_task,
-            title,
-        )
-        .await;
-    });
+    match decision {
+        Decision::ReturnReady(blocks) => Ok(GenerateModuleBlocksResult { blocks }),
 
-    // Return current state (skeleton + status=pending). Polling fills the rest.
-    Ok(GenerateModuleBlocksResult { blocks: skeleton })
+        Decision::ReturnLegacy(block) => {
+            Ok(GenerateModuleBlocksResult { blocks: vec![block] })
+        }
+
+        Decision::Resume(to_generate) => {
+            if !to_generate.is_empty() {
+                spawn_block_generation(
+                    Arc::clone(&db_arc),
+                    Arc::clone(&auth),
+                    to_generate,
+                    req.module_title.clone(),
+                );
+            }
+            // Re-fetch the canonical state. Outer lock is dropped, so this
+            // re-acquire is safe; the spawned task may also be acquiring
+            // briefly to flip a status, but that's fine — std::sync::Mutex
+            // serializes them.
+            let db = db_arc.lock().map_err(|e| e.to_string())?;
+            let blocks =
+                list_blocks_by_module(&db.conn, &req.module_id).map_err(|e| e.to_string())?;
+            Ok(GenerateModuleBlocksResult { blocks })
+        }
+
+        Decision::Fresh => {
+            // Run PagePlanner with the lock fully released (it does I/O via .await).
+            let outline = run_page_planner(
+                auth.as_ref(),
+                &req.module_title,
+                &req.objectives,
+                &req.learner_level,
+            )
+            .await?;
+
+            // Insert skeleton in a small lock scope.
+            let skeleton = {
+                let db = db_arc.lock().map_err(|e| e.to_string())?;
+                insert_skeleton_blocks(&db.conn, &req.module_id, &outline)?
+            };
+
+            spawn_block_generation(
+                Arc::clone(&db_arc),
+                Arc::clone(&auth),
+                skeleton.clone(),
+                req.module_title.clone(),
+            );
+
+            Ok(GenerateModuleBlocksResult { blocks: skeleton })
+        }
+    }
+}
+
+/// Spawn a background task that generates the given blocks in parallel. Logs
+/// any per-block failures to the Rust log so silent stalls are visible.
+fn spawn_block_generation(
+    db_arc: Arc<Mutex<crate::db::Database>>,
+    auth: Arc<AuthState>,
+    blocks: Vec<ModuleBlock>,
+    module_title: String,
+) {
+    if blocks.is_empty() {
+        return;
+    }
+    log::info!(
+        "spawn_block_generation: launching {} block(s) for '{}'",
+        blocks.len(),
+        module_title
+    );
+    tokio::spawn(async move {
+        let client = Arc::new(ProductionAIClient { auth });
+        let results =
+            generate_blocks_in_parallel_with_client(db_arc, client, blocks, module_title.clone())
+                .await;
+        let failures: Vec<&String> = results
+            .iter()
+            .filter_map(|r| r.as_ref().err())
+            .collect();
+        if !failures.is_empty() {
+            log::error!(
+                "spawn_block_generation: {} of {} block(s) failed for '{}': {:?}",
+                failures.len(),
+                results.len(),
+                module_title,
+                failures
+            );
+        } else {
+            log::info!(
+                "spawn_block_generation: all {} block(s) completed for '{}'",
+                results.len(),
+                module_title
+            );
+        }
+    });
 }
 
 // ── Tauri commands ──
