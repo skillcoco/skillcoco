@@ -137,4 +137,40 @@ describe("ModuleView", () => {
       expect(screen.getByText("Understand testing")).toBeInTheDocument();
     });
   });
+
+  // ── Phase 3 Wave 0 scaffold tests (must FAIL until 03-07 implements tabs + banner) ──
+
+  it("module_view_tabs — lessons/quiz/practice tabs render correct content on click", async () => {
+    const user = userEvent.setup();
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getAllByText(TEST_MODULE_TITLE).length).toBeGreaterThan(0);
+    });
+
+    // FAILS in Wave 0: ModuleView doesn't have lessons/quiz/practice tabs yet.
+    // GREEN in 03-07 Task 1 when tab navigation is implemented.
+    await user.click(screen.getByRole("tab", { name: /quiz/i }));
+    expect(screen.getByTestId("quiz-tab-content")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /practice/i }));
+    expect(screen.getByTestId("practice-tab-content")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /lessons/i }));
+    expect(screen.getByTestId("lessons-tab-content")).toBeInTheDocument();
+  });
+
+  it("module_view_legacy_banner — single synthetic section block shows Generate as lessons banner", async () => {
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getAllByText(TEST_MODULE_TITLE).length).toBeGreaterThan(0);
+    });
+
+    // FAILS in Wave 0: ModuleView doesn't detect single-block legacy state yet.
+    // GREEN in 03-07 Task 1 when legacy detection + banner are implemented.
+    expect(
+      screen.getByText(/generate as lessons/i),
+    ).toBeInTheDocument();
+  });
 });

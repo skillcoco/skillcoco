@@ -163,3 +163,19 @@ export interface SubmitReviewResult {
 export async function submitReview(cardId: string, quality: number): Promise<SubmitReviewResult> {
   return invoke("submit_review", { result: { cardId, quality } });
 }
+
+// ── Phase 3 Block Commands (stubs — implemented in Wave 2/3) ──
+
+export async function getModuleBlocks(moduleId: string): Promise<import("@/types/learning").ModuleBlock[]> {
+  return invoke("get_module_blocks", { moduleId });
+}
+
+export async function markLessonComplete(moduleId: string, blockId: string): Promise<void> {
+  return invoke("mark_lesson_complete", { request: { moduleId, blockId } });
+}
+
+export async function submitQuiz(
+  req: import("@/types/learning").SubmitQuizRequest,
+): Promise<import("@/types/learning").SubmitQuizResult> {
+  return invoke("submit_quiz", { req });
+}

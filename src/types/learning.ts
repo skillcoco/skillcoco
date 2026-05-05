@@ -165,3 +165,124 @@ export interface CompleteExercisesResult {
   /** SR cards created during this completion (LOOP-03) */
   cardsCreated: number;
 }
+
+// ── Phase 3: Block Taxonomy (BLOCK-01) ──
+
+export type BlockType = "section" | "text" | "callout" | "quiz" | "flash_cards";
+export type BlockStatus = "pending" | "generating" | "ready" | "failed";
+
+/** Database row for module_blocks — crosses Tauri IPC boundary with camelCase keys. */
+export interface ModuleBlock {
+  id: string;
+  moduleId: string;
+  ordering: number;
+  blockType: BlockType;
+  status: BlockStatus;
+  paramsJson: string;
+  payloadJson: string;
+  sourceAnchorsJson: string;
+  metadataJson: string;
+  retryCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Parsed payload types (parse payloadJson on the frontend) ──
+
+export interface SectionPayload {
+  markdown: string;
+  wordCount?: number;
+}
+
+export interface TextPayload {
+  markdown: string;
+}
+
+export interface CalloutPayload {
+  variant: "info" | "warning" | "success" | "example" | "code" | "quote";
+  title: string;
+  body: string;
+}
+
+export interface QuizQuestion {
+  id: string;
+  stem: string;
+  options: { id: string; text: string }[];
+  correctOptionId: string; // option-id-based, shuffle-safe
+  explanation: string;
+}
+
+export interface QuizPayload {
+  questions: QuizQuestion[];
+}
+
+export interface FlashCard {
+  id: string;
+  front: string;
+  back: string;
+}
+
+export interface FlashCardsPayload {
+  cards: FlashCard[];
+}
+
+// ── Phase 3 IPC structs ──
+
+export interface QuizAnswer {
+  questionId: string;
+  selectedOptionId: string;
+}
+
+export interface SubmitQuizRequest {
+  moduleId: string;
+  trackId: string;
+  blockId: string;
+  answers: QuizAnswer[];
+}
+
+export interface QuizQuestionReview {
+  questionId: string;
+  stem: string;
+  learnerOptionId: string;
+  correctOptionId: string;
+  isCorrect: boolean;
+  explanation: string;
+}
+
+export interface SubmitQuizResult {
+  scorePercent: number;
+  passed: boolean;
+  masteryLevel: number;
+  moduleCompleted: boolean;
+  newlyUnlockedModuleIds: string[];
+  cardsCreated: number;
+  review: QuizQuestionReview[];
+}
+
+export interface GenerateModuleBlocksRequest {
+  moduleId: string;
+  trackId: string;
+  moduleTitle: string;
+  objectives: string[];
+  learnerLevel: string;
+}
+
+export interface GenerateModuleBlocksResult {
+  blocks: ModuleBlock[];
+}
+
+export interface RegenerateLessonRequest {
+  blockId: string;
+}
+
+export interface RegenerateModuleRequest {
+  moduleId: string;
+  trackId: string;
+}
+
+export interface RateFlashCardRequest {
+  blockId: string;
+  cardId: string;
+  moduleId: string;
+  quality: number; // 1-5; >= 4 = "good/easy"
+}
