@@ -201,7 +201,10 @@ where
             role: "user".to_string(),
             content: format!("Create the lesson outline for: {}. Return ONLY JSON.", module_title),
         }],
-        max_tokens: Some(1024),
+        // 8-10 lessons + objectives + key concepts + quizTopics + flashCardConcepts
+        // typically lands around 1500-2500 tokens; 4096 leaves headroom and matches
+        // the section-block budget below.
+        max_tokens: Some(4096),
         temperature: Some(0.3),
         response_format: Some("json".to_string()),
     };
@@ -222,7 +225,7 @@ where
                             module_title
                         ),
                     }],
-                    max_tokens: Some(1024),
+                    max_tokens: Some(4096),
                     temperature: Some(0.2),
                     response_format: Some("json".to_string()),
                 };
@@ -244,7 +247,19 @@ where
             }
             Ok(outline)
         }
-        Err(e) => Err(format!("Failed to parse PagePlanner outline: {}", e)),
+        Err(e) => {
+            // Surface a hint when the LLM truncated mid-array (likely max_tokens hit)
+            let preview: String = text.chars().take(200).collect();
+            let hint = if e.to_string().contains("EOF while parsing") {
+                "Looks like the AI response was truncated. Try again — if it persists, the model's output budget may be too small for this module's outline."
+            } else {
+                "The AI returned text that wasn't valid JSON."
+            };
+            Err(format!(
+                "PagePlanner outline parse failed: {}. {} (first 200 chars: {:?})",
+                e, hint, preview
+            ))
+        }
     }
 }
 
