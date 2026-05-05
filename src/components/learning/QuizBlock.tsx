@@ -122,7 +122,14 @@ export function QuizBlock({ block, moduleId, trackId }: QuizBlockProps) {
   const isFlagged = flags.has(q.id);
 
   function selectOption(optId: string) {
-    setAnswers((prev) => ({ ...prev, [q.id]: optId }));
+    // Per-question reveal: first selection is FINAL — answers are locked once
+    // recorded. Subsequent clicks on other options are ignored. The reveal
+    // happens immediately on selection (correctness + explanation surface
+    // below the options).
+    setAnswers((prev) => {
+      if (prev[q.id]) return prev; // already locked
+      return { ...prev, [q.id]: optId };
+    });
   }
 
   function toggleFlag() {
@@ -237,25 +244,91 @@ export function QuizBlock({ block, moduleId, trackId }: QuizBlockProps) {
       {/* Question stem */}
       <h3 className="text-lg font-medium mb-4">{q.stem}</h3>
 
-      {/* Options — role="option" for testability (listbox item semantics) */}
-      <ul role="listbox" className="space-y-2 mb-6">
-        {q.options.map((opt) => (
-          <li key={opt.id} role="option" aria-selected={answers[q.id] === opt.id}>
-            <button
-              onClick={() => selectOption(opt.id)}
-              className={cn(
-                "w-full text-left p-3 rounded border transition-colors",
-                answers[q.id] === opt.id
-                  ? "border-blue-400 bg-blue-400/10 text-foreground"
-                  : "border-border glass hover:border-foreground/40"
-              )}
-              data-testid={`option-${opt.id}`}
-            >
-              {opt.text}
-            </button>
-          </li>
-        ))}
-      </ul>
+      {/* Options — role="option" for testability (listbox item semantics).
+          Once an answer is recorded for q, options are locked: the chosen
+          option highlights as correct/incorrect and the correct option (if
+          different) is also highlighted in green. */}
+      {(() => {
+        const chosen = answers[q.id];
+        const revealed = !!chosen;
+        return (
+          <>
+            <ul role="listbox" className="space-y-2 mb-4">
+              {q.options.map((opt) => {
+                const isChosen = chosen === opt.id;
+                const isCorrect = opt.id === q.correctOptionId;
+                const showAsCorrect = revealed && isCorrect;
+                const showAsWrong = revealed && isChosen && !isCorrect;
+                return (
+                  <li
+                    key={opt.id}
+                    role="option"
+                    aria-selected={isChosen}
+                  >
+                    <button
+                      onClick={() => selectOption(opt.id)}
+                      disabled={revealed}
+                      className={cn(
+                        "w-full text-left p-3 rounded border transition-colors",
+                        !revealed && !isChosen &&
+                          "border-border glass hover:border-foreground/40",
+                        !revealed && isChosen &&
+                          "border-blue-400 bg-blue-400/10 text-foreground",
+                        showAsCorrect &&
+                          "border-green-500 bg-green-500/10 text-foreground",
+                        showAsWrong &&
+                          "border-red-500 bg-red-500/10 text-foreground",
+                        revealed && !isChosen && !isCorrect &&
+                          "border-border glass opacity-60",
+                        revealed && "cursor-default",
+                      )}
+                      data-testid={`option-${opt.id}`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span>{opt.text}</span>
+                        {showAsCorrect && (
+                          <span aria-hidden className="text-green-600 dark:text-green-400 font-semibold">✓</span>
+                        )}
+                        {showAsWrong && (
+                          <span aria-hidden className="text-red-600 dark:text-red-400 font-semibold">✗</span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {revealed && (() => {
+              const isCorrect = chosen === q.correctOptionId;
+              const correctOpt = q.options.find((o) => o.id === q.correctOptionId);
+              return (
+                <div
+                  data-testid="answer-feedback"
+                  className={cn(
+                    "rounded-md border p-3 mb-4 text-sm",
+                    isCorrect
+                      ? "border-green-500/40 bg-green-500/5"
+                      : "border-red-500/40 bg-red-500/5",
+                  )}
+                >
+                  <p className="font-semibold mb-1 text-foreground">
+                    {isCorrect ? "Correct" : "Incorrect"}
+                  </p>
+                  {!isCorrect && correctOpt && (
+                    <p className="mb-1 text-foreground/90">
+                      Correct answer: <strong>{correctOpt.text}</strong>
+                    </p>
+                  )}
+                  {q.explanation && (
+                    <p className="text-foreground/80 m-0">{q.explanation}</p>
+                  )}
+                </div>
+              );
+            })()}
+          </>
+        );
+      })()}
 
       {/* Navigation */}
       <div className="flex justify-between">

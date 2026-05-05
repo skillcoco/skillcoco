@@ -240,19 +240,51 @@ describe("QuizBlock Phase 3 scaffolds", () => {
     expect(screen.getByTestId("quiz-progress")).toHaveTextContent("2 / 3");
   });
 
-  it("quiz_does_not_reveal_correctness_during_attempt — no correct/incorrect hint before submit", async () => {
+  it("quiz_per_question_feedback_correct — picking the right answer shows correct + explanation immediately", async () => {
     const user = userEvent.setup();
     render(<QuizBlock block={mockBlock} moduleId="mod-1" trackId="track-1" />);
 
-    // Answer Q1 incorrectly (o1 is wrong, o2 is correct)
-    await user.click(screen.getByText("A group of nodes"));
-    // Navigate to Q2
-    await user.click(screen.getByRole("button", { name: /next/i }));
+    // Q1 correct = o2 ("The smallest deployable unit")
+    await user.click(screen.getByText("The smallest deployable unit"));
 
-    // No correctness hints should be visible
-    expect(screen.queryByText(/correct/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/incorrect/i)).not.toBeInTheDocument();
-    expect(screen.queryByText("A Pod is the smallest deployable unit in Kubernetes.")).not.toBeInTheDocument();
+    // Feedback panel must surface immediately
+    const fb = await screen.findByTestId("answer-feedback");
+    expect(fb).toBeInTheDocument();
+    expect(fb).toHaveTextContent(/correct/i);
+    // Explanation rendered
+    expect(fb).toHaveTextContent("A Pod is the smallest deployable unit in Kubernetes.");
+  });
+
+  it("quiz_per_question_feedback_incorrect — picking the wrong answer reveals correct option + explanation", async () => {
+    const user = userEvent.setup();
+    render(<QuizBlock block={mockBlock} moduleId="mod-1" trackId="track-1" />);
+
+    // o1 is wrong on Q1
+    await user.click(screen.getByText("A group of nodes"));
+
+    const fb = await screen.findByTestId("answer-feedback");
+    expect(fb).toHaveTextContent(/incorrect/i);
+    // Correct option text surfaced in the panel
+    expect(fb).toHaveTextContent("The smallest deployable unit");
+    expect(fb).toHaveTextContent("A Pod is the smallest deployable unit in Kubernetes.");
+  });
+
+  it("quiz_answer_locks_after_reveal — clicking another option after reveal does NOT change the recorded answer", async () => {
+    const user = userEvent.setup();
+    render(<QuizBlock block={mockBlock} moduleId="mod-1" trackId="track-1" />);
+
+    // First pick (wrong = o1)
+    await user.click(screen.getByTestId("option-o1"));
+    await screen.findByTestId("answer-feedback");
+
+    // Try to click the correct option (o2) — must be ignored (locked button)
+    const correctButton = screen.getByTestId("option-o2");
+    expect(correctButton).toBeDisabled();
+    await user.click(correctButton);
+
+    // Feedback still says incorrect (locked to first selection)
+    const fb = screen.getByTestId("answer-feedback");
+    expect(fb).toHaveTextContent(/incorrect/i);
   });
 
   it("quiz_submit_disabled_until_all_answered — Submit disabled with unanswered questions", async () => {
