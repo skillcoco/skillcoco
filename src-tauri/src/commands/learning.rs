@@ -566,21 +566,34 @@ pub fn apply_mastery_update(
     let new_mastery = update_mastery(&params, prior_mastery, is_correct);
     let became_completed = prior_mastery < MASTERY_THRESHOLD && new_mastery >= MASTERY_THRESHOLD;
 
+    // UPSERT: when this is the first interaction (no module_progress row yet),
+    // INSERT it; on conflict on (module_id, learner_id), UPDATE in place. The
+    // schema declares UNIQUE(module_id, learner_id), so ON CONFLICT routes to
+    // the appropriate update. Without this, a quiz pass on a fresh module
+    // silently drops because UPDATE matches zero rows.
+    let new_id = uuid::Uuid::new_v4().to_string();
     if became_completed {
         conn.execute(
-            "UPDATE module_progress
-             SET mastery_level = ?1, attempts = attempts + 1,
-                 status = 'completed', completed_at = datetime('now')
-             WHERE module_id = ?2 AND learner_id = ?3",
-            rusqlite::params![new_mastery, module_id, learner_id],
+            "INSERT INTO module_progress
+                (id, module_id, learner_id, status, mastery_level, attempts, started_at, completed_at)
+             VALUES (?1, ?2, ?3, 'completed', ?4, 1, datetime('now'), datetime('now'))
+             ON CONFLICT(module_id, learner_id) DO UPDATE SET
+                mastery_level = excluded.mastery_level,
+                attempts = module_progress.attempts + 1,
+                status = 'completed',
+                completed_at = datetime('now')",
+            rusqlite::params![new_id, module_id, learner_id, new_mastery],
         )
         .map_err(|e| format!("apply_mastery_update: {}", e))?;
     } else {
         conn.execute(
-            "UPDATE module_progress
-             SET mastery_level = ?1, attempts = attempts + 1
-             WHERE module_id = ?2 AND learner_id = ?3",
-            rusqlite::params![new_mastery, module_id, learner_id],
+            "INSERT INTO module_progress
+                (id, module_id, learner_id, status, mastery_level, attempts, started_at)
+             VALUES (?1, ?2, ?3, 'in_progress', ?4, 1, datetime('now'))
+             ON CONFLICT(module_id, learner_id) DO UPDATE SET
+                mastery_level = excluded.mastery_level,
+                attempts = module_progress.attempts + 1",
+            rusqlite::params![new_id, module_id, learner_id, new_mastery],
         )
         .map_err(|e| format!("apply_mastery_update: {}", e))?;
     }
@@ -2347,6 +2360,51 @@ mod phase3_tests {
             |r| r.get(0),
         ).unwrap();
         assert_eq!(count2, 1, "lesson_completions must still have 1 row after idempotent second call");
+    }
+
+    /// apply_mastery_update upserts the module_progress row when none exists
+    /// for the (module_id, learner_id) combo. Phase 3's submit_quiz path
+    /// bypasses Phase 1's exercise-driven row creation, so without an UPSERT
+    /// quiz passes silently dropped: UPDATE-only would affect 0 rows and the
+    /// mastery_level was never persisted, causing "quiz pass doesn't persist
+    /// across app restart" symptoms.
+    #[test]
+    fn apply_mastery_update_persists_when_no_prior_row() {
+        let conn = fresh_conn();
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Tester')",
+            [],
+        ).unwrap();
+        // Seed minimal path + module so FK constraints pass.
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module) VALUES ('t1', 'lp1', 'k8s', 'devops')", []).unwrap();
+        conn.execute("INSERT INTO learning_paths (id, track_id) VALUES ('p1', 't1')", []).unwrap();
+        conn.execute(
+            "INSERT INTO modules (id, path_id, title) VALUES ('m1', 'p1', 'Pods')",
+            [],
+        ).unwrap();
+
+        // Pre-condition: no module_progress row exists yet
+        let pre: i64 = conn
+            .query_row("SELECT COUNT(*) FROM module_progress WHERE module_id='m1' AND learner_id='lp1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(pre, 0, "test setup: no module_progress row before update");
+
+        // Apply mastery update with `is_correct = true` and prior_mastery=0
+        let transition = apply_mastery_update(&conn, "lp1", "m1", 0.0, true)
+            .expect("apply_mastery_update must succeed even when row doesn't exist");
+
+        // Row should have been UPSERTed
+        let post: i64 = conn
+            .query_row("SELECT COUNT(*) FROM module_progress WHERE module_id='m1' AND learner_id='lp1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(post, 1, "module_progress row must exist after first quiz pass");
+
+        // mastery_level must reflect the BKT-updated value
+        let saved: f64 = conn
+            .query_row("SELECT mastery_level FROM module_progress WHERE module_id='m1' AND learner_id='lp1'", [], |r| r.get(0))
+            .unwrap();
+        assert!((saved - transition.new_mastery).abs() < 1e-9, "saved mastery must match transition.new_mastery");
+        assert!(saved > 0.0, "first correct attempt must move mastery above 0");
     }
 
     /// get_lesson_completions returns the block_ids for a given module.

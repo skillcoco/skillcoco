@@ -69,8 +69,11 @@ export function SectionBlock({
     }
   }
 
+  // prose for typographic spacing only; colors handled per-element by
+  // MarkdownRenderer (theme-aware text-foreground tokens). Removed
+  // `prose-invert` — it forced light-on-light-bg in light mode.
   return (
-    <article className="prose prose-invert max-w-none my-6">
+    <article className="prose max-w-none my-6 prose-headings:text-foreground prose-p:text-foreground prose-li:text-foreground prose-strong:text-foreground">
       {showSkipBanner && (
         <div
           className="glass rounded-md p-4 mb-4 flex justify-between items-start not-prose"

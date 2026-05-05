@@ -475,8 +475,16 @@ export function ModuleView() {
 
           {/* Practice tab — Phase 1 exercises preserved, NO BKT side-effect */}
           {tab === "practice" && (
-            <div data-testid="practice-tab" className="glass rounded-lg p-6">
-              <ExerciseContainer moduleId={moduleId!} />
+            <div data-testid="practice-tab" className="space-y-4">
+              <div className="glass rounded-lg border border-border px-4 py-3 text-sm text-foreground/80">
+                <strong className="font-semibold text-foreground">Bonus practice.</strong>{" "}
+                These coding exercises are optional and don't affect module
+                mastery — passing the <em>Quiz</em> is what completes the
+                module and unlocks the next one.
+              </div>
+              <div className="glass rounded-lg p-6">
+                <ExerciseContainer moduleId={moduleId!} />
+              </div>
             </div>
           )}
         </div>

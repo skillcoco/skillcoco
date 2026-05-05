@@ -169,11 +169,19 @@ export function TutorSidebar({ isOpen, onClose, trackId, moduleId, moduleTitle }
                 "max-w-[85%] rounded-lg px-3 py-2 text-sm",
                 msg.role === "user"
                   ? "bg-primary text-primary-foreground"
-                  : "glass border border-border"
+                  // Solid card bg + explicit foreground — `glass` was rendering
+                  // as semi-transparent white in light mode, which left the
+                  // assistant's text indistinguishable from the panel
+                  // background. Using bg-card / text-card-foreground gives
+                  // proper contrast in both themes.
+                  : "border border-border bg-card text-card-foreground"
               )}
             >
               {msg.role === "assistant" ? (
-                <MarkdownRenderer content={msg.content} className="text-sm [&_p]:mb-2 [&_p]:last:mb-0" />
+                <MarkdownRenderer
+                  content={msg.content}
+                  className="text-sm text-card-foreground [&_p]:mb-2 [&_p]:last:mb-0 [&_p]:text-card-foreground [&_h1]:text-card-foreground [&_h2]:text-card-foreground [&_h3]:text-card-foreground [&_h4]:text-card-foreground [&_strong]:text-card-foreground [&_li]:text-card-foreground"
+                />
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               )}
