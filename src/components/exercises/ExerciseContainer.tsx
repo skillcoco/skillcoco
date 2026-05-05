@@ -4,6 +4,7 @@ import { getExercises, generateExercise } from "@/lib/tauri-commands";
 import { ConceptualQA } from "./ConceptualQA";
 import { CodeChallenge } from "./CodeChallenge";
 import { FillInBlank } from "./FillInBlank";
+import { MultipleChoice } from "./MultipleChoice";
 import type { Exercise } from "@/types/exercises";
 import { cn } from "@/lib/utils";
 
@@ -28,9 +29,10 @@ export function ExerciseContainer({ moduleId, onAllComplete }: ExerciseContainer
       try {
         let result = await getExercises(moduleId);
 
-        // Auto-generate if none exist
+        // Auto-generate if none exist. Default mix favours MCQ — fast,
+        // click-and-done UX. fill_in_blank keeps a touch of variety.
         if (result.length === 0) {
-          const types = ["conceptual_qa", "code_challenge", "fill_in_blank"];
+          const types = ["multiple_choice", "multiple_choice", "fill_in_blank"];
           const generated = [];
           for (const type of types) {
             try {
@@ -201,7 +203,14 @@ export function ExerciseContainer({ moduleId, onAllComplete }: ExerciseContainer
             onComplete={handleComplete}
           />
         )}
-        {!["conceptual_qa", "code_challenge", "fill_in_blank"].includes(currentExercise.type) && (
+        {currentExercise.type === "multiple_choice" && (
+          <MultipleChoice
+            key={currentExercise.id}
+            exercise={currentExercise}
+            onComplete={handleComplete}
+          />
+        )}
+        {!["conceptual_qa", "code_challenge", "fill_in_blank", "multiple_choice"].includes(currentExercise.type) && (
           <div className="glass rounded-lg p-5">
             <p className="text-sm text-muted-foreground">
               Exercise type "{currentExercise.type}" is not yet supported.

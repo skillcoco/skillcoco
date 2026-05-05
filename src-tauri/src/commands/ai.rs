@@ -244,42 +244,127 @@ pub async fn generate_learning_path(
 
 // ── AI Tutor ──
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TutorMessageRequest {
+    pub content: String,
+    /// When set, backend fetches authoritative module + track context from DB.
+    #[serde(default)]
+    pub module_id: Option<String>,
+    /// Free-text fallback (legacy frontend); used only when `module_id` lookup fails.
+    #[serde(default)]
+    pub module_context: Option<String>,
+    #[serde(default)]
+    pub history: Vec<TutorHistoryMessage>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TutorHistoryMessage {
+    pub role: String,
+    pub content: String,
+}
+
+const TUTOR_CONTENT_EXCERPT_MAX: usize = 1500;
+
+fn build_tutor_system_prompt(ctx: Option<&ExerciseContext>, fallback: &str) -> String {
+    let base = "You are an AI tutor helping a learner. \
+        Answer their questions clearly and accurately, using examples and analogies \
+        appropriate to their level. Use Socratic prompts SPARINGLY — only when the \
+        learner is close to the answer and a small nudge will help them get there. \
+        Default to direct, concise explanations. \
+        Stay focused on the current module topic; redirect off-topic questions back \
+        to the module's learning objectives.";
+
+    match ctx {
+        Some(ctx) => {
+            let objectives_block = if ctx.objectives.is_empty() {
+                "  (none specified)".to_string()
+            } else {
+                ctx.objectives
+                    .iter()
+                    .map(|o| format!("  - {}", o))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+
+            let content_section = if ctx.content_excerpt.trim().is_empty() {
+                String::new()
+            } else {
+                let excerpt = if ctx.content_excerpt.len() > TUTOR_CONTENT_EXCERPT_MAX {
+                    let start = ctx.content_excerpt.len() - TUTOR_CONTENT_EXCERPT_MAX;
+                    let safe_start = ctx
+                        .content_excerpt
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .find(|&i| i >= start)
+                        .unwrap_or(start);
+                    &ctx.content_excerpt[safe_start..]
+                } else {
+                    ctx.content_excerpt.as_str()
+                };
+                format!("\n\nMODULE CONTENT (recent excerpt):\n{}", excerpt)
+            };
+
+            format!(
+                "{base}\n\n\
+                LEARNING TRACK:\n\
+                - Topic: {topic}\n\
+                - Goal: {goal}\n\n\
+                CURRENT MODULE:\n\
+                - Title: {module_title}\n\
+                - Description: {module_description}\n\
+                - Learning Objectives:\n{objectives_block}{content_section}",
+                base = base,
+                topic = ctx.topic,
+                goal = ctx.goal,
+                module_title = ctx.module_title,
+                module_description = ctx.module_description,
+                objectives_block = objectives_block,
+                content_section = content_section,
+            )
+        }
+        None => {
+            if fallback.trim().is_empty() {
+                base.to_string()
+            } else {
+                format!("{}\n\nContext (provided by frontend): {}", base, fallback)
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn send_tutor_message(
     auth: State<'_, AuthState>,
-    message: serde_json::Value,
+    state: State<'_, AppState>,
+    message: TutorMessageRequest,
 ) -> Result<String, String> {
-    let module_context = message["moduleContext"].as_str().unwrap_or("");
-    let user_message = message["content"]
-        .as_str()
-        .ok_or("Missing message content")?;
+    if message.content.trim().is_empty() {
+        return Err("Message content is empty".to_string());
+    }
 
-    let history: Vec<ServiceMessage> = message["history"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| {
-                    Some(ServiceMessage {
-                        role: m["role"].as_str()?.to_string(),
-                        content: m["content"].as_str()?.to_string(),
-                    })
-                })
-                .collect()
+    // Fetch authoritative context if moduleId provided. Failures fall back to
+    // the optional moduleContext string (backwards compat for any caller that
+    // hasn't been updated yet).
+    let ctx = match &message.module_id {
+        Some(id) if !id.is_empty() => load_exercise_context(state.inner(), id).ok(),
+        _ => None,
+    };
+    let fallback = message.module_context.as_deref().unwrap_or("");
+
+    let system_prompt = build_tutor_system_prompt(ctx.as_ref(), fallback);
+
+    let mut messages: Vec<ServiceMessage> = message
+        .history
+        .into_iter()
+        .map(|h| ServiceMessage {
+            role: h.role,
+            content: h.content,
         })
-        .unwrap_or_default();
-
-    let system_prompt = format!(
-        "You are an AI tutor helping a learner. Use the Socratic method. \
-         Guide the learner to understanding through questions rather than giving direct answers. \
-         Current module context: {}\n\
-         Be concise, encouraging, and adapt your explanations to the learner's level.",
-        module_context
-    );
-
-    let mut messages = history;
+        .collect();
     messages.push(ServiceMessage {
         role: "user".to_string(),
-        content: user_message.to_string(),
+        content: message.content,
     });
 
     let response = ai_request(
@@ -288,7 +373,7 @@ pub async fn send_tutor_message(
             system_prompt,
             messages,
             max_tokens: Some(1024),
-            temperature: Some(0.7),
+            temperature: Some(0.6),
             response_format: None,
         },
     )
@@ -780,6 +865,63 @@ mod tests {
         let prompt = build_exercise_system_prompt("conceptual_qa", 5, &ctx);
         // No panic, still includes title
         assert!(prompt.contains("Pods, Nodes and Clusters"));
+    }
+
+    #[test]
+    fn tutor_prompt_uses_db_context_when_present() {
+        let ctx = k8s_pods_context();
+        let prompt = build_tutor_system_prompt(Some(&ctx), "stale fallback");
+        assert!(prompt.contains("Pods, Nodes and Clusters"));
+        assert!(prompt.contains("Kubernetes"));
+        assert!(prompt.contains("Define what a Pod is"));
+        // DB context should win over fallback
+        assert!(!prompt.contains("stale fallback"));
+    }
+
+    #[test]
+    fn tutor_prompt_falls_back_to_string_when_no_context() {
+        let prompt = build_tutor_system_prompt(None, "Track: t1, Module: m1 - Pods");
+        assert!(prompt.contains("Track: t1, Module: m1 - Pods"));
+    }
+
+    #[test]
+    fn tutor_prompt_works_with_no_context_and_no_fallback() {
+        let prompt = build_tutor_system_prompt(None, "");
+        // No panic, returns base prompt
+        assert!(prompt.contains("AI tutor"));
+    }
+
+    #[test]
+    fn tutor_prompt_softens_socratic_directive() {
+        let ctx = k8s_pods_context();
+        let prompt = build_tutor_system_prompt(Some(&ctx), "");
+        // The user feedback was that strict-Socratic frustrates learners.
+        // The prompt should explicitly say Socratic is for nudges only.
+        let lower = prompt.to_lowercase();
+        assert!(
+            lower.contains("sparingly") || lower.contains("nudge"),
+            "tutor prompt should soften the Socratic-only directive; got: {}",
+            prompt
+        );
+        assert!(
+            lower.contains("direct") && lower.contains("concise"),
+            "tutor prompt should default to direct, concise answers; got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn tutor_prompt_truncates_long_content_excerpt() {
+        let mut ctx = k8s_pods_context();
+        ctx.content_excerpt = "x".repeat(10_000);
+        let prompt = build_tutor_system_prompt(Some(&ctx), "");
+        let xs = prompt.matches('x').count();
+        assert!(
+            xs <= TUTOR_CONTENT_EXCERPT_MAX + 50,
+            "tutor content excerpt should be truncated; got {} x's",
+            xs
+        );
+        assert!(xs < 9000, "tutor content excerpt was not truncated");
     }
 
     #[test]

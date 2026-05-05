@@ -57,9 +57,14 @@ export function TutorSidebar({ isOpen, onClose, trackId, moduleId, moduleTitle }
         content: m.content,
       }));
 
+      // Backend fetches authoritative module + track context from DB via
+      // moduleId (mirrors the generate_exercise pattern). moduleTitle is
+      // sent for display only; moduleContext stays as a legacy fallback.
       const response = await sendTutorMessage({
         content: trimmed,
-        moduleContext: `Track: ${trackId}, Module: ${moduleId} - ${moduleTitle}`,
+        moduleId,
+        trackId,
+        moduleTitle,
         history: recentHistory,
       });
 

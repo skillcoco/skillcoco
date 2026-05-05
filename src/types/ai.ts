@@ -105,6 +105,12 @@ export interface EvaluateResponseResult {
 
 export interface TutorMessage {
   content: string;
+  /** When provided, backend fetches authoritative track + module context from DB. */
+  moduleId?: string;
+  trackId?: string;
+  /** Display label only (backend ignores for grounding when moduleId is set). */
+  moduleTitle?: string;
+  /** @deprecated kept for one release — use moduleId instead. */
   moduleContext?: string;
   history?: AIMessage[];
 }
