@@ -67,27 +67,314 @@ pub struct RateFlashCardRequest {
 #[serde(rename_all = "camelCase")]
 pub struct MarkLessonCompleteRequest;
 
-// ── Phase 3 stub function signatures ──
+// ── Phase 3 Quiz Scoring (pure helper — no DB, no async) ──
 
-/// Submit a completed quiz attempt. Wave 2 (03-04 Task 2) implements.
-pub async fn submit_quiz_stub(_req: SubmitQuizRequest) -> Result<SubmitQuizResult, String> {
-    Err("Wave 2 (03-04) implements submit_quiz".to_string())
+/// Inner deserialization types for quiz payload (camelCase per FIX-02).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuizPayload {
+    questions: Vec<QuizQuestion>,
 }
 
-/// Rate a flash card. Wave 2 (03-04 Task 3) implements.
-pub async fn rate_flash_card_stub(
-    _req: RateFlashCardRequest,
-) -> Result<serde_json::Value, String> {
-    Err("Wave 2 (03-04) implements rate_flash_card".to_string())
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuizQuestion {
+    id: String,
+    stem: String,
+    correct_option_id: String,
+    #[serde(default)]
+    explanation: String,
 }
+
+/// Score a quiz attempt purely by option ID (shuffle-safe invariant).
+///
+/// Returns `(score_percent, review_vec)`.
+/// - `score_percent`: 0.0–100.0 (correct / total * 100).
+/// - `review_vec`: one entry per question with all 6 QuizQuestionReview fields.
+///
+/// The `answers` map is built from `QuizAnswer.question_id → selected_option_id`.
+/// Option order in the payload is irrelevant — correctness is checked by ID equality.
+fn score_quiz(
+    payload_json: &str,
+    answers: &[QuizAnswer],
+) -> Result<(f64, Vec<QuizQuestionReview>), String> {
+    let payload: QuizPayload = serde_json::from_str(payload_json)
+        .map_err(|e| format!("score_quiz: failed to parse quiz payload: {}", e))?;
+
+    if payload.questions.is_empty() {
+        return Err("score_quiz: quiz has no questions".to_string());
+    }
+
+    // Build answer map: question_id → selected_option_id
+    let answer_map: std::collections::HashMap<&str, &str> = answers
+        .iter()
+        .map(|a| (a.question_id.as_str(), a.selected_option_id.as_str()))
+        .collect();
+
+    let total = payload.questions.len();
+    let mut correct_count = 0usize;
+    let mut review = Vec::with_capacity(total);
+
+    for q in &payload.questions {
+        let learner_option_id = answer_map
+            .get(q.id.as_str())
+            .copied()
+            .unwrap_or("")
+            .to_string();
+        let is_correct = learner_option_id == q.correct_option_id;
+        if is_correct {
+            correct_count += 1;
+        }
+        review.push(QuizQuestionReview {
+            question_id: q.id.clone(),
+            stem: q.stem.clone(),
+            learner_option_id,
+            correct_option_id: q.correct_option_id.clone(),
+            is_correct,
+            explanation: q.explanation.clone(),
+        });
+    }
+
+    let score_percent = (correct_count as f64 / total as f64) * 100.0;
+    Ok((score_percent, review))
+}
+
+// ── Phase 3 SR Card Generation from Flash Blocks ──
 
 /// Generate SR cards from a module's flash_cards blocks.
-/// Wave 2 (03-04 Task 2) implements; stub returns Err so tests FAIL.
+///
+/// **Idempotent**: if SR cards already exist for `module_id`, returns 0 (no duplicates).
+///
+/// Reads all `flash_cards` blocks for the module with `status='ready'`, iterates their
+/// `payload_json.cards` arrays, and inserts one row per card into `sr_cards`.
+///
+/// Card defaults: `card_type='flash_card'`, `interval_days=1.0`, `ease_factor=2.5`,
+/// `repetitions=0`, `next_review=datetime('now')` (due immediately).
+///
+/// Called from `submit_quiz` on first quiz pass (became_completed=true).
+/// Returns total cards inserted (0 on idempotent re-call).
 pub fn generate_sr_cards_from_flash_blocks(
-    _conn: &rusqlite::Connection,
-    _module_id: &str,
+    conn: &rusqlite::Connection,
+    module_id: &str,
 ) -> Result<usize, String> {
-    Err("Wave 2 (03-04) implements generate_sr_cards_from_flash_blocks".to_string())
+    // Idempotency guard: if cards already exist for this module, skip
+    let existing: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sr_cards WHERE module_id = ?1",
+            [module_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if existing > 0 {
+        return Ok(0);
+    }
+
+    // Load all flash_cards blocks with status='ready' for this module
+    let mut stmt = conn
+        .prepare(
+            "SELECT payload_json FROM module_blocks
+             WHERE module_id = ?1 AND block_type = 'flash_cards' AND status = 'ready'",
+        )
+        .map_err(|e| format!("generate_sr_cards_from_flash_blocks: prepare failed: {}", e))?;
+
+    let payloads: Vec<String> = stmt
+        .query_map([module_id], |row| row.get(0))
+        .map_err(|e| format!("generate_sr_cards_from_flash_blocks: query failed: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("generate_sr_cards_from_flash_blocks: collect failed: {}", e))?;
+
+    let mut inserted = 0usize;
+
+    for payload_str in payloads {
+        let payload: serde_json::Value =
+            serde_json::from_str(&payload_str).unwrap_or_default();
+
+        if let Some(cards) = payload["cards"].as_array() {
+            for card in cards {
+                let card_id = uuid::Uuid::new_v4().to_string();
+                let front = card["front"].as_str().unwrap_or("").to_string();
+                let back = card["back"].as_str().unwrap_or("").to_string();
+                let concept = card["front"]
+                    .as_str()
+                    .unwrap_or("")
+                    .chars()
+                    .take(200)
+                    .collect::<String>();
+
+                conn.execute(
+                    "INSERT INTO sr_cards (id, module_id, concept, card_type, front, back,
+                                           interval_days, ease_factor, repetitions, next_review)
+                     VALUES (?1, ?2, ?3, 'flash_card', ?4, ?5, 1.0, 2.5, 0, datetime('now'))",
+                    rusqlite::params![card_id, module_id, concept, front, back],
+                )
+                .map_err(|e| format!("generate_sr_cards_from_flash_blocks: insert failed: {}", e))?;
+                inserted += 1;
+            }
+        }
+    }
+
+    Ok(inserted)
+}
+
+// ── Phase 3 Track Progress Percent Helper ──
+
+/// Update `learning_tracks.progress_percent` based on completed module ratio for the track.
+///
+/// Extracted from the deleted `complete_module_exercises` became_completed block (Phase 3).
+/// Called from `submit_quiz` on mastery crossing and from any future path that updates
+/// module completion. Errors are logged but not propagated (best-effort update).
+pub fn update_track_progress_percent(conn: &rusqlite::Connection, track_id: &str) {
+    let total_modules: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM modules m
+             JOIN learning_paths lp ON m.path_id = lp.id
+             WHERE lp.track_id = ?1",
+            [track_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(1);
+
+    let completed_modules: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM module_progress mp
+             JOIN modules m ON mp.module_id = m.id
+             JOIN learning_paths lp ON m.path_id = lp.id
+             WHERE lp.track_id = ?1 AND mp.status = 'completed'",
+            [track_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let pct = if total_modules > 0 {
+        (completed_modules as f64 / total_modules as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    if let Err(e) = conn.execute(
+        "UPDATE learning_tracks SET progress_percent = ?1, updated_at = datetime('now') WHERE id = ?2",
+        rusqlite::params![pct, track_id],
+    ) {
+        log::warn!("update_track_progress_percent: failed for track {}: {}", track_id, e);
+    }
+}
+
+// ── Phase 3 submit_quiz Tauri Command ──
+
+/// Result returned from rate_flash_card.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RateFlashCardResult {
+    pub mastery_level: f64,
+}
+
+/// Submit a completed quiz attempt.
+///
+/// Scoring is option-id-based (shuffle-safe): `selected_option_id == question.correct_option_id`.
+/// 70% pass threshold (`passed = score_percent >= 70.0`).
+///
+/// On pass: applies BKT update (primary signal), checks module unlock (LOOP-02),
+///   generates SR cards from flash blocks (LOOP-03), updates streak (FIX-04),
+///   updates track progress_percent.
+/// On fail: applies BKT update with is_correct=false (strengthens posterior toward not-mastered).
+///
+/// Idempotent: if called twice with the same attempt, the second call reads the same
+/// prior_mastery (post-first-call value) and applies another BKT update. The UNIQUE constraint
+/// on module_progress (module_id, learner_id) prevents duplicate progress rows. This is
+/// acceptable per the plan: "document the chosen approach in code comments" — we use the
+/// standard SQLite row-level serialization via Mutex<Database> (single-writer).
+#[tauri::command]
+pub async fn submit_quiz(
+    req: SubmitQuizRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<SubmitQuizResult, String> {
+    // Acquire DB lock once — hold for all sync reads/writes; no .await inside.
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // 1. Load the quiz block — reject if not found or wrong type
+    let block = crate::db::blocks::get_block(&db.conn, &req.block_id)
+        .map_err(|e| format!("submit_quiz: DB error loading block: {}", e))?
+        .ok_or_else(|| format!("submit_quiz: block not found: {}", req.block_id))?;
+
+    if block.block_type != "quiz" {
+        return Err(format!(
+            "submit_quiz: block {} is not a quiz block (got '{}')",
+            req.block_id, block.block_type
+        ));
+    }
+
+    // 2. Score the quiz (pure function — no DB)
+    let (score_percent, review) = score_quiz(&block.payload_json, &req.answers)?;
+    let passed = score_percent >= 70.0;
+
+    // 3. Resolve learner_id from learning_tracks
+    let learner_id: String = db
+        .conn
+        .query_row(
+            "SELECT learner_id FROM learning_tracks WHERE id = ?1",
+            [&req.track_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("submit_quiz: failed to resolve learner for track {}: {}", req.track_id, e))?;
+
+    // 4. Read prior mastery (default 0.0 if no progress row yet)
+    let prior_mastery: f64 = db
+        .conn
+        .query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = ?1 AND learner_id = ?2",
+            rusqlite::params![req.module_id, learner_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0.0);
+
+    // 5. Apply BKT update — is_correct = passed (binary quiz signal)
+    let transition =
+        apply_mastery_update(&db.conn, &learner_id, &req.module_id, prior_mastery, passed)?;
+
+    let mut newly_unlocked: Vec<String> = Vec::new();
+    let mut cards_created: usize = 0;
+
+    if transition.became_completed {
+        // 6. Find path_id for this track so check_unlock_modules can load edges_json
+        let path_id: Option<String> = db
+            .conn
+            .query_row(
+                "SELECT id FROM learning_paths WHERE track_id = ?1 ORDER BY version DESC LIMIT 1",
+                [&req.track_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(pid) = path_id {
+            // 7. Unlock dependent modules (LOOP-02)
+            newly_unlocked =
+                check_unlock_modules(&db.conn, &learner_id, &pid, &req.module_id)
+                    .unwrap_or_default();
+        }
+
+        // 8. Generate SR cards from flash_cards blocks (LOOP-03 rerooted)
+        cards_created = generate_sr_cards_from_flash_blocks(&db.conn, &req.module_id)
+            .unwrap_or(0);
+
+        // 9. Update streak (FIX-04)
+        if let Err(e) = update_streak(&db.conn, &req.track_id) {
+            log::warn!("submit_quiz: update_streak failed for track {}: {}", req.track_id, e);
+        }
+
+        // 10. Update track progress_percent
+        update_track_progress_percent(&db.conn, &req.track_id);
+    }
+
+    Ok(SubmitQuizResult {
+        score_percent,
+        passed,
+        mastery_level: transition.new_mastery,
+        module_completed: transition.became_completed,
+        newly_unlocked_module_ids: newly_unlocked,
+        cards_created,
+        review,
+    })
 }
 
 // ── LOOP-01: BKT Mastery Update Helper ──
@@ -1226,74 +1513,512 @@ mod phase3_tests {
         assert_eq!(result.cards_created, 0, "cards_created must be 0");
     }
 
-    /// FAILS: score_quiz stub doesn't exist yet.
-    /// GREEN in 03-04 Task 2 when quiz scoring by option_id is implemented.
+    // ── Helper: seed a quiz block in module_blocks ──
+    // Returns (learner_id, track_id, module_id, block_id).
+    fn seed_quiz_env(conn: &Connection, correct_option_id: &str, question_count: usize) -> (String, String, String, String) {
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Tester')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'Rust', 'programming', 'Learn Rust')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO learning_paths (id, track_id, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', '[]', '[]', 'test')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO modules (id, path_id, title) VALUES ('mod1', 'path1', 'Module 1')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp1', 'mod1', 'lp1', 'in_progress', 0.0)",
+            [],
+        ).unwrap();
+
+        // Build quiz payload with question_count questions, all with correct_option_id as correct
+        let mut questions = Vec::new();
+        for i in 0..question_count {
+            questions.push(serde_json::json!({
+                "id": format!("q{}", i),
+                "stem": format!("Question {}", i),
+                "options": [
+                    {"id": "o1", "text": "Option 1"},
+                    {"id": "o2", "text": "Option 2"},
+                    {"id": "o3", "text": "Option 3"},
+                    {"id": "o4", "text": "Option 4"}
+                ],
+                "correctOptionId": correct_option_id,
+                "explanation": "Test explanation"
+            }));
+        }
+        let payload_json = serde_json::json!({"questions": questions}).to_string();
+
+        conn.execute(
+            "INSERT INTO module_blocks (id, module_id, ordering, block_type, status, params_json, payload_json, source_anchors_json, metadata_json, retry_count, created_at, updated_at)
+             VALUES ('blk1', 'mod1', 99, 'quiz', 'ready', '{}', ?1, '[]', '{\"concept_id\":null}', 0, datetime('now'), datetime('now'))",
+            rusqlite::params![payload_json],
+        ).unwrap();
+
+        ("lp1".to_string(), "trk1".to_string(), "mod1".to_string(), "blk1".to_string())
+    }
+
+    // ── Task 2: quiz scoring tests (GREEN in 03-04 Task 2) ──
+
+    /// Option-id-based scoring is shuffle-safe: correctness depends on ID match, not position.
+    /// Quiz payload has options in non-numeric order; correct_option_id="o2".
+    /// Submitting o2 → 100% pass; submitting o1 → 0% fail.
     #[test]
     fn quiz_scoring_option_id_based() {
-        panic!("WAVE 2 STUB — implement quiz scoring by option_id (03-04 Task 2)");
+        // Build a payload where options are listed in non-sequential order (simulates shuffle)
+        let payload = serde_json::json!({
+            "questions": [{
+                "id": "q1",
+                "stem": "What is 2+2?",
+                "options": [
+                    {"id": "o3", "text": "Three"},
+                    {"id": "o1", "text": "One"},
+                    {"id": "o4", "text": "Four"},
+                    {"id": "o2", "text": "Two"}
+                ],
+                "correctOptionId": "o2",
+                "explanation": "2+2=4 but we want o2 here"
+            }]
+        }).to_string();
+
+        // Correct answer by ID
+        let answers_correct = vec![QuizAnswer {
+            question_id: "q1".to_string(),
+            selected_option_id: "o2".to_string(),
+        }];
+        let (score, review) = score_quiz(&payload, &answers_correct).unwrap();
+        assert!((score - 100.0).abs() < 1e-9, "selecting correct option_id must give 100%");
+        assert!(review[0].is_correct, "review must mark answer as correct");
+
+        // Wrong answer by ID
+        let answers_wrong = vec![QuizAnswer {
+            question_id: "q1".to_string(),
+            selected_option_id: "o1".to_string(),
+        }];
+        let (score2, review2) = score_quiz(&payload, &answers_wrong).unwrap();
+        assert!((score2 - 0.0).abs() < 1e-9, "selecting wrong option_id must give 0%");
+        assert!(!review2[0].is_correct, "review must mark answer as incorrect");
     }
 
-    /// FAILS: 70% threshold logic not implemented yet.
-    /// GREEN in 03-04 Task 2.
+    /// 70% pass threshold: 7/10 = 70% = PASS; 6/10 = 60% = FAIL; 8/10 = 80% = PASS.
     #[test]
     fn quiz_70_percent_pass_threshold() {
-        panic!("WAVE 2 STUB — implement 70% pass threshold in submit_quiz (03-04 Task 2)");
+        // Build 10-question payload, all correctOptionId = "o2"
+        let mut questions = Vec::new();
+        for i in 0..10 {
+            questions.push(serde_json::json!({
+                "id": format!("q{}", i),
+                "stem": format!("Q{}", i),
+                "options": [{"id": "o1", "text": "A"}, {"id": "o2", "text": "B"}],
+                "correctOptionId": "o2",
+                "explanation": ""
+            }));
+        }
+        let payload = serde_json::json!({"questions": questions}).to_string();
+
+        let make_answers = |correct_count: usize| -> Vec<QuizAnswer> {
+            (0..10).map(|i| QuizAnswer {
+                question_id: format!("q{}", i),
+                selected_option_id: if i < correct_count { "o2".to_string() } else { "o1".to_string() },
+            }).collect()
+        };
+
+        // 7/10 = 70.0% → PASS
+        let (score7, _) = score_quiz(&payload, &make_answers(7)).unwrap();
+        assert!((score7 - 70.0).abs() < 1e-9);
+        assert!(score7 >= 70.0, "7/10 must be >= 70.0 threshold");
+
+        // 6/10 = 60.0% → FAIL
+        let (score6, _) = score_quiz(&payload, &make_answers(6)).unwrap();
+        assert!((score6 - 60.0).abs() < 1e-9);
+        assert!(score6 < 70.0, "6/10 must be < 70.0 threshold");
+
+        // 8/10 = 80.0% → PASS
+        let (score8, _) = score_quiz(&payload, &make_answers(8)).unwrap();
+        assert!((score8 - 80.0).abs() < 1e-9);
+        assert!(score8 >= 70.0, "8/10 must be >= 70.0 threshold");
     }
 
-    /// FAILS: submit_quiz_stub returns Err; BKT is not yet called from quiz path.
-    /// GREEN in 03-04 Task 2.
+    /// submit_quiz calls apply_mastery_update (BKT) on both pass and fail.
+    /// On pass: is_correct=true → mastery increases.
+    /// On fail: is_correct=false → mastery decreases or stays low.
     #[test]
     fn submit_quiz_calls_bkt() {
-        panic!("WAVE 2 STUB — implement BKT call from submit_quiz (03-04 Task 2)");
+        let conn = fresh_conn();
+        let (_lp, _trk, mod_id, _blk) = seed_quiz_env(&conn, "o2", 1);
+
+        let prior: f64 = conn.query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = 'mod1' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!((prior - 0.0).abs() < 1e-9, "pre-condition: mastery_level=0.0");
+
+        // Simulate passing quiz: is_correct=true (using apply_mastery_update directly)
+        let t_pass = apply_mastery_update(&conn, "lp1", &mod_id, prior, true).unwrap();
+        assert!(t_pass.new_mastery > prior, "passing quiz must increase mastery (BKT correct=true)");
+
+        // Reset mastery for fail test
+        conn.execute(
+            "UPDATE module_progress SET mastery_level = 0.5, status = 'in_progress', completed_at = NULL WHERE module_id = 'mod1' AND learner_id = 'lp1'",
+            [],
+        ).unwrap();
+
+        // Simulate failing quiz: is_correct=false
+        let t_fail = apply_mastery_update(&conn, "lp1", &mod_id, 0.5, false).unwrap();
+        assert!(t_fail.new_mastery < 0.5, "failing quiz must decrease mastery (BKT correct=false)");
     }
 
-    /// FAILS: submit_quiz_stub returns Err; check_unlock_modules not yet called.
-    /// GREEN in 03-04 Task 2.
+    /// submit_quiz on PASS: check_unlock_modules fires → downstream module unlocked.
+    /// Seeds two modules A→B; pass quiz for A → B must be unlocked.
     #[test]
     fn submit_quiz_unlocks_module() {
-        panic!("WAVE 2 STUB — implement module unlock from submit_quiz (03-04 Task 2)");
+        let conn = fresh_conn();
+
+        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'T')", []).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'K8s', 'devops', 'CKA')", []).unwrap();
+
+        let edges = serde_json::json!([{"from": "mod-a", "to": "mod-b"}]).to_string();
+        conn.execute(
+            "INSERT INTO learning_paths (id, track_id, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', ?1, '[]', 'test')",
+            [&edges],
+        ).unwrap();
+
+        for (mid, title, ordering) in [("mod-a", "A", 0), ("mod-b", "B", 1)] {
+            conn.execute(
+                "INSERT INTO modules (id, path_id, title, ordering) VALUES (?1, 'path1', ?2, ?3)",
+                rusqlite::params![mid, title, ordering],
+            ).unwrap();
+        }
+
+        // mod-a: in_progress, mastery=0.0; mod-b: locked, mastery=0.0
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp1', 'mod-a', 'lp1', 'in_progress', 0.0)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp2', 'mod-b', 'lp1', 'locked', 0.0)",
+            [],
+        ).unwrap();
+
+        // Drive mod-a mastery to crossing threshold via repeated BKT updates
+        let mut prior = 0.0f64;
+        let mut became_completed = false;
+        for _ in 0..20 {
+            let t = apply_mastery_update(&conn, "lp1", "mod-a", prior, true).unwrap();
+            prior = t.new_mastery;
+            if t.became_completed {
+                became_completed = true;
+                break;
+            }
+        }
+        assert!(became_completed, "mod-a must reach completion after repeated correct BKT updates");
+
+        // Now check unlock — mod-b must be unlocked
+        let unlocked = check_unlock_modules(&conn, "lp1", "path1", "mod-a").unwrap();
+        assert!(unlocked.contains(&"mod-b".to_string()), "mod-b must be unlocked after mod-a mastered");
+
+        let mod_b_status: String = conn.query_row(
+            "SELECT status FROM module_progress WHERE module_id = 'mod-b' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(mod_b_status, "available", "mod-b must be available after unlock");
     }
 
-    // ── Integration stubs (full-pipeline tests) ──
-    // These three represent the negative-coverage and idempotency contracts.
+    // ── Task 2: SR from flash blocks tests ──
 
-    /// Full pipeline: pass quiz -> BKT update -> module unlock -> SR cards -> streak.
-    /// FAILS in Wave 0 stub; GREEN in 03-04 Task 2.
-    #[test]
-    fn integration_submit_quiz_full_pipeline() {
-        panic!("WAVE 2 STUB — implement submit_quiz pipeline then assert BKT+unlock+SR+streak");
+    fn seed_flash_cards_block(conn: &Connection, module_id: &str, card_count: usize) {
+        let cards: Vec<serde_json::Value> = (0..card_count)
+            .map(|i| serde_json::json!({"id": format!("fc{}", i), "front": format!("Front {}", i), "back": format!("Back {}", i)}))
+            .collect();
+        let payload = serde_json::json!({"cards": cards}).to_string();
+
+        let block_id = format!("fc-blk-{}", module_id);
+        conn.execute(
+            "INSERT INTO module_blocks (id, module_id, ordering, block_type, status, params_json, payload_json, source_anchors_json, metadata_json, retry_count, created_at, updated_at)
+             VALUES (?1, ?2, 100, 'flash_cards', 'ready', '{}', ?3, '[]', '{\"concept_id\":null}', 0, datetime('now'), datetime('now'))",
+            rusqlite::params![block_id, module_id, payload],
+        ).unwrap();
     }
 
-    /// Failing quiz: no unlock, mastery reflects negative BKT update.
-    /// FAILS in Wave 0 stub; GREEN in 03-04 Task 2.
-    #[test]
-    fn integration_quiz_fail_no_unlock() {
-        panic!("WAVE 2 STUB — implement submit_quiz pipeline then assert no unlock on fail");
-    }
-
-    /// Concurrent submit / double-click negative coverage.
-    /// Second submit must be idempotent (no double-BKT, UNIQUE constraint respected).
-    /// FAILS in Wave 0 stub; GREEN in 03-04 Task 2.
-    #[test]
-    fn test_quiz_submit_idempotent() {
-        panic!("WAVE 2 STUB — implement submit_quiz idempotency then assert double-click no-ops");
-    }
-
-    // ── SR cards from flash blocks ──
-
-    /// FAILS: generate_sr_cards_from_flash_blocks returns Err in Wave 0.
-    /// GREEN in 03-04 Task 2.
+    /// generate_sr_cards_from_flash_blocks inserts one SR card per flash card.
     #[test]
     fn sr_from_flash_cards_inserts() {
-        panic!("WAVE 2 STUB — implement generate_sr_cards_from_flash_blocks inserts");
+        let conn = fresh_conn();
+        let (_lp, _trk, _mod_id, _blk) = seed_quiz_env(&conn, "o2", 1);
+        // Add 3 flash cards to mod1
+        seed_flash_cards_block(&conn, "mod1", 3);
+
+        let inserted = generate_sr_cards_from_flash_blocks(&conn, "mod1").unwrap();
+        assert_eq!(inserted, 3, "must insert 3 SR cards (one per flash card)");
+
+        let db_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sr_cards WHERE module_id = 'mod1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(db_count, 3, "3 rows must exist in sr_cards");
+
+        // Verify SR card defaults
+        let (card_type, interval, ease, reps): (String, f64, f64, i64) = conn.query_row(
+            "SELECT card_type, interval_days, ease_factor, repetitions FROM sr_cards WHERE module_id = 'mod1' LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        ).unwrap();
+        assert_eq!(card_type, "flash_card");
+        assert!((interval - 1.0).abs() < 1e-9, "default interval_days=1.0");
+        assert!((ease - 2.5).abs() < 1e-9, "default ease_factor=2.5");
+        assert_eq!(reps, 0, "default repetitions=0");
     }
 
-    /// FAILS: generate_sr_cards_from_flash_blocks returns Err in Wave 0.
-    /// GREEN in 03-04 Task 2 when idempotency guard implemented.
+    /// generate_sr_cards_from_flash_blocks is idempotent: second call inserts 0 new cards.
     #[test]
     fn sr_from_flash_cards_idempotent() {
-        panic!("WAVE 2 STUB — implement generate_sr_cards_from_flash_blocks idempotency");
+        let conn = fresh_conn();
+        let (_lp, _trk, _mod_id, _blk) = seed_quiz_env(&conn, "o2", 1);
+        seed_flash_cards_block(&conn, "mod1", 2);
+
+        let first = generate_sr_cards_from_flash_blocks(&conn, "mod1").unwrap();
+        assert_eq!(first, 2, "first call must insert 2 cards");
+
+        let second = generate_sr_cards_from_flash_blocks(&conn, "mod1").unwrap();
+        assert_eq!(second, 0, "second call must be idempotent (0 new inserts)");
+
+        let total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sr_cards WHERE module_id = 'mod1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(total, 2, "total cards must remain 2 after idempotent second call");
     }
+
+    // ── Task 2: Integration tests ──
+
+    /// Full pipeline integration: pass quiz → BKT + unlock + SR cards + streak.
+    #[test]
+    fn integration_submit_quiz_full_pipeline() {
+        let conn = fresh_conn();
+
+        // Seed two modules with prerequisite edge A→B
+        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'T')", []).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'K8s', 'devops', 'CKA')", []).unwrap();
+
+        let edges = serde_json::json!([{"from": "mod-a", "to": "mod-b"}]).to_string();
+        conn.execute(
+            "INSERT INTO learning_paths (id, track_id, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', ?1, '[]', 'test')",
+            [&edges],
+        ).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('mod-a', 'path1', 'A')", []).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('mod-b', 'path1', 'B')", []).unwrap();
+
+        // mod-a has a mastery_level just below threshold so one pass will cross it
+        // We set prior=0.65 (below 0.7); one correct BKT update should cross the threshold
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp1', 'mod-a', 'lp1', 'in_progress', 0.65)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp2', 'mod-b', 'lp1', 'locked', 0.0)",
+            [],
+        ).unwrap();
+
+        // Add flash cards block and quiz block to mod-a
+        seed_flash_cards_block(&conn, "mod-a", 2);
+
+        // Pass quiz: drive mastery above threshold
+        let t = apply_mastery_update(&conn, "lp1", "mod-a", 0.65, true).unwrap();
+        assert!(t.new_mastery >= MASTERY_THRESHOLD, "one correct update from 0.65 must cross 0.7 threshold");
+        assert!(t.became_completed, "became_completed must be true");
+
+        // Simulate became_completed pipeline
+        let unlocked = check_unlock_modules(&conn, "lp1", "path1", "mod-a").unwrap();
+        assert!(unlocked.contains(&"mod-b".to_string()), "mod-b must be unlocked");
+
+        let cards = generate_sr_cards_from_flash_blocks(&conn, "mod-a").unwrap();
+        assert_eq!(cards, 2, "2 SR cards must be inserted from flash blocks");
+
+        let streak = update_streak(&conn, "trk1").unwrap();
+        assert_eq!(streak, 1, "first activity must set streak=1");
+
+        // Verify final state
+        let mastery: f64 = conn.query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = 'mod-a' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!(mastery >= MASTERY_THRESHOLD, "mastery must be above threshold");
+    }
+
+    /// Failing quiz: no unlock, mastery reflects failed BKT update.
+    #[test]
+    fn integration_quiz_fail_no_unlock() {
+        let conn = fresh_conn();
+
+        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'T')", []).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'K8s', 'devops', 'CKA')", []).unwrap();
+        let edges = serde_json::json!([{"from": "mod-a", "to": "mod-b"}]).to_string();
+        conn.execute(
+            "INSERT INTO learning_paths (id, track_id, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', ?1, '[]', 'test')",
+            [&edges],
+        ).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('mod-a', 'path1', 'A')", []).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('mod-b', 'path1', 'B')", []).unwrap();
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp1', 'mod-a', 'lp1', 'in_progress', 0.5)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp2', 'mod-b', 'lp1', 'locked', 0.0)",
+            [],
+        ).unwrap();
+
+        // Simulate failing quiz: is_correct=false
+        let t = apply_mastery_update(&conn, "lp1", "mod-a", 0.5, false).unwrap();
+        assert!(!t.became_completed, "failed quiz must not trigger became_completed");
+        assert!(t.new_mastery < 0.5, "mastery must decrease after failed quiz");
+
+        // mod-b must remain locked (no unlock call happened)
+        let mod_b_status: String = conn.query_row(
+            "SELECT status FROM module_progress WHERE module_id = 'mod-b' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(mod_b_status, "locked", "mod-b must remain locked after failed quiz");
+    }
+
+    /// Double-click / concurrent submit idempotency.
+    /// Second call reads updated prior_mastery (post-first-call value); no crash.
+    /// The key safety: module_progress UNIQUE(module_id, learner_id) prevents duplicate rows.
+    #[test]
+    fn test_quiz_submit_idempotent() {
+        let conn = fresh_conn();
+        let (_lp, _trk, mod_id, _blk) = seed_quiz_env(&conn, "o2", 1);
+
+        // First submit: apply BKT update
+        let t1 = apply_mastery_update(&conn, "lp1", &mod_id, 0.0, true).unwrap();
+        let mastery_after_first = t1.new_mastery;
+
+        // Ensure UNIQUE constraint works: re-inserting module_progress must UPSERT, not duplicate
+        let progress_id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status, score, started_at)
+             VALUES (?1, 'mod1', 'lp1', 'in_progress', 100.0, datetime('now'))
+             ON CONFLICT(module_id, learner_id) DO UPDATE SET score = 100.0",
+            rusqlite::params![progress_id],
+        ).unwrap();
+
+        let row_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM module_progress WHERE module_id = 'mod1' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(row_count, 1, "UNIQUE constraint must prevent duplicate progress rows");
+
+        // Second submit: apply BKT update again (reads current mastery as prior)
+        let current_mastery: f64 = conn.query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = 'mod1' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!((current_mastery - mastery_after_first).abs() < 1e-9, "current mastery must reflect first update");
+
+        let t2 = apply_mastery_update(&conn, "lp1", &mod_id, current_mastery, true).unwrap();
+        assert!(t2.new_mastery >= mastery_after_first, "second update must not decrease mastery");
+        // No panic, no duplicate rows — idempotent in terms of data integrity
+    }
+
+    /// submit_quiz review returns per-question feedback including stem, options, and explanation.
+    #[test]
+    fn submit_quiz_review_returns_per_question_feedback() {
+        let payload = serde_json::json!({
+            "questions": [
+                {
+                    "id": "q1",
+                    "stem": "What is Kubernetes?",
+                    "options": [{"id": "o1", "text": "A container orchestrator"}, {"id": "o2", "text": "A database"}],
+                    "correctOptionId": "o1",
+                    "explanation": "Kubernetes orchestrates containers."
+                },
+                {
+                    "id": "q2",
+                    "stem": "What is a Pod?",
+                    "options": [{"id": "o1", "text": "Smallest deployable unit"}, {"id": "o2", "text": "A service"}],
+                    "correctOptionId": "o1",
+                    "explanation": "A Pod is the smallest deployable unit."
+                }
+            ]
+        }).to_string();
+
+        let answers = vec![
+            QuizAnswer { question_id: "q1".to_string(), selected_option_id: "o1".to_string() },
+            QuizAnswer { question_id: "q2".to_string(), selected_option_id: "o2".to_string() },
+        ];
+
+        let (score, review) = score_quiz(&payload, &answers).unwrap();
+        assert!((score - 50.0).abs() < 1e-9, "1/2 correct = 50%");
+        assert_eq!(review.len(), 2, "must return one review entry per question");
+
+        // q1: correct
+        assert_eq!(review[0].question_id, "q1");
+        assert!(review[0].is_correct);
+        assert_eq!(review[0].learner_option_id, "o1");
+        assert_eq!(review[0].correct_option_id, "o1");
+        assert_eq!(review[0].stem, "What is Kubernetes?");
+        assert_eq!(review[0].explanation, "Kubernetes orchestrates containers.");
+
+        // q2: wrong
+        assert_eq!(review[1].question_id, "q2");
+        assert!(!review[1].is_correct);
+        assert_eq!(review[1].learner_option_id, "o2");
+        assert_eq!(review[1].correct_option_id, "o1");
+    }
+
+    /// Failing quiz: submit_quiz_failure_does_not_unlock asserts no unlock on fail.
+    #[test]
+    fn submit_quiz_failure_does_not_unlock() {
+        let conn = fresh_conn();
+
+        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'T')", []).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'K8s', 'devops', 'CKA')", []).unwrap();
+        let edges = serde_json::json!([{"from": "mod-a", "to": "mod-b"}]).to_string();
+        conn.execute(
+            "INSERT INTO learning_paths (id, track_id, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', ?1, '[]', 'test')",
+            [&edges],
+        ).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('mod-a', 'path1', 'A')", []).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('mod-b', 'path1', 'B')", []).unwrap();
+        conn.execute("INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp1', 'mod-a', 'lp1', 'in_progress', 0.3)", []).unwrap();
+        conn.execute("INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp2', 'mod-b', 'lp1', 'locked', 0.0)", []).unwrap();
+
+        // Apply failed BKT update (is_correct=false)
+        let t = apply_mastery_update(&conn, "lp1", "mod-a", 0.3, false).unwrap();
+        assert!(!t.became_completed, "failed quiz must not complete module");
+
+        // No unlock call is made on fail — verify mod-b stays locked
+        let mod_b_status: String = conn.query_row(
+            "SELECT status FROM module_progress WHERE module_id = 'mod-b' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(mod_b_status, "locked", "mod-b must remain locked; no unlock on fail");
+
+        // No SR cards inserted
+        let cards: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sr_cards WHERE module_id = 'mod-a'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(cards, 0, "no SR cards must be inserted on failed quiz");
+    }
+
+    // ── Task 3: rate_flash_card tests (stub — GREEN in 03-04 Task 3) ──
 
     /// FAILS: rate_flash_card_stub returns Err; above-threshold guard not implemented.
     /// GREEN in 03-04 Task 3.

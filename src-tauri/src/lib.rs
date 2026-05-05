@@ -89,6 +89,8 @@ pub fn run() {
             // Block commands (Phase 3 — Wave 1 cached-fetch + legacy wrap)
             commands::blocks::get_module_blocks,
             commands::blocks::generate_module_blocks,
+            // Quiz + Flash Card commands (Phase 3 — Wave 2 BKT re-rooting, 03-04)
+            commands::learning::submit_quiz,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

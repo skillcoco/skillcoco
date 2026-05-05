@@ -185,3 +185,9 @@ export async function submitQuiz(
 ): Promise<import("@/types/learning").SubmitQuizResult> {
   return invoke("submit_quiz", { req });
 }
+
+export async function rateFlashCard(
+  req: import("@/types/learning").RateFlashCardRequest,
+): Promise<{ masteryLevel: number }> {
+  return invoke("rate_flash_card", { req });
+}
