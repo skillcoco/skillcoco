@@ -332,9 +332,19 @@ pub async fn submit_quiz(
         )
         .unwrap_or(0.0);
 
-    // 5. Apply BKT update — is_correct = passed (binary quiz signal)
-    let transition =
-        apply_mastery_update(&db.conn, &learner_id, &req.module_id, prior_mastery, passed)?;
+    // 5. Apply BKT update — iterate per question so a strong quiz pass
+    //    actually crosses the mastery threshold from a cold prior. Treating
+    //    the whole quiz as one boolean (is_correct = passed) only ever moved
+    //    mastery by one BKT step, which from prior=0 stays well below 0.7
+    //    and starves the unlock pipeline.
+    let observations: Vec<bool> = review.iter().map(|r| r.is_correct).collect();
+    let transition = apply_mastery_update_iterative(
+        &db.conn,
+        &learner_id,
+        &req.module_id,
+        prior_mastery,
+        &observations,
+    )?;
 
     let mut newly_unlocked: Vec<String> = Vec::new();
     let mut cards_created: usize = 0;
@@ -596,6 +606,69 @@ pub fn apply_mastery_update(
             rusqlite::params![new_id, module_id, learner_id, new_mastery],
         )
         .map_err(|e| format!("apply_mastery_update: {}", e))?;
+    }
+
+    Ok(MasteryTransition {
+        new_mastery,
+        became_completed,
+        prior_mastery,
+    })
+}
+
+/// Iterate BKT once per observation (each quiz question's correctness),
+/// then UPSERT the resulting mastery into module_progress.
+///
+/// **Why this exists separately from apply_mastery_update:** the single-
+/// observation form treats the quiz as one BKT update, which from a cold
+/// prior of 0.0 only moves mastery to ~0.1 — never crosses the 0.7 threshold,
+/// so a passed quiz never fired LOOP-02 unlock. Per-question iteration lets
+/// 7/10 correct evidence accumulate into a posterior that does cross.
+///
+/// Returns the same MasteryTransition as the single-observation form, with
+/// `prior_mastery` = the value passed in, `new_mastery` = the final posterior
+/// after all iterations, and `became_completed` = the threshold crossing.
+pub fn apply_mastery_update_iterative(
+    conn: &rusqlite::Connection,
+    learner_id: &str,
+    module_id: &str,
+    prior_mastery: f64,
+    observations: &[bool],
+) -> Result<MasteryTransition, String> {
+    let params = BKTParams::default();
+
+    let mut current = prior_mastery;
+    for &is_correct in observations {
+        current = update_mastery(&params, current, is_correct);
+    }
+    let new_mastery = current;
+    let became_completed =
+        prior_mastery < MASTERY_THRESHOLD && new_mastery >= MASTERY_THRESHOLD;
+
+    let new_id = uuid::Uuid::new_v4().to_string();
+    if became_completed {
+        conn.execute(
+            "INSERT INTO module_progress
+                (id, module_id, learner_id, status, mastery_level, attempts, started_at, completed_at)
+             VALUES (?1, ?2, ?3, 'completed', ?4, 1, datetime('now'), datetime('now'))
+             ON CONFLICT(module_id, learner_id) DO UPDATE SET
+                mastery_level = excluded.mastery_level,
+                attempts = module_progress.attempts + 1,
+                status = 'completed',
+                completed_at = datetime('now')",
+            rusqlite::params![new_id, module_id, learner_id, new_mastery],
+        )
+        .map_err(|e| format!("apply_mastery_update_iterative: {}", e))?;
+    } else {
+        conn.execute(
+            "INSERT INTO module_progress
+                (id, module_id, learner_id, status, mastery_level, attempts, started_at)
+             VALUES (?1, ?2, ?3, 'in_progress', ?4, 1, datetime('now'))
+             ON CONFLICT(module_id, learner_id) DO UPDATE SET
+                mastery_level = excluded.mastery_level,
+                attempts = module_progress.attempts + 1",
+            rusqlite::params![new_id, module_id, learner_id, new_mastery],
+        )
+        .map_err(|e| format!("apply_mastery_update_iterative: {}", e))?;
     }
 
     Ok(MasteryTransition {
@@ -2360,6 +2433,42 @@ mod phase3_tests {
             |r| r.get(0),
         ).unwrap();
         assert_eq!(count2, 1, "lesson_completions must still have 1 row after idempotent second call");
+    }
+
+    /// A fresh-module quiz pass (7/10 correct from prior_mastery=0) MUST cross
+    /// the 0.7 mastery threshold and trigger became_completed=true. Treating
+    /// the quiz as a single BKT observation never crossed the threshold (one
+    /// correct from prior=0 only reaches ~0.1), so the unlock pipeline never
+    /// fired and the user saw the next module stay locked despite passing.
+    /// The fix is to iterate BKT per question.
+    #[test]
+    fn quiz_pass_crosses_mastery_threshold_from_zero() {
+        let conn = fresh_conn();
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Tester')",
+            [],
+        ).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module) VALUES ('t1', 'lp1', 'k8s', 'devops')", []).unwrap();
+        conn.execute("INSERT INTO learning_paths (id, track_id) VALUES ('p1', 't1')", []).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('m1', 'p1', 'Pods')", []).unwrap();
+
+        // 7 correct, 3 wrong (70% pass)
+        let observations: Vec<bool> = vec![true, true, true, true, true, true, true, false, false, false];
+        let transition = apply_mastery_update_iterative(&conn, "lp1", "m1", 0.0, &observations)
+            .expect("iterative BKT should succeed");
+
+        assert!(
+            transition.new_mastery >= MASTERY_THRESHOLD,
+            "70% correct on a fresh module must cross MASTERY_THRESHOLD ({}); got {}",
+            MASTERY_THRESHOLD,
+            transition.new_mastery
+        );
+        assert!(transition.became_completed, "must flip became_completed=true");
+
+        let saved: f64 = conn
+            .query_row("SELECT mastery_level FROM module_progress WHERE module_id='m1' AND learner_id='lp1'", [], |r| r.get(0))
+            .unwrap();
+        assert!(saved >= MASTERY_THRESHOLD, "saved mastery must persist >= threshold");
     }
 
     /// apply_mastery_update upserts the module_progress row when none exists
