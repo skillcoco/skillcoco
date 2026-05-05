@@ -36,7 +36,7 @@ interface LearningState {
   regenerateLesson: (blockId: string) => Promise<void>;
 }
 
-export const useLearningStore = create<LearningState>((set, get) => ({
+export const useLearningStore = create<LearningState>((set, _get) => ({
   tracks: [],
   currentTrack: null,
   currentPath: null,

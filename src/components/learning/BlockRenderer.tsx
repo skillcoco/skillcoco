@@ -12,6 +12,7 @@ interface BlockRendererProps {
   moduleId: string;
   lessonIndex?: number;
   priorCompletedCount?: number;
+  /** Reserved for future use — passed through to QuizBlock when Quiz support lands (03-06). */
   trackId?: string;
 }
 
@@ -36,7 +37,7 @@ export function BlockRenderer({
   moduleId,
   lessonIndex,
   priorCompletedCount,
-  trackId,
+  trackId: _trackId,
 }: BlockRendererProps) {
   const regenerateLesson = useLearningStore((s) => s.regenerateLesson);
 
