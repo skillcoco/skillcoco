@@ -174,6 +174,72 @@ describe("ModuleView — Phase 3 tabs and core behaviour", () => {
 
   // ── Tab structure ────────────────────────────────────────────────────────
 
+  it("module_view_kicks_off_generation_when_module_has_no_blocks — empty module triggers generateModuleBlocks", async () => {
+    // Module with NO existing blocks (fresh from create-track flow)
+    mockStore.moduleBlocks = new Map();
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([]);
+    vi.mocked(generateModuleBlocks).mockResolvedValue({ blocks: [] });
+
+    renderModuleView();
+
+    // generateModuleBlocks should fire with the module's title + objectives + learner level
+    await waitFor(() => {
+      expect(generateModuleBlocks).toHaveBeenCalledWith(
+        expect.objectContaining({
+          moduleId: "mod-1",
+          trackId: "track-1",
+          moduleTitle: "Kubernetes Pods",
+          objectives: ["Understand pods", "Deploy pods"],
+        }),
+      );
+    });
+
+    // After kickoff, loadModuleBlocks is called again to pull the new pending blocks
+    await waitFor(() => {
+      expect(mockStore.loadModuleBlocks).toHaveBeenCalledWith("mod-1");
+    });
+  });
+
+  it("module_view_does_not_kickoff_when_blocks_already_exist — cached blocks skip generation", async () => {
+    const sectionBlock = makeBlock({ id: "s-1", blockType: "section", status: "ready" });
+    mockStore.moduleBlocks = new Map([["mod-1", [sectionBlock]]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([sectionBlock]);
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+    });
+
+    // generateModuleBlocks must NOT be called when cached blocks exist
+    expect(generateModuleBlocks).not.toHaveBeenCalled();
+  });
+
+  it("module_view_shows_generation_error_with_retry — failed kickoff surfaces retry button", async () => {
+    mockStore.moduleBlocks = new Map();
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([]);
+    vi.mocked(generateModuleBlocks).mockRejectedValueOnce("AI provider unreachable");
+
+    renderModuleView();
+
+    // Error message visible
+    await waitFor(() => {
+      expect(screen.getByText(/AI provider unreachable/i)).toBeInTheDocument();
+    });
+
+    // Retry button present
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+
+    // Retrying calls generateModuleBlocks again
+    vi.mocked(generateModuleBlocks).mockResolvedValueOnce({ blocks: [] });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+
+    await waitFor(() => {
+      expect(generateModuleBlocks).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("module_view_default_tab_is_lessons — Lessons tab is active on mount", async () => {
     const sectionBlock = makeBlock({ id: "s-1", blockType: "section" });
     mockStore.moduleBlocks = new Map([["mod-1", [sectionBlock]]]);

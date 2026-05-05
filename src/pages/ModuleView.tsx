@@ -6,7 +6,7 @@ import { BlockRenderer } from "@/components/learning/BlockRenderer";
 import { ExerciseContainer } from "@/components/exercises/ExerciseContainer";
 import { TutorSidebar } from "@/components/learning/TutorSidebar";
 import { CourseSidebar } from "@/components/learning/CourseSidebar";
-import { regenerateModule } from "@/lib/tauri-commands";
+import { regenerateModule, generateModuleBlocks } from "@/lib/tauri-commands";
 import { cn } from "@/lib/utils";
 import type { PathModule } from "@/types/learning";
 
@@ -32,9 +32,14 @@ export function ModuleView() {
   const [tab, setTab] = useState<Tab>("lessons");
   const [tutorOpen, setTutorOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [kickoffError, setKickoffError] = useState<string | null>(null);
+  const [kickingOff, setKickingOff] = useState(false);
 
   // cancelRef: guards against async operations after unmount/module change
   const cancelRef = useRef(false);
+  // kickoffRef: tracks which moduleId we've already triggered generation for in
+  // this mount. Prevents duplicate PagePlanner calls if effects re-run.
+  const kickoffRef = useRef<string | null>(null);
 
   // Load track if not already loaded
   useEffect(() => {
@@ -56,10 +61,9 @@ export function ModuleView() {
   const currentModule = pathModules.find((m) => m.id === moduleId);
   const progress = moduleProgress.find((p) => p.moduleId === moduleId);
 
-  // Mount: load blocks from cache (no generation on mount)
-  // W1 LOCK: reuse existing getModuleContent path for module metadata — we read
-  // module title/objectives directly from currentPath.modulesJson (already available
-  // in the store from the Phase 1 selectTrack call). No new getModuleMeta IPC created.
+  // Mount: load existing blocks from cache.
+  // W1 LOCK: module metadata (title, objectives) read from currentPath.modulesJson
+  // already in the store from Phase 1 selectTrack. No new getModuleMeta IPC created.
   useEffect(() => {
     if (!moduleId) return;
     cancelRef.current = false;
@@ -68,6 +72,45 @@ export function ModuleView() {
       cancelRef.current = true;
     };
   }, [moduleId, loadModuleBlocks]);
+
+  // Kickoff: if a module has zero blocks AND we have its metadata loaded, trigger
+  // generate_module_blocks. The IPC short-circuits to cached blocks if any exist
+  // (PACK-04), so this is safe even if the cache is stale.
+  const kickoffGeneration = useCallback(async () => {
+    if (!moduleId || !trackId || !currentModule) return;
+    setKickingOff(true);
+    setKickoffError(null);
+    try {
+      await generateModuleBlocks({
+        moduleId,
+        trackId,
+        moduleTitle: currentModule.title,
+        objectives: currentModule.objectives,
+        learnerLevel: currentTrack?.domainModule ?? "beginner",
+      });
+      if (!cancelRef.current) {
+        await loadModuleBlocks(moduleId);
+      }
+    } catch (err) {
+      if (!cancelRef.current) {
+        setKickoffError(String(err));
+        // Allow retry — clear the kickoff guard so the user can re-trigger
+        kickoffRef.current = null;
+      }
+    } finally {
+      if (!cancelRef.current) {
+        setKickingOff(false);
+      }
+    }
+  }, [moduleId, trackId, currentModule, currentTrack, loadModuleBlocks]);
+
+  useEffect(() => {
+    if (!moduleId || !currentModule) return;
+    if (blocks.length > 0) return;
+    if (kickoffRef.current === moduleId) return;
+    kickoffRef.current = moduleId;
+    kickoffGeneration();
+  }, [moduleId, currentModule, blocks.length, kickoffGeneration]);
 
   // Polling: while any block is pending/generating, poll every 3s
   // Stops when all blocks are ready or failed (or component unmounts)
@@ -237,10 +280,32 @@ export function ModuleView() {
           {/* Lessons tab */}
           {tab === "lessons" && (
             <div data-testid="lessons-tab">
-              {sectionBlocks.length === 0 && blocks.length === 0 && (
-                <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-                  <Loader2 size={16} className="mr-2 animate-spin" />
-                  <span>Preparing lessons...</span>
+              {sectionBlocks.length === 0 && blocks.length === 0 && !kickoffError && (
+                <div className="flex h-32 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
+                  <div className="flex items-center">
+                    <Loader2 size={16} className="mr-2 animate-spin" />
+                    <span>{kickingOff ? "Planning lessons..." : "Preparing lessons..."}</span>
+                  </div>
+                  {kickingOff && (
+                    <p className="text-xs text-muted-foreground/70">
+                      First-time generation can take 30-60 seconds.
+                    </p>
+                  )}
+                </div>
+              )}
+              {sectionBlocks.length === 0 && blocks.length === 0 && kickoffError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+                  <p className="text-sm font-medium text-foreground">
+                    Couldn't generate lessons
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">{kickoffError}</p>
+                  <button
+                    onClick={kickoffGeneration}
+                    disabled={kickingOff}
+                    className="mt-3 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {kickingOff ? "Retrying..." : "Retry"}
+                  </button>
                 </div>
               )}
               {sectionBlocks.map((block, i) => {
