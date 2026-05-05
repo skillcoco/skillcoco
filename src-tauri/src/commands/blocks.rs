@@ -845,23 +845,36 @@ async fn generate_module_blocks_fresh(
     }
     // Lock dropped
 
-    // Fresh module: run PagePlanner
+    // Fresh module: run PagePlanner (synchronous — must finish before we have skeleton)
     let outline = run_page_planner(auth.as_ref(), &req.module_title, &req.objectives, &req.learner_level).await?;
 
-    // Insert skeleton (brief lock)
+    // Insert skeleton (brief lock) — blocks now exist in DB with status=pending
     let skeleton = {
         let db = db_arc.lock().map_err(|e| e.to_string())?;
         insert_skeleton_blocks(&db.conn, &req.module_id, &outline)?
     };
 
-    // Launch parallel generation (background; Tauri command awaits completion)
-    let client = Arc::new(ProductionAIClient { auth: Arc::clone(&auth) });
-    let _ = generate_blocks_in_parallel_with_client(Arc::clone(&db_arc), client, skeleton, req.module_title).await;
+    // Spawn parallel generation in the background — IPC returns immediately so the
+    // frontend's polling loop picks up per-block transitions (pending → generating
+    // → ready/failed) instead of blocking on a 60-90s synchronous await. Mirrors
+    // the resume-path pattern above (line ~828).
+    let db_for_task = Arc::clone(&db_arc);
+    let auth_for_task = Arc::clone(&auth);
+    let title = req.module_title.clone();
+    let skeleton_for_task = skeleton.clone();
+    tokio::spawn(async move {
+        let client = Arc::new(ProductionAIClient { auth: auth_for_task });
+        let _ = generate_blocks_in_parallel_with_client(
+            db_for_task,
+            client,
+            skeleton_for_task,
+            title,
+        )
+        .await;
+    });
 
-    // Return final state
-    let db = db_arc.lock().map_err(|e| e.to_string())?;
-    let blocks = list_blocks_by_module(&db.conn, &req.module_id).map_err(|e| e.to_string())?;
-    Ok(GenerateModuleBlocksResult { blocks })
+    // Return current state (skeleton + status=pending). Polling fills the rest.
+    Ok(GenerateModuleBlocksResult { blocks: skeleton })
 }
 
 // ── Tauri commands ──
@@ -877,25 +890,24 @@ pub async fn get_module_blocks(
 }
 
 /// Generate (or return cached) blocks for a module.
+///
+/// Routes through `generate_module_blocks_fresh` which:
+/// 1. Returns cached blocks immediately if all are `ready` (PACK-04)
+/// 2. Spawns generation for `pending`/`failed` blocks if some non-ready exist (resume case)
+/// 3. Wraps legacy `modules.content` as a single `section` block if no rows exist
+/// 4. Otherwise runs PagePlanner + parallel block generation
+///
+/// `AppState.db` is `Arc<Mutex<Database>>` so we can clone the Arc for sub-task ownership.
+/// `AuthState` is `Clone` (internal `Arc<Mutex<...>>` for credentials) — cheap shallow clone.
 #[tauri::command]
 pub async fn generate_module_blocks(
     req: GenerateModuleBlocksRequest,
     state: State<'_, AppState>,
     auth: State<'_, AuthState>,
 ) -> Result<GenerateModuleBlocksResult, String> {
-    // Build Arc wrappers for the parallel generation path
-    // We acquire + clone the database reference via Arc for concurrent access.
-    // The AppState.db is Mutex<Database>; we wrap it in an Arc for sharing across tasks.
-    let db_arc = {
-        // Acquire the lock to verify connectivity, then wrap in Arc for passing to tasks.
-        // Since we can't clone Connection, we use the existing AppState.db Mutex directly.
-        // Pattern: The Tauri command takes a fresh Arc each invocation pointing to state.db.
-        // Since state.db is already Mutex<Database>, we use a unsafe trick to get Arc.
-        // Simpler: use the existing &Mutex pattern which works for sequential tasks.
-        // For production, we just call generate_module_blocks_inner which handles all paths.
-        generate_module_blocks_inner(&state.db, &auth, req).await
-    };
-    db_arc
+    let db_arc: Arc<Mutex<crate::db::Database>> = Arc::clone(&state.db);
+    let auth_arc: Arc<AuthState> = Arc::new((*auth).clone());
+    generate_module_blocks_fresh(db_arc, auth_arc, req).await
 }
 
 /// Regenerate a single lesson block atomically.

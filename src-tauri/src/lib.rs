@@ -8,12 +8,12 @@ mod vector;
 
 use auth::AuthState;
 use db::Database;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use vector::VectorState;
 
 pub struct AppState {
-    pub db: Mutex<Database>,
+    pub db: Arc<Mutex<Database>>,
 }
 
 pub fn run() {
@@ -32,7 +32,7 @@ pub fn run() {
             let db_path = app_dir.join("learnforge.db");
             let database = Database::new(&db_path).expect("Failed to initialize database");
             app.manage(AppState {
-                db: Mutex::new(database),
+                db: Arc::new(Mutex::new(database)),
             });
 
             // Auth credential store
