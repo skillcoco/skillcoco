@@ -184,6 +184,10 @@ export async function markLessonComplete(moduleId: string, blockId: string): Pro
   return invoke("mark_lesson_complete", { req: { moduleId, blockId } });
 }
 
+export async function getLessonCompletions(moduleId: string): Promise<string[]> {
+  return invoke("get_lesson_completions", { moduleId });
+}
+
 export async function submitQuiz(
   req: import("@/types/learning").SubmitQuizRequest,
 ): Promise<import("@/types/learning").SubmitQuizResult> {

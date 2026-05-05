@@ -25,6 +25,15 @@ function fisherYates<T>(arr: T[]): T[] {
 
 export function QuizBlock({ block, moduleId, trackId }: QuizBlockProps) {
   const submitQuizAction = useLearningStore((s) => s.submitQuiz);
+  const moduleProgress = useLearningStore((s) => s.moduleProgress);
+
+  // Look up persisted mastery for this module — set on a prior successful
+  // submit_quiz call. >= 0.7 means the learner already cleared this module.
+  const priorMastery =
+    moduleProgress.find((p) => p.moduleId === moduleId)?.masteryLevel ?? 0;
+  const alreadyPassed = priorMastery >= 0.7;
+  const [retakeRequested, setRetakeRequested] = useState(false);
+  const showAlreadyPassedGate = alreadyPassed && !retakeRequested;
 
   // Bump on retake to trigger re-shuffle via useMemo
   const [attempt, setAttempt] = useState(0);
@@ -52,6 +61,41 @@ export function QuizBlock({ block, moduleId, trackId }: QuizBlockProps) {
     return (
       <div data-testid="quiz-empty" className="glass rounded-md p-6 my-4">
         This quiz has no questions.
+      </div>
+    );
+  }
+
+  // Already-passed gate: prior mastery >= 0.7 and the learner hasn't asked
+  // to retake this session.
+  if (showAlreadyPassedGate) {
+    return (
+      <div
+        className="glass rounded-md p-6 my-4 space-y-3"
+        data-testid="quiz-already-passed"
+      >
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-500/20 text-green-700 dark:text-green-400 text-sm font-semibold">
+            ✓
+          </span>
+          <h3 className="text-lg font-semibold text-foreground m-0">
+            You've passed this quiz
+          </h3>
+        </div>
+        <p className="text-sm text-muted-foreground m-0">
+          Mastery: <strong className="text-foreground">{Math.round(priorMastery * 100)}%</strong>
+          . Your progress is saved — the next module is unlocked.
+        </p>
+        <button
+          type="button"
+          className="glass-strong px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 transition-opacity"
+          data-testid="quiz-retake-btn"
+          onClick={() => {
+            setRetakeRequested(true);
+            setAttempt((a) => a + 1);
+          }}
+        >
+          Take it again
+        </button>
       </div>
     );
   }

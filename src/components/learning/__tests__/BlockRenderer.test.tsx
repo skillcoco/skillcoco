@@ -9,6 +9,8 @@ const mockStoreState = vi.hoisted(() => ({
   lessonCompletions: new Map<string, Set<string>>(),
   regenerateLesson: vi.fn(),
   submitQuiz: vi.fn(),
+  // QuizBlock looks up prior mastery from moduleProgress; default empty.
+  moduleProgress: [],
 }));
 
 vi.mock("@/stores/useLearningStore", () => ({

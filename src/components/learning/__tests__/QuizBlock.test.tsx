@@ -12,6 +12,9 @@ vi.mock("@/stores/useLearningStore", () => ({
   useLearningStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) => {
     const state = {
       submitQuiz: mockSubmitQuiz,
+      // moduleProgress: empty by default — tests that exercise the
+      // already-passed gate override this in their own mock.
+      moduleProgress: [],
     };
     return typeof selector === "function" ? selector(state) : state;
   }),

@@ -100,6 +100,7 @@ const mockStore = vi.hoisted(() => ({
   currentQuizResult: null,
   selectTrack: vi.fn(),
   loadModuleBlocks: vi.fn(),
+  loadLessonCompletions: vi.fn().mockResolvedValue(undefined),
   setCurrentLesson: vi.fn(),
   markLessonComplete: vi.fn(),
   submitQuiz: vi.fn(),
@@ -535,7 +536,90 @@ describe("ModuleView — Phase 3 tabs and core behaviour", () => {
     expect(screen.getByRole("button", { name: /previous lesson/i })).toBeDisabled();
   });
 
-  it("module_view_next_disabled_on_last — Next button disabled when on last lesson", async () => {
+  it("module_view_last_lesson_take_quiz_cta — on last lesson, Next becomes 'Take the quiz' and switches to quiz tab", async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+      makeBlock({ id: "q-1", blockType: "quiz", ordering: 2, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-2"; // last lesson
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-2")).toBeInTheDocument();
+    });
+
+    const cta = screen.getByRole("button", { name: /take the quiz/i });
+    expect(cta).toBeInTheDocument();
+    await user.click(cta);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("quiz-tab")).toBeInTheDocument();
+    });
+  });
+
+  it("module_view_last_lesson_continue_to_next_module — when module passed, last lesson shows next-module CTA", async () => {
+    // Add a second module to the path so there's somewhere to go next
+    mockStore.currentPath = {
+      ...mockStore.currentPath,
+      modulesJson: JSON.stringify([
+        {
+          id: "mod-1",
+          title: "Kubernetes Pods",
+          description: "Learn about pods",
+          type: "lesson",
+          difficulty: 3,
+          estimatedMinutes: 30,
+          objectives: ["Understand pods"],
+          prerequisites: [],
+        },
+        {
+          id: "mod-2",
+          title: "Deployments",
+          description: "",
+          type: "lesson",
+          difficulty: 3,
+          estimatedMinutes: 30,
+          objectives: [],
+          prerequisites: ["mod-1"],
+        },
+      ]),
+    };
+    // mod-1 mastered (>= 0.7), mod-2 unlocked
+    mockStore.moduleProgress = [
+      { moduleId: "mod-1", learnerId: "lp1", status: "completed", masteryLevel: 0.85,
+        score: null, timeSpent: 0, attempts: 0, startedAt: null, completedAt: null,
+        id: "mp1" } as unknown as import("@/types").ModuleProgress,
+      { moduleId: "mod-2", learnerId: "lp1", status: "in_progress", masteryLevel: 0,
+        score: null, timeSpent: 0, attempts: 0, startedAt: null, completedAt: null,
+        id: "mp2" } as unknown as import("@/types").ModuleProgress,
+    ];
+
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+      makeBlock({ id: "q-1", blockType: "quiz", ordering: 2, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-2";
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-2")).toBeInTheDocument();
+    });
+
+    const cta = screen.getByRole("link", { name: /continue to next module/i });
+    expect(cta).toBeInTheDocument();
+    expect(cta.getAttribute("href")).toMatch(/\/track\/track-1\/module\/mod-2/);
+  });
+
+  it("module_view_no_next_lesson_button_on_last — last lesson hides 'Next lesson' (replaced by Take the quiz)", async () => {
     const blocks = [
       makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
       makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
@@ -550,7 +634,8 @@ describe("ModuleView — Phase 3 tabs and core behaviour", () => {
       expect(screen.getByTestId("block-renderer-s-2")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: /next lesson/i })).toBeDisabled();
+    // "Next lesson" is replaced by "Take the quiz" on the last lesson.
+    expect(screen.queryByRole("button", { name: /^next lesson$/i })).not.toBeInTheDocument();
   });
 
   // ── Polling ──────────────────────────────────────────────────────────────

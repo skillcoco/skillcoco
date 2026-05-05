@@ -27,6 +27,7 @@ export function ModuleView() {
     moduleId ? s.lessonCompletions.get(moduleId) : undefined,
   );
   const loadModuleBlocks = useLearningStore((s) => s.loadModuleBlocks);
+  const loadLessonCompletions = useLearningStore((s) => s.loadLessonCompletions);
   const selectTrack = useLearningStore((s) => s.selectTrack);
   const setCurrentLesson = useLearningStore((s) => s.setCurrentLesson);
 
@@ -73,10 +74,12 @@ export function ModuleView() {
     if (!moduleId) return;
     cancelRef.current = false;
     loadModuleBlocks(moduleId);
+    // Restore per-lesson "Completed" checkmarks from DB across app restarts.
+    loadLessonCompletions(moduleId);
     return () => {
       cancelRef.current = true;
     };
-  }, [moduleId, loadModuleBlocks]);
+  }, [moduleId, loadModuleBlocks, loadLessonCompletions]);
 
   // Kickoff: if a module has zero blocks AND we have its metadata loaded, trigger
   // generate_module_blocks. The IPC short-circuits to cached blocks if any exist
@@ -161,6 +164,28 @@ export function ModuleView() {
   }, [sectionBlocks, currentLessonId]);
   const activeLesson =
     activeLessonIndex >= 0 ? sectionBlocks[activeLessonIndex] : undefined;
+  const isLastLesson =
+    sectionBlocks.length > 0 &&
+    activeLessonIndex === sectionBlocks.length - 1;
+
+  // "What's next" CTA on the last lesson:
+  // - If the module has been passed (mastery >= 0.7), point at the next
+  //   unlocked module in the path (if any).
+  // - Otherwise, link to the Quiz tab in this module.
+  const moduleMastery = progress?.masteryLevel ?? 0;
+  const moduleAlreadyPassed = moduleMastery >= 0.7;
+
+  const nextModuleId = useMemo(() => {
+    if (!moduleId) return null;
+    const i = pathModules.findIndex((m) => m.id === moduleId);
+    if (i < 0) return null;
+    for (let j = i + 1; j < pathModules.length; j++) {
+      const m = pathModules[j];
+      const p = moduleProgress.find((mp) => mp.moduleId === m.id);
+      if (p?.status !== "locked") return m.id;
+    }
+    return null;
+  }, [pathModules, moduleProgress, moduleId]);
 
   const goToLesson = useCallback(
     (delta: number) => {
@@ -370,7 +395,10 @@ export function ModuleView() {
                     />
                   </div>
 
-                  {/* Prev/Next lesson navigation — bottom of the active lesson */}
+                  {/* Prev/Next lesson navigation — bottom of the active lesson.
+                      On the last lesson, "Next" is replaced by a contextual
+                      "What's next?" CTA: Take the quiz, or Continue to next
+                      module if the learner has already passed. */}
                   <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
                     <button
                       type="button"
@@ -390,21 +418,38 @@ export function ModuleView() {
                     <span className="text-xs text-muted-foreground">
                       Lesson {activeLessonIndex + 1} of {sectionBlocks.length}
                     </span>
-                    <button
-                      type="button"
-                      aria-label="Next lesson"
-                      onClick={() => goToLesson(1)}
-                      disabled={activeLessonIndex >= sectionBlocks.length - 1}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                        activeLessonIndex >= sectionBlocks.length - 1
-                          ? "cursor-not-allowed text-muted-foreground/40"
-                          : "bg-primary text-primary-foreground hover:bg-primary/90",
-                      )}
-                    >
-                      <span>Next lesson</span>
-                      <ChevronRight size={16} />
-                    </button>
+                    {isLastLesson ? (
+                      <div className="flex items-center gap-2">
+                        {moduleAlreadyPassed && nextModuleId ? (
+                          <Link
+                            to={`/track/${trackId}/module/${nextModuleId}`}
+                            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                          >
+                            <span>Continue to next module</span>
+                            <ChevronRight size={16} />
+                          </Link>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setTab("quiz")}
+                            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                          >
+                            <span>Take the quiz</span>
+                            <ChevronRight size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label="Next lesson"
+                        onClick={() => goToLesson(1)}
+                        className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                      >
+                        <span>Next lesson</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    )}
                   </div>
                 </>
               )}

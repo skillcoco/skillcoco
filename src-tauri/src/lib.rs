@@ -97,6 +97,7 @@ pub fn run() {
             commands::learning::rate_flash_card,
             // Lesson completion (Phase 3 — Wave 3, 03-05)
             commands::learning::mark_lesson_complete,
+            commands::learning::get_lesson_completions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

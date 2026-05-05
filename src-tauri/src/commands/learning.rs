@@ -484,6 +484,54 @@ pub async fn mark_lesson_complete(
     Ok(())
 }
 
+/// Read lesson_completions for a module: returns the block IDs the learner
+/// has marked complete. Empty Vec if none. Used by the frontend on module
+/// open to restore the green checkmarks across app restarts.
+///
+/// Learner resolution mirrors mark_lesson_complete: prefer the learner_id
+/// from a module_progress row, fall back to the first learner_profiles row
+/// (single-learner desktop in Phase 3).
+#[tauri::command]
+pub async fn get_lesson_completions(
+    module_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    let learner_id: String = db
+        .conn
+        .query_row(
+            "SELECT learner_id FROM module_progress WHERE module_id=?1 LIMIT 1",
+            [&module_id],
+            |r| r.get(0),
+        )
+        .unwrap_or_else(|_| {
+            db.conn
+                .query_row("SELECT id FROM learner_profiles LIMIT 1", [], |r| r.get(0))
+                .unwrap_or_default()
+        });
+
+    if learner_id.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut stmt = db
+        .conn
+        .prepare(
+            "SELECT block_id FROM lesson_completions \
+             WHERE module_id = ?1 AND learner_id = ?2 ORDER BY block_id",
+        )
+        .map_err(|e| format!("get_lesson_completions: prepare failed: {}", e))?;
+
+    let rows: Vec<String> = stmt
+        .query_map(rusqlite::params![module_id, learner_id], |r| r.get::<_, String>(0))
+        .map_err(|e| format!("get_lesson_completions: query failed: {}", e))?
+        .collect::<Result<_, _>>()
+        .map_err(|e| format!("get_lesson_completions: row read failed: {}", e))?;
+
+    Ok(rows)
+}
+
 // ── LOOP-01: BKT Mastery Update Helper ──
 
 /// Outcome of a single mastery update step.
@@ -2299,5 +2347,49 @@ mod phase3_tests {
             |r| r.get(0),
         ).unwrap();
         assert_eq!(count2, 1, "lesson_completions must still have 1 row after idempotent second call");
+    }
+
+    /// get_lesson_completions returns the block_ids for a given module.
+    /// Empty result for an unknown module / unknown learner.
+    #[test]
+    fn get_lesson_completions_returns_persisted_block_ids() {
+        let conn = fresh_conn();
+
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Tester')",
+            [],
+        ).unwrap();
+
+        // Two completions in module-A, one in module-B
+        for (module_id, block_id) in [
+            ("mod-A", "blk-1"),
+            ("mod-A", "blk-2"),
+            ("mod-B", "blk-9"),
+        ] {
+            conn.execute(
+                "INSERT INTO lesson_completions (learner_id, module_id, block_id) VALUES ('lp1', ?1, ?2)",
+                rusqlite::params![module_id, block_id],
+            ).unwrap();
+        }
+
+        // Read back via the query the IPC will use
+        let mut stmt = conn.prepare(
+            "SELECT block_id FROM lesson_completions WHERE module_id = ?1 AND learner_id = ?2 ORDER BY block_id",
+        ).unwrap();
+        let rows: Vec<String> = stmt.query_map(rusqlite::params!["mod-A", "lp1"], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+
+        assert_eq!(rows, vec!["blk-1".to_string(), "blk-2".to_string()],
+            "must return only mod-A block_ids in deterministic order");
+
+        // Empty for unknown module
+        let empty: Vec<String> = stmt
+            .query_map(rusqlite::params!["mod-C", "lp1"], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(empty.is_empty(), "unknown module must return empty Vec");
     }
 }

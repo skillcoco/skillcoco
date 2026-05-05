@@ -32,6 +32,7 @@ interface LearningState {
   // Phase 3 actions (03-05)
   setCurrentLesson: (blockId: string | null) => void;
   loadModuleBlocks: (moduleId: string) => Promise<ModuleBlock[]>;
+  loadLessonCompletions: (moduleId: string) => Promise<void>;
   markLessonComplete: (moduleId: string, blockId: string) => Promise<void>;
   submitQuiz: (req: SubmitQuizRequest) => Promise<SubmitQuizResult>;
   regenerateLesson: (blockId: string) => Promise<void>;
@@ -131,6 +132,19 @@ export const useLearningStore = create<LearningState>((set, _get) => ({
     }
   },
 
+  loadLessonCompletions: async (moduleId) => {
+    try {
+      const blockIds = await commands.getLessonCompletions(moduleId);
+      set((s) => {
+        const next = new Map(s.lessonCompletions);
+        next.set(moduleId, new Set(blockIds));
+        return { lessonCompletions: next };
+      });
+    } catch (err) {
+      console.error("loadLessonCompletions failed:", err);
+    }
+  },
+
   markLessonComplete: async (moduleId, blockId) => {
     // Optimistic update: add to lessonCompletions immediately
     set((s) => {
@@ -158,7 +172,15 @@ export const useLearningStore = create<LearningState>((set, _get) => ({
 
   submitQuiz: async (req) => {
     const result = await commands.submitQuiz(req);
-    set({ currentQuizResult: result });
+    // Refresh per-module progress so the sidebar/QuizBlock reflect the new
+    // mastery_level and any unlocks immediately, without a manual reload.
+    try {
+      const progress = await commands.getModuleProgress(req.trackId);
+      set({ currentQuizResult: result, moduleProgress: progress });
+    } catch (err) {
+      console.error("submitQuiz: failed to refresh module progress:", err);
+      set({ currentQuizResult: result });
+    }
     return result;
   },
 
