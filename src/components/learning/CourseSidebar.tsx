@@ -1,11 +1,13 @@
-import { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Lock,
   CheckCircle2,
   PlayCircle,
   Circle,
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
@@ -13,6 +15,8 @@ import type {
   PathModule,
   ModuleProgress,
 } from "@/types/learning";
+import { useLearningStore } from "@/stores/useLearningStore";
+import { LessonNavList } from "./LessonNavList";
 
 interface CourseSidebarProps {
   track: LearningTrack;
@@ -31,12 +35,11 @@ interface ModuleRow {
 
 /**
  * LMS-style course sidebar (Udemy/Coursera convention). Lists every module
- * in the track with its status and mastery, plus the active module
- * highlighted. Click any unlocked module to navigate.
+ * in the track with its status and mastery. Phase 3 extends with collapsible
+ * per-module lesson sub-lists (LessonNavList component).
  *
- * Phase 3 will extend this with a collapsible 8-10-lesson list under each
- * module (block taxonomy / `section` blocks). For Phase 1 it shows just
- * the module level — the data model doesn't yet have lessons.
+ * Each ModuleNavItem can expand to show 8-10 section blocks for that module.
+ * The active module auto-expands on mount if blocks are already cached.
  */
 export function CourseSidebar({
   track,
@@ -129,11 +132,6 @@ export function CourseSidebar({
           })}
         </ul>
       </nav>
-
-      {/* Footer hint about Phase 3 */}
-      <div className="border-t border-border px-4 py-2 text-[10px] text-muted-foreground/70">
-        Lessons within each module — coming in Phase 3
-      </div>
     </aside>
   );
 }
@@ -151,7 +149,39 @@ function ModuleNavItem({
   isActive: boolean;
   isLocked: boolean;
 }) {
+  const navigate = useNavigate();
+
+  // Phase 3 store state
+  const moduleBlocks = useLearningStore((s) => s.moduleBlocks);
+  const currentLessonId = useLearningStore((s) => s.currentLessonId);
+  const lessonCompletions = useLearningStore((s) => s.lessonCompletions);
+  const setCurrentLesson = useLearningStore((s) => s.setCurrentLesson);
+  const loadModuleBlocks = useLearningStore((s) => s.loadModuleBlocks);
+
+  // Active module auto-expands if blocks already cached; other modules start collapsed
+  const hasBlocks = moduleBlocks.has(row.module.id);
+  const [expanded, setExpanded] = useState<boolean>(isActive && hasBlocks);
+
+  const blocks = moduleBlocks.get(row.module.id) ?? [];
+  const completionsForModule = lessonCompletions.get(row.module.id);
+
+  async function toggleExpand() {
+    const nextExpanded = !expanded;
+    setExpanded(nextExpanded);
+
+    // Fetch blocks on first expand (cache miss)
+    if (nextExpanded && !moduleBlocks.has(row.module.id)) {
+      await loadModuleBlocks(row.module.id);
+    }
+  }
+
+  function handleLessonClick(blockId: string) {
+    setCurrentLesson(blockId);
+    navigate(`/track/${trackId}/module/${row.module.id}`);
+  }
+
   const StatusIcon = pickStatusIcon(row.status);
+
   const inner = (
     <div
       className={cn(
@@ -194,20 +224,41 @@ function ModuleNavItem({
           )}
         </span>
       </span>
+      {!isLocked && (
+        <span className="mt-1 flex-shrink-0 text-muted-foreground/50">
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+      )}
     </div>
   );
 
-  if (isLocked) {
-    return (
-      <div aria-disabled className="block">
-        {inner}
-      </div>
-    );
-  }
   return (
-    <Link to={`/track/${trackId}/module/${row.module.id}`} className="block">
-      {inner}
-    </Link>
+    <>
+      {isLocked ? (
+        <div aria-disabled className="block">
+          {inner}
+        </div>
+      ) : (
+        <button
+          onClick={toggleExpand}
+          className="w-full text-left block"
+          data-testid={`module-row-${row.module.id}`}
+        >
+          {inner}
+        </button>
+      )}
+
+      {/* Expandable lesson sub-list */}
+      {expanded && (
+        <LessonNavList
+          blocks={blocks}
+          moduleId={row.module.id}
+          currentLessonId={currentLessonId}
+          lessonCompletions={completionsForModule}
+          onLessonClick={handleLessonClick}
+        />
+      )}
+    </>
   );
 }
 

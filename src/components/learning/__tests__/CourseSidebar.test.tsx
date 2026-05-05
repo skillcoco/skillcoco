@@ -1,25 +1,50 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 // Vitest hoisting rule: inline literals only inside vi.mock factory.
-vi.mock("@/lib/tauri-commands", () => ({
-  getModuleBlocks: vi.fn(),
+const mockSetCurrentLesson = vi.fn();
+const mockLoadModuleBlocks = vi.fn();
+const mockNavigate = vi.fn();
+
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  return {
+    ...actual,
+    useNavigate: vi.fn(() => mockNavigate),
+  };
+});
+
+// Selector-aware store mock via vi.hoisted
+const mockStoreState = vi.hoisted(() => ({
+  moduleBlocks: new Map<string, import("@/types/learning").ModuleBlock[]>(),
+  currentLessonId: null as string | null,
+  lessonCompletions: new Map<string, Set<string>>(),
+  setCurrentLesson: vi.fn(),
+  loadModuleBlocks: vi.fn(),
 }));
 
 vi.mock("@/stores/useLearningStore", () => ({
-  useLearningStore: vi.fn(() => ({
-    currentTrack: { id: "track-1", topic: "Kubernetes" },
-    moduleBlocks: new Map(),
-    currentLessonId: null,
-    setCurrentLesson: vi.fn(),
-  })),
+  useLearningStore: vi.fn((selector: (s: typeof mockStoreState) => unknown) => {
+    const state = {
+      moduleBlocks: mockStoreState.moduleBlocks,
+      currentLessonId: mockStoreState.currentLessonId,
+      lessonCompletions: mockStoreState.lessonCompletions,
+      setCurrentLesson: mockSetCurrentLesson,
+      loadModuleBlocks: mockLoadModuleBlocks,
+    };
+    return typeof selector === "function" ? selector(state) : state;
+  }),
 }));
 
 import { CourseSidebar } from "@/components/learning/CourseSidebar";
-import { getModuleBlocks } from "@/lib/tauri-commands";
-import type { LearningTrack, PathModule, ModuleProgress } from "@/types/learning";
+import type {
+  LearningTrack,
+  PathModule,
+  ModuleProgress,
+  ModuleBlock,
+} from "@/types/learning";
 
 const mockTrack: LearningTrack = {
   id: "track-1",
@@ -63,6 +88,22 @@ const mockProgress: ModuleProgress[] = [
   },
 ];
 
+const makeSectionBlock = (overrides: Partial<ModuleBlock> = {}): ModuleBlock => ({
+  id: "blk-1",
+  moduleId: "mod-1",
+  ordering: 0,
+  blockType: "section",
+  status: "ready",
+  paramsJson: '{"lesson_title":"Introduction"}',
+  payloadJson: "{}",
+  sourceAnchorsJson: "[]",
+  metadataJson: '{"concept_id":null}',
+  retryCount: 0,
+  createdAt: "2026-05-05T00:00:00Z",
+  updatedAt: "2026-05-05T00:00:00Z",
+  ...overrides,
+});
+
 function renderSidebar(currentModuleId = "mod-1") {
   return render(
     <MemoryRouter>
@@ -79,51 +120,154 @@ function renderSidebar(currentModuleId = "mod-1") {
 describe("CourseSidebar Phase 3 lesson expansion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset store state
+    mockStoreState.moduleBlocks = new Map();
+    mockStoreState.currentLessonId = null;
+    mockStoreState.lessonCompletions = new Map();
+    // Default: loadModuleBlocks resolves with empty array
+    mockLoadModuleBlocks.mockResolvedValue([]);
+  });
+
+  it("sidebar_active_module_auto_expanded — active module lessons visible without click", () => {
+    // Pre-populate blocks in store for active module
+    mockStoreState.moduleBlocks = new Map([
+      [
+        "mod-1",
+        [
+          makeSectionBlock({ id: "blk-1" }),
+          makeSectionBlock({ id: "blk-2", ordering: 1, paramsJson: '{"lesson_title":"Nodes"}' }),
+        ],
+      ],
+    ]);
+
+    renderSidebar("mod-1");
+
+    // Active module should auto-expand showing lesson list
+    expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument();
   });
 
   it("sidebar_expands_lessons_on_click — click module row to reveal lesson list", async () => {
     const user = userEvent.setup();
-    renderSidebar();
+    mockLoadModuleBlocks.mockImplementation((moduleId: string) => {
+      mockStoreState.moduleBlocks = new Map([
+        [moduleId, [makeSectionBlock({ id: "blk-1" })]],
+      ]);
+      return Promise.resolve([makeSectionBlock({ id: "blk-1" })]);
+    });
 
-    // Click the module row to expand lessons
-    const moduleRow = screen.getByText("Pods and Nodes");
-    await user.click(moduleRow);
+    // Start with a different module active so mod-1 is not auto-expanded
+    renderSidebar("mod-other");
 
-    // FAILS in Wave 0: CourseSidebar doesn't have expandable lessons yet.
-    // GREEN in 03-06 Task 2 when LessonNavList is wired.
-    expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument();
+    // Collapse state — lesson list not visible
+    expect(screen.queryByTestId("lesson-nav-list-mod-1")).not.toBeInTheDocument();
+
+    // Click the module row to expand
+    await user.click(screen.getByText("Pods and Nodes"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument();
+    });
   });
 
-  it("sidebar_lesson_status_icon — ready block shows checkmark, generating shows spinner", async () => {
-    vi.mocked(getModuleBlocks).mockResolvedValue([
-      {
-        id: "blk-1",
-        moduleId: "mod-1",
-        ordering: 0,
-        blockType: "section",
-        status: "ready",
-        paramsJson: '{"lesson_title":"Introduction"}',
-        payloadJson: "{}",
-        sourceAnchorsJson: "[]",
-        metadataJson: '{"concept_id":null}',
-        retryCount: 0,
-        createdAt: "2026-05-05T00:00:00Z",
-        updatedAt: "2026-05-05T00:00:00Z",
-      },
+  it("sidebar_collapse_on_re_click — click expanded module again to collapse", async () => {
+    const user = userEvent.setup();
+    mockStoreState.moduleBlocks = new Map([
+      ["mod-1", [makeSectionBlock({ id: "blk-1" })]],
     ]);
 
-    renderSidebar();
-
-    // FAILS in Wave 0: status icons not rendered by placeholder CourseSidebar.
-    // GREEN in 03-06 Task 2.
-    expect(screen.getByTestId("lesson-status-ready-blk-1")).toBeInTheDocument();
-  });
-
-  it("sidebar_active_module_auto_expanded — active module lessons visible without click", () => {
     renderSidebar("mod-1");
 
-    // FAILS in Wave 0: CourseSidebar doesn't auto-expand active module yet.
-    // GREEN in 03-06 Task 2.
+    // Active module auto-expanded
     expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument();
+
+    // Click to collapse
+    await user.click(screen.getByText("Pods and Nodes"));
+    expect(screen.queryByTestId("lesson-nav-list-mod-1")).not.toBeInTheDocument();
+  });
+
+  it("sidebar_loads_blocks_on_first_expand — loadModuleBlocks called once; cached on re-expand", async () => {
+    const user = userEvent.setup();
+    let callCount = 0;
+    mockLoadModuleBlocks.mockImplementation((moduleId: string) => {
+      callCount++;
+      mockStoreState.moduleBlocks = new Map([
+        [moduleId, [makeSectionBlock({ id: "blk-1" })]],
+      ]);
+      return Promise.resolve([makeSectionBlock({ id: "blk-1" })]);
+    });
+
+    renderSidebar("mod-other");
+
+    // First expand — triggers IPC
+    await user.click(screen.getByText("Pods and Nodes"));
+    await waitFor(() => expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument());
+    expect(callCount).toBe(1);
+
+    // Collapse
+    await user.click(screen.getByText("Pods and Nodes"));
+    expect(screen.queryByTestId("lesson-nav-list-mod-1")).not.toBeInTheDocument();
+
+    // Re-expand — blocks already cached in store (moduleBlocks.has("mod-1")), no second call
+    await user.click(screen.getByText("Pods and Nodes"));
+    await waitFor(() => expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument());
+    expect(callCount).toBe(1); // still 1 — cache hit
+  });
+
+  it("sidebar_lesson_status_icon — status icons reflect block status", async () => {
+    const user = userEvent.setup();
+    const blocks: ModuleBlock[] = [
+      makeSectionBlock({ id: "blk-ready", status: "ready", ordering: 0 }),
+      makeSectionBlock({ id: "blk-generating", status: "generating", ordering: 1 }),
+      makeSectionBlock({ id: "blk-failed", status: "failed", ordering: 2 }),
+    ];
+    mockLoadModuleBlocks.mockImplementation((moduleId: string) => {
+      mockStoreState.moduleBlocks = new Map([[moduleId, blocks]]);
+      return Promise.resolve(blocks);
+    });
+
+    renderSidebar("mod-other");
+    await user.click(screen.getByText("Pods and Nodes"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("status-ready")).toBeInTheDocument();
+      expect(screen.getByTestId("status-generating")).toBeInTheDocument();
+      expect(screen.getByTestId("status-failed")).toBeInTheDocument();
+    });
+  });
+
+  it("sidebar_completed_lesson_dot — completed lesson shows completed icon", async () => {
+    mockStoreState.moduleBlocks = new Map([
+      ["mod-1", [makeSectionBlock({ id: "blk-1", status: "ready" })]],
+    ]);
+    // Mark blk-1 as completed
+    mockStoreState.lessonCompletions = new Map([["mod-1", new Set(["blk-1"])]]);
+
+    renderSidebar("mod-1");
+
+    expect(screen.getByTestId("status-completed")).toBeInTheDocument();
+  });
+
+  it("sidebar_lesson_click_navigates — clicking lesson sets currentLessonId and navigates", async () => {
+    const user = userEvent.setup();
+    mockStoreState.moduleBlocks = new Map([
+      ["mod-1", [makeSectionBlock({ id: "blk-3" })]],
+    ]);
+
+    renderSidebar("mod-1");
+
+    // Click the lesson row
+    const lessonRow = screen.getByTestId("lesson-row-blk-3");
+    await user.click(lessonRow);
+
+    expect(mockSetCurrentLesson).toHaveBeenCalledWith("blk-3");
+    expect(mockNavigate).toHaveBeenCalledWith("/track/track-1/module/mod-1");
+  });
+
+  // Phase 1 regression guard: existing module-level sidebar functionality still works
+  it("phase1_regression — module list renders with status labels", () => {
+    renderSidebar("mod-1");
+
+    expect(screen.getByText("Pods and Nodes")).toBeInTheDocument();
+    expect(screen.getByText("In progress")).toBeInTheDocument();
   });
 });

@@ -8,6 +8,7 @@ const mockStoreState = vi.hoisted(() => ({
   markLessonComplete: vi.fn(),
   lessonCompletions: new Map<string, Set<string>>(),
   regenerateLesson: vi.fn(),
+  submitQuiz: vi.fn(),
 }));
 
 vi.mock("@/stores/useLearningStore", () => ({
@@ -49,7 +50,7 @@ describe("BlockRenderer Phase 3", () => {
     expect(screen.getByRole("button", { name: /mark complete/i })).toBeInTheDocument();
   });
 
-  it("block_renderer_renders_quiz — quiz blockType renders QuizBlock placeholder", () => {
+  it("block_renderer_renders_quiz — quiz blockType renders QuizBlock (empty quiz error state)", () => {
     render(
       <BlockRenderer
         block={makeBlock({
@@ -59,8 +60,8 @@ describe("BlockRenderer Phase 3", () => {
         moduleId="mod-1"
       />
     );
-    // QuizBlock placeholder from Wave 0
-    expect(screen.getByTestId("placeholder-quiz-block")).toBeInTheDocument();
+    // Empty quiz payload renders the quiz-empty error state (implemented in 03-06 Task 1)
+    expect(screen.getByTestId("quiz-empty")).toBeInTheDocument();
   });
 
   it("block_renderer_unknown_type — unknown blockType renders fallback with specific text", () => {
