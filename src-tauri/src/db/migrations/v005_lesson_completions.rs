@@ -3,10 +3,20 @@ use rusqlite::{Connection, Result};
 pub const VERSION: i32 = 5;
 pub const NAME: &str = "lesson_completions";
 
-pub fn up(_conn: &Connection) -> Result<()> {
-    // Wave 2 (03-05 Task 1) implements this.
-    // Stub returns Ok without creating the table so Wave 0 tests FAIL.
-    Ok(())
+pub fn up(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS lesson_completions (
+            learner_id   TEXT NOT NULL,
+            module_id    TEXT NOT NULL,
+            block_id     TEXT NOT NULL,
+            completed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (learner_id, module_id, block_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_lesson_completions_module
+            ON lesson_completions(module_id);
+        "#,
+    )
 }
 
 #[cfg(test)]

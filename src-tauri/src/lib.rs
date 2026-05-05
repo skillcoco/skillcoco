@@ -94,6 +94,8 @@ pub fn run() {
             // Quiz + Flash Card commands (Phase 3 — Wave 2 BKT re-rooting, 03-04)
             commands::learning::submit_quiz,
             commands::learning::rate_flash_card,
+            // Lesson completion (Phase 3 — Wave 3, 03-05)
+            commands::learning::mark_lesson_complete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

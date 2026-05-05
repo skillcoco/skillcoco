@@ -60,12 +60,16 @@ pub struct RateFlashCardRequest {
     pub quality: u8, // 1-5; >= 4 = "good/easy"
 }
 
-/// Mark-lesson-complete stub. Fields finalized in 03-05 Task 1.
-/// Declared as marker struct here so the camelCase serde test FAILS in Wave 0
-/// (no camelCase fields to assert) and turns GREEN when 03-05 adds module_id + block_id.
+/// Request to mark a lesson (section block) as complete.
+///
+/// Finalized in 03-05 Task 1 — replaced the Wave 0 marker stub with real fields.
+/// camelCase serde per FIX-02 (IPC boundary contract).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MarkLessonCompleteRequest;
+pub struct MarkLessonCompleteRequest {
+    pub module_id: String,
+    pub block_id: String,
+}
 
 // ── Phase 3 Quiz Scoring (pure helper — no DB, no async) ──
 
@@ -436,6 +440,48 @@ pub async fn rate_flash_card(
     Ok(RateFlashCardResult {
         mastery_level: new_mastery,
     })
+}
+
+// ── Phase 3: Mark Lesson Complete Command (03-05 Task 1) ──
+
+/// Mark a section block as complete for the current learner.
+///
+/// Inserts an `INSERT OR IGNORE` row into `lesson_completions` so this is
+/// idempotent — clicking "Mark complete" twice produces one row.
+///
+/// Learner resolution:
+/// 1. Try to find learner_id from module_progress for this module (if quiz has been attempted).
+/// 2. Fall back to the first learner_profiles row (Phase 3 single-learner desktop).
+#[tauri::command]
+pub async fn mark_lesson_complete(
+    req: MarkLessonCompleteRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Resolve learner_id: module_progress first, then learner_profiles fallback
+    let learner_id: String = db
+        .conn
+        .query_row(
+            "SELECT learner_id FROM module_progress WHERE module_id=?1 LIMIT 1",
+            [&req.module_id],
+            |r| r.get(0),
+        )
+        .unwrap_or_else(|_| {
+            db.conn
+                .query_row("SELECT id FROM learner_profiles LIMIT 1", [], |r| r.get(0))
+                .unwrap_or_default()
+        });
+
+    db.conn
+        .execute(
+            "INSERT OR IGNORE INTO lesson_completions (learner_id, module_id, block_id)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![learner_id, req.module_id, req.block_id],
+        )
+        .map_err(|e| format!("mark_lesson_complete: {}", e))?;
+
+    Ok(())
 }
 
 // ── LOOP-01: BKT Mastery Update Helper ──
@@ -1459,15 +1505,16 @@ mod phase3_tests {
         assert!(json.contains("moduleId"), "must serialize to moduleId");
     }
 
-    /// FAILS in Wave 0: MarkLessonCompleteRequest is a marker struct with no camelCase
-    /// fields to assert. GREEN in 03-05 Task 1 when module_id + block_id are finalized.
+    /// Finalized in 03-05 Task 1: MarkLessonCompleteRequest now has module_id + block_id fields.
     #[test]
     fn test_mark_lesson_complete_request_camel_case() {
-        let req = MarkLessonCompleteRequest;
+        let req = MarkLessonCompleteRequest {
+            module_id: "mod-1".to_string(),
+            block_id: "blk-1".to_string(),
+        };
         let json = serde_json::to_string(&req).unwrap();
-        // These fields don't exist on the marker stub — assertions FAIL in Wave 0.
-        assert!(json.contains("moduleId"), "must serialize to moduleId (fails until 03-05 adds fields)");
-        assert!(json.contains("blockId"), "must serialize to blockId (fails until 03-05 adds fields)");
+        assert!(json.contains("moduleId"), "must serialize to moduleId");
+        assert!(json.contains("blockId"), "must serialize to blockId");
     }
 
     // ── BKT removal / quiz scoring tests ──
@@ -2204,5 +2251,53 @@ mod phase3_tests {
             |row| row.get(0),
         ).unwrap();
         assert_eq!(mod2_status, "locked", "flash card reinforcement must not unlock modules (no check_unlock_modules call)");
+    }
+
+    // ── mark_lesson_complete test (03-05 Task 1) ──
+
+    /// Verifies that mark_lesson_complete inserts a row into lesson_completions
+    /// and that the operation is idempotent (second call does not error / duplicate).
+    #[test]
+    fn mark_lesson_complete_persists() {
+        let conn = fresh_conn();
+
+        // Seed minimal learner
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Tester')",
+            [],
+        ).unwrap();
+
+        // Simulate mark_lesson_complete logic directly (can't call Tauri command in unit test)
+        let learner_id = "lp1".to_string();
+        let module_id = "mod-1";
+        let block_id = "blk-section-1";
+
+        conn.execute(
+            "INSERT OR IGNORE INTO lesson_completions (learner_id, module_id, block_id)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![learner_id, module_id, block_id],
+        ).unwrap();
+
+        // Assert row exists
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM lesson_completions WHERE learner_id=?1 AND module_id=?2 AND block_id=?3",
+            rusqlite::params![learner_id, module_id, block_id],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count, 1, "lesson_completions must have 1 row after mark_lesson_complete");
+
+        // Idempotent: second insert must not error or create duplicate
+        conn.execute(
+            "INSERT OR IGNORE INTO lesson_completions (learner_id, module_id, block_id)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![learner_id, module_id, block_id],
+        ).unwrap();
+
+        let count2: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM lesson_completions WHERE learner_id=?1 AND module_id=?2 AND block_id=?3",
+            rusqlite::params![learner_id, module_id, block_id],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count2, 1, "lesson_completions must still have 1 row after idempotent second call");
     }
 }
