@@ -144,3 +144,20 @@
     box-shadow: 0 0 12px 2px currentColor;
   }
 }
+
+/* Flash card flip animation (Phase 3 — 03-05 Task 2) */
+.flip-card { perspective: 1000px; }
+.flip-card-inner {
+  transition: transform 0.4s;
+  transform-style: preserve-3d;
+  position: relative;
+}
+.flip-card.flipped .flip-card-inner { transform: rotateY(180deg); }
+.flip-card-front,
+.flip-card-back {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  position: absolute;
+  inset: 0;
+}
+.flip-card-back { transform: rotateY(180deg); }

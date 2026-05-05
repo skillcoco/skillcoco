@@ -1,14 +1,92 @@
 import type { ModuleBlock } from "@/types/learning";
+import { BlockSkeleton } from "./BlockSkeleton";
+import { SectionBlock } from "./SectionBlock";
+import { TextBlock } from "./TextBlock";
+import { CalloutBlock } from "./CalloutBlock";
+import { QuizBlock } from "./QuizBlock";
+import { FlashCardsBlock } from "./FlashCardsBlock";
+import { useLearningStore } from "@/stores/useLearningStore";
 
 interface BlockRendererProps {
   block: ModuleBlock;
+  moduleId: string;
+  lessonIndex?: number;
+  priorCompletedCount?: number;
+  trackId?: string;
 }
 
 /**
  * Discriminated-union renderer for Module blocks.
- * Wave 3 (03-05 Task 2) implements the real switch on blockType.
- * This placeholder allows Wave 0 test scaffolds to compile.
+ *
+ * Non-ready blocks (pending | generating | failed) are always rendered as
+ * BlockSkeleton regardless of blockType. This ensures skeleton / retry UI
+ * is shown during generation or on failure.
+ *
+ * Ready blocks are dispatched by blockType:
+ *   section    -> SectionBlock  (markdown + mark-complete)
+ *   text       -> TextBlock     (markdown only, no mark-complete)
+ *   callout    -> CalloutBlock  (variant-styled callout box)
+ *   quiz       -> QuizBlock     (MCQ flow — Wave 4)
+ *   flash_cards -> FlashCardsBlock (flip cards — Wave 3)
+ *
+ * Unknown blockTypes render a fallback div with a descriptive message.
  */
-export function BlockRenderer({ block: _block }: BlockRendererProps) {
-  return <div data-testid="placeholder-block-renderer">Not implemented</div>;
+export function BlockRenderer({
+  block,
+  moduleId,
+  lessonIndex,
+  priorCompletedCount,
+  trackId,
+}: BlockRendererProps) {
+  const regenerateLesson = useLearningStore((s) => s.regenerateLesson);
+
+  // Non-ready blocks: always show skeleton / retry card
+  if (
+    block.status === "pending" ||
+    block.status === "generating" ||
+    block.status === "failed"
+  ) {
+    return (
+      <BlockSkeleton
+        status={block.status}
+        onRetry={
+          block.status === "failed"
+            ? () => regenerateLesson(block.id)
+            : undefined
+        }
+      />
+    );
+  }
+
+  // Ready: dispatch by blockType
+  switch (block.blockType) {
+    case "section":
+      return (
+        <SectionBlock
+          block={block}
+          moduleId={moduleId}
+          lessonIndex={lessonIndex}
+          priorCompletedCount={priorCompletedCount}
+        />
+      );
+    case "text":
+      return <TextBlock block={block} />;
+    case "callout":
+      return <CalloutBlock block={block} />;
+    case "quiz":
+      return <QuizBlock block={block} />;
+    case "flash_cards":
+      return (
+        <FlashCardsBlock
+          block={block}
+          moduleId={moduleId}
+        />
+      );
+    default:
+      return (
+        <div data-testid="unsupported-block">
+          Unsupported block type: {block.blockType}
+        </div>
+      );
+  }
 }

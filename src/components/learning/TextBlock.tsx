@@ -1,14 +1,26 @@
-import type { ModuleBlock } from "@/types/learning";
+import type { ModuleBlock, TextPayload } from "@/types/learning";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 interface TextBlockProps {
   block: ModuleBlock;
 }
 
 /**
- * Renders a short-form text block.
- * Wave 3 (03-05 Task 2) implements the real component.
- * This placeholder allows Wave 0 test scaffolds to compile.
+ * Renders a short-form text block (100-400 words) via MarkdownRenderer.
+ * No "Mark complete" button — text blocks are informational only.
+ * Glassmorphism container with prose styling.
  */
-export function TextBlock({ block: _block }: TextBlockProps) {
-  return <div data-testid="placeholder-text-block">Not implemented</div>;
+export function TextBlock({ block }: TextBlockProps) {
+  let payload: TextPayload;
+  try {
+    payload = JSON.parse(block.payloadJson) as TextPayload;
+  } catch {
+    payload = { markdown: "Content unavailable." };
+  }
+
+  return (
+    <div className="prose prose-invert max-w-none my-4" data-testid="text-block">
+      <MarkdownRenderer content={payload.markdown} />
+    </div>
+  );
 }
