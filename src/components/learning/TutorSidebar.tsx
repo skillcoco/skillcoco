@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { X, Send, Bot, User, Loader2 } from "lucide-react";
 import { sendTutorMessage } from "@/lib/tauri-commands";
+import { useLearningStore } from "@/stores/useLearningStore";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,11 @@ interface TutorSidebarProps {
 }
 
 export function TutorSidebar({ isOpen, onClose, trackId, moduleId, moduleTitle }: TutorSidebarProps) {
+  // Phase 3 BLOCK-04: read the currently-active lesson from the store.
+  // The store's currentLessonId IS the section block's id (opaque string) — no transformation needed.
+  // This is sticky on click (not scroll-derived) per CONTEXT.md locked decision.
+  const currentLessonId = useLearningStore((s) => s.currentLessonId);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -60,11 +66,14 @@ export function TutorSidebar({ isOpen, onClose, trackId, moduleId, moduleTitle }
       // Backend fetches authoritative module + track context from DB via
       // moduleId (mirrors the generate_exercise pattern). moduleTitle is
       // sent for display only; moduleContext stays as a legacy fallback.
+      // Phase 3 BLOCK-04: currentSectionId grounds the tutor in the active lesson.
+      // When null (no lesson selected), backend falls back to module overview context.
       const response = await sendTutorMessage({
         content: trimmed,
         moduleId,
         trackId,
         moduleTitle,
+        ...(currentLessonId != null ? { currentSectionId: currentLessonId } : {}),
         history: recentHistory,
       });
 
@@ -87,7 +96,7 @@ export function TutorSidebar({ isOpen, onClose, trackId, moduleId, moduleTitle }
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, trackId, moduleId]);
+  }, [input, isLoading, messages, trackId, moduleId, currentLessonId]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
