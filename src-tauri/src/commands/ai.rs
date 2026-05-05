@@ -6,6 +6,11 @@ use serde_json::json;
 use tauri::State;
 
 /// Extract JSON from AI response that may be wrapped in markdown code fences.
+/// Public alias used by commands/blocks.rs (Phase 3 BLOCK-03 pipeline).
+pub fn extract_json_pub(text: &str) -> Result<serde_json::Value, String> {
+    extract_json(text)
+}
+
 fn extract_json(text: &str) -> Result<serde_json::Value, String> {
     let trimmed = text.trim();
 
@@ -338,6 +343,36 @@ fn build_tutor_system_prompt(ctx: Option<&ExerciseContext>, fallback: &str) -> S
     }
 }
 
+/// Load a section block's markdown payload excerpt for tutor grounding (BLOCK-04).
+///
+/// Returns Some(excerpt) if the block exists, has type='section', and has a non-empty markdown payload.
+/// Returns None on any failure (block not found, not a section, missing markdown) — caller falls back.
+/// Truncates to TUTOR_CONTENT_EXCERPT_MAX to avoid oversized system prompts.
+fn load_section_excerpt(conn: &rusqlite::Connection, section_id: &str) -> Option<String> {
+    let block = crate::db::blocks::get_block(conn, section_id).ok().flatten()?;
+    if block.block_type != "section" {
+        return None;
+    }
+    let parsed: serde_json::Value = serde_json::from_str(&block.payload_json).ok()?;
+    let md = parsed.get("markdown")?.as_str()?;
+    if md.trim().is_empty() {
+        return None;
+    }
+    let truncated = if md.len() > TUTOR_CONTENT_EXCERPT_MAX {
+        // Find a safe char boundary at or after TUTOR_CONTENT_EXCERPT_MAX
+        let start = md.len() - TUTOR_CONTENT_EXCERPT_MAX;
+        let safe_start = md
+            .char_indices()
+            .map(|(i, _)| i)
+            .find(|&i| i >= start)
+            .unwrap_or(start);
+        &md[safe_start..]
+    } else {
+        md
+    };
+    Some(truncated.to_string())
+}
+
 #[tauri::command]
 pub async fn send_tutor_message(
     auth: State<'_, AuthState>,
@@ -348,14 +383,43 @@ pub async fn send_tutor_message(
         return Err("Message content is empty".to_string());
     }
 
-    // Fetch authoritative context if moduleId provided. Failures fall back to
-    // the optional moduleContext string (backwards compat for any caller that
-    // hasn't been updated yet).
-    let ctx = match &message.module_id {
-        Some(id) if !id.is_empty() => load_exercise_context(state.inner(), id).ok(),
-        _ => None,
+    // Resolve context with BLOCK-04 grounding priority:
+    // 1. currentSectionId → load section payload as primary context
+    // 2. module_id → load exercise context (module overview)
+    // 3. module_context string → legacy fallback
+    let (ctx, section_excerpt) = if let Some(section_id) = &message.current_section_id {
+        if !section_id.is_empty() {
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            let excerpt = load_section_excerpt(&db.conn, section_id);
+            // Also try module context as fallback
+            let module_ctx = if excerpt.is_none() {
+                message.module_id.as_deref()
+                    .and_then(|id| load_exercise_context(state.inner(), id).ok())
+            } else {
+                None
+            };
+            (module_ctx, excerpt)
+        } else {
+            // Empty section_id — fall through to module context
+            let ctx = match &message.module_id {
+                Some(id) if !id.is_empty() => load_exercise_context(state.inner(), id).ok(),
+                _ => None,
+            };
+            (ctx, None)
+        }
+    } else {
+        // No currentSectionId — use module context path
+        let ctx = match &message.module_id {
+            Some(id) if !id.is_empty() => load_exercise_context(state.inner(), id).ok(),
+            _ => None,
+        };
+        (ctx, None)
     };
-    let fallback = message.module_context.as_deref().unwrap_or("");
+
+    // Build system prompt with section excerpt taking priority over module context
+    let fallback = section_excerpt.as_deref()
+        .or(message.module_context.as_deref())
+        .unwrap_or("");
 
     let system_prompt = build_tutor_system_prompt(ctx.as_ref(), fallback);
 
@@ -947,6 +1011,183 @@ mod tests {
             xs < 9000,
             "content excerpt was not actually truncated; got {} x's",
             xs
+        );
+    }
+
+    // ── Task 3: Tutor section grounding tests (BLOCK-04) ──
+
+    fn fresh_conn_with_schema() -> rusqlite::Connection {
+        use crate::db::migrations::apply_migrations;
+        use crate::db::schema;
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        conn.execute_batch(schema::CREATE_TABLES).unwrap();
+        apply_migrations(&conn).unwrap();
+        conn
+    }
+
+    fn seed_module_with_section_block(
+        conn: &rusqlite::Connection,
+        module_id: &str,
+        block_id: &str,
+        section_markdown: &str,
+    ) {
+        conn.execute(
+            "INSERT OR IGNORE INTO learner_profiles (id) VALUES ('lp-tutor')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO learning_tracks (id, learner_id, topic, domain_module) VALUES ('trk-tutor', 'lp-tutor', 'Kubernetes', 'devops')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO learning_paths (id, track_id) VALUES ('path-tutor', 'trk-tutor')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO modules (id, path_id, title, description, objectives_json) VALUES (?1, 'path-tutor', 'Test Module', 'A test module', '[]')",
+            [module_id],
+        ).unwrap();
+
+        // Insert section block with markdown payload
+        let payload = serde_json::json!({
+            "markdown": section_markdown,
+            "wordCount": section_markdown.split_whitespace().count()
+        }).to_string();
+        conn.execute(
+            "INSERT INTO module_blocks (id, module_id, ordering, block_type, status, params_json, payload_json)
+             VALUES (?1, ?2, 0, 'section', 'ready', '{}', ?3)",
+            rusqlite::params![block_id, module_id, payload],
+        ).unwrap();
+    }
+
+    /// tutor_uses_section_payload_when_provided:
+    /// Mock module_blocks with section block id="b1" payload {"markdown":"<content about Pods>"}.
+    /// Build tutor prompt with currentSectionId="b1". Assert system prompt contains section excerpt.
+    #[test]
+    fn tutor_uses_section_payload_when_provided() {
+        let conn = fresh_conn_with_schema();
+        let section_content = "A Pod is a group of one or more containers sharing storage and network resources.";
+        seed_module_with_section_block(&conn, "mod-tutor-1", "b1", section_content);
+
+        let excerpt = load_section_excerpt(&conn, "b1");
+        assert!(excerpt.is_some(), "load_section_excerpt must return Some for existing section block");
+
+        let excerpt = excerpt.unwrap();
+        assert!(
+            excerpt.contains("Pod is a group"),
+            "excerpt must contain section markdown content; got: {}",
+            excerpt
+        );
+
+        // The system prompt built with this excerpt as fallback must contain the content
+        let prompt = build_tutor_system_prompt(None, &excerpt);
+        assert!(
+            prompt.contains("Pod is a group"),
+            "tutor system prompt must contain section excerpt when provided; got: {}",
+            prompt
+        );
+
+        // Excerpt must be truncated to TUTOR_CONTENT_EXCERPT_MAX
+        assert!(
+            excerpt.len() <= TUTOR_CONTENT_EXCERPT_MAX,
+            "excerpt must be truncated to TUTOR_CONTENT_EXCERPT_MAX ({}); got len {}",
+            TUTOR_CONTENT_EXCERPT_MAX,
+            excerpt.len()
+        );
+    }
+
+    /// tutor_falls_back_to_module_overview_when_section_missing:
+    /// Pass currentSectionId="nonexistent". load_section_excerpt returns None — no crash.
+    #[test]
+    fn tutor_falls_back_to_module_overview_when_section_missing() {
+        let conn = fresh_conn_with_schema();
+        // No blocks seeded — section lookup must gracefully return None
+        let excerpt = load_section_excerpt(&conn, "nonexistent-block-id");
+        assert!(excerpt.is_none(), "load_section_excerpt must return None for missing block");
+
+        // Tutor prompt falls back gracefully to module overview (empty fallback here)
+        let prompt = build_tutor_system_prompt(None, "module overview fallback");
+        assert!(
+            prompt.contains("module overview fallback"),
+            "when section missing, prompt uses fallback; got: {}",
+            prompt
+        );
+        // No crash — test passes by not panicking
+    }
+
+    /// tutor_falls_back_when_no_section_id:
+    /// currentSectionId=None. Assert prompt uses module overview path (regression guard for Phase 1).
+    #[test]
+    fn tutor_falls_back_when_no_section_id() {
+        // When no currentSectionId, the tutor uses the module context (ExerciseContext path)
+        let ctx = k8s_pods_context();
+        let prompt = build_tutor_system_prompt(Some(&ctx), "fallback string");
+
+        // Phase 1 behavior: DB context wins over fallback string
+        assert!(
+            prompt.contains("Pods, Nodes and Clusters"),
+            "Phase 1 module context must be used when no currentSectionId; got: {}",
+            prompt
+        );
+        assert!(
+            !prompt.contains("fallback string"),
+            "DB context should win over fallback; got: {}",
+            prompt
+        );
+    }
+
+    /// integration_tutor_section_grounding:
+    /// Stub block in DB, call load_section_excerpt, assert prompt contains section content.
+    /// Full integration: verify the grounding chain works end-to-end (without actual LLM call).
+    #[test]
+    fn integration_tutor_section_grounding() {
+        let conn = fresh_conn_with_schema();
+        let section_content = "Kubernetes uses a control plane to manage workloads across nodes. \
+            The API server is the central management point for all cluster operations. \
+            etcd stores the cluster state as a distributed key-value store.";
+        seed_module_with_section_block(&conn, "mod-grounded", "section-ctrl", section_content);
+
+        // Step 1: Verify section excerpt is loadable
+        let excerpt = load_section_excerpt(&conn, "section-ctrl").unwrap();
+        assert!(
+            excerpt.contains("control plane"),
+            "excerpt must contain section content about control plane; got: {}",
+            excerpt
+        );
+        assert!(
+            excerpt.contains("API server"),
+            "excerpt must contain section content about API server; got: {}",
+            excerpt
+        );
+
+        // Step 2: Build tutor prompt using section excerpt as primary context
+        let prompt = build_tutor_system_prompt(None, &excerpt);
+        assert!(
+            prompt.contains("control plane"),
+            "tutor system prompt must include section excerpt content; got: {}",
+            prompt
+        );
+        assert!(
+            prompt.contains("API server"),
+            "tutor system prompt must include API server mention; got: {}",
+            prompt
+        );
+
+        // Step 3: Verify fallback chain — non-existent section falls back gracefully
+        let missing_excerpt = load_section_excerpt(&conn, "does-not-exist");
+        assert!(missing_excerpt.is_none(), "missing section must return None");
+
+        // Step 4: Verify non-section block (quiz) returns None
+        conn.execute(
+            "INSERT INTO module_blocks (id, module_id, ordering, block_type, status, params_json, payload_json)
+             VALUES ('blk-quiz', 'mod-grounded', 1, 'quiz', 'ready', '{}', '{\"questions\":[]}')",
+            [],
+        ).unwrap();
+        let quiz_excerpt = load_section_excerpt(&conn, "blk-quiz");
+        assert!(
+            quiz_excerpt.is_none(),
+            "non-section block (quiz) must return None from load_section_excerpt"
         );
     }
 }
