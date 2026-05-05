@@ -38,6 +38,10 @@ export function ModuleView() {
 
   // cancelRef: guards against async operations after unmount/module change
   const cancelRef = useRef(false);
+  // scrollRef: scrollable lesson pane; we reset to top whenever the active
+  // lesson changes so a sidebar click lands at the lesson's title, not at
+  // wherever the user was reading in the previous lesson.
+  const scrollRef = useRef<HTMLDivElement>(null);
   // kickoffRef: tracks which moduleId we've already triggered generation for in
   // this mount. Prevents duplicate PagePlanner calls if effects re-run.
   const kickoffRef = useRef<string | null>(null);
@@ -168,6 +172,19 @@ export function ModuleView() {
     [activeLessonIndex, sectionBlocks, setCurrentLesson],
   );
 
+  // Scroll lesson pane to top when the active lesson changes (sidebar click,
+  // Prev/Next, or default-to-first on mount). jsdom doesn't implement
+  // Element.scrollTo so we feature-check before calling.
+  useEffect(() => {
+    if (!activeLesson) return;
+    const el = scrollRef.current;
+    if (el && typeof el.scrollTo === "function") {
+      el.scrollTo({ top: 0, behavior: "auto" });
+    } else if (el) {
+      el.scrollTop = 0;
+    }
+  }, [activeLesson?.id]);
+
   // Legacy banner handler: calls regenerateModule IPC with PagePlanner-first atomicity
   const handleRegenerateLegacy = useCallback(async () => {
     if (!moduleId || !trackId || generating) return;
@@ -211,7 +228,10 @@ export function ModuleView() {
       )}
 
       {/* Main scrollable content area */}
-      <div className={cn("flex-1 overflow-y-auto", tutorOpen && "lg:mr-96")}>
+      <div
+        ref={scrollRef}
+        className={cn("flex-1 overflow-y-auto", tutorOpen && "lg:mr-96")}
+      >
         <div className="mx-auto max-w-4xl space-y-6 p-6">
 
           {/* Header */}

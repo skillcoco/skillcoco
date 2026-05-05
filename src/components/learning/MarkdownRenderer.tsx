@@ -2,6 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { CodeBlock } from "./CodeBlock";
+import { MermaidBlock } from "./MermaidBlock";
 import type { Components } from "react-markdown";
 
 interface MarkdownRendererProps {
@@ -144,6 +145,10 @@ const components: Components = {
     const codeString = String(children).replace(/\n$/, "");
 
     if (match) {
+      // Render fenced ```mermaid``` blocks as SVG diagrams via mermaid.js.
+      if (match[1].toLowerCase() === "mermaid") {
+        return <MermaidBlock code={codeString} />;
+      }
       return <CodeBlock code={codeString} language={match[1]} />;
     }
 

@@ -34,6 +34,35 @@ describe("SectionBlock Phase 3 scaffolds", () => {
     vi.clearAllMocks();
   });
 
+  it("section_renders_lesson_title — paramsJson.lessonTitle appears as h2 heading above content", () => {
+    const block: ModuleBlock = {
+      ...makeBlock('{"markdown":"Body text only.","word_count":3}'),
+      paramsJson: '{"lessonTitle":"Introduction to Pods"}',
+    };
+    render(<SectionBlock block={block} lessonIndex={0} />);
+
+    const heading = screen.getByRole("heading", {
+      name: /introduction to pods/i,
+      level: 2,
+    });
+    expect(heading).toBeInTheDocument();
+    // Lesson number prefix when index provided
+    expect(screen.getByText(/lesson\s*1/i)).toBeInTheDocument();
+  });
+
+  it("section_renders_lesson_title_snake_case — also accepts lesson_title (snake_case fallback)", () => {
+    const block: ModuleBlock = {
+      ...makeBlock('{"markdown":"Body.","word_count":1}'),
+      paramsJson: '{"lesson_title":"Snake Case Title"}',
+    };
+    render(<SectionBlock block={block} lessonIndex={2} />);
+
+    expect(
+      screen.getByRole("heading", { name: /snake case title/i, level: 2 })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/lesson\s*3/i)).toBeInTheDocument();
+  });
+
   it("section_renders_markdown — payload markdown renders as HTML heading", () => {
     const block = makeBlock('{"markdown":"# Hello\\nSome content.","word_count":5}');
     render(<SectionBlock block={block} />);

@@ -452,15 +452,18 @@ pub(crate) fn build_section_prompt(
          (a kitchen, a post office, a queue at a store, traffic lights, etc.). Use the analogy \
          to motivate every key idea that follows. Reuse the same analogy throughout — don't \
          introduce a new one for every paragraph.\n\
-         3. **A diagram** in a fenced code block (use ```text or ```ascii) showing the \
-         relationship, flow, or structure being taught. Examples: a state diagram with arrows, \
-         a sequence of steps with `→`, a tree with indentation, a timeline. ASCII art only — \
-         the renderer does NOT support Mermaid or images.\n\
+         3. **A diagram** in a fenced code block. Prefer Mermaid (use ```mermaid) for \
+         flowcharts, sequence diagrams, state diagrams, ER diagrams, gantt charts, mindmaps, \
+         and class hierarchies — the renderer renders Mermaid blocks as proper SVG diagrams. \
+         Use ```text only as a fallback for layouts/timelines that don't fit Mermaid's grammar. \
+         Do NOT use images, links to external diagrams, or Excalidraw — they will not render.\n\
          4. **Step-by-step breakdown** with subheadings (## Step 1: ..., ## Step 2: ...). \
          Each step should be small enough to follow without re-reading.\n\
          5. **A worked example** in a fenced code block with the language tag (```python, \
-         ```javascript, etc.). Walk through what each line does in prose immediately after \
-         the block.\n\
+         ```javascript, etc.). Show ONLY the relevant snippet (5-15 lines) — do not paste \
+         long programs. If you need to show more code, split into multiple short snippets, \
+         each focused on one idea. Walk through what each line does in prose immediately \
+         after the block.\n\
          6. **Common pitfalls** — a `## Common Pitfalls` subsection with 2-4 bullets describing \
          mistakes a learner is likely to make and how to avoid them.\n\
          7. **Summary** — a `## Summary` section with 3-5 bullet points recapping the lesson.\n\n\
@@ -469,6 +472,12 @@ pub(crate) fn build_section_prompt(
          - Short paragraphs (3-4 sentences max). Prefer bullets and numbered lists over walls of text.\n\
          - When you introduce jargon, immediately gloss it in plain English.\n\
          - Avoid meta-commentary like \"In this lesson we will...\" — just teach.\n\n\
+         Mermaid diagram syntax notes (when you use ```mermaid):\n\
+         - Use `flowchart TD` or `flowchart LR` for boxes-and-arrows.\n\
+         - Use `sequenceDiagram` for request/response or message-passing flows.\n\
+         - Use `stateDiagram-v2` for state machines.\n\
+         - Keep node labels short (≤ 4 words). Use `--` for arrows in flowchart, `->>` in \
+         sequence, `-->` between states.\n\n\
          Output rules:\n\
          - Do NOT include a top-level # heading. The UI provides the lesson title.\n\
          - Return ONLY the markdown content. No JSON wrapper, no preamble like \"Here's the lesson:\".",
@@ -1215,17 +1224,25 @@ pub(crate) mod tests {
             0,
             8,
         );
-        // The prompt must instruct the model on every pedagogical element the
-        // user expects: analogies, simplified mental models, ASCII diagrams,
-        // step-by-step breakdowns, common pitfalls, and a summary.
+        // Must instruct on every pedagogical element: analogies, mental models,
+        // diagrams, step-by-step breakdowns, pitfalls, summary.
         assert!(p.contains("analogy") || p.contains("Analogy"), "must mention analogy");
         assert!(p.contains("mental model"), "must mention mental model");
         assert!(p.contains("diagram") || p.contains("Diagram"), "must require diagram");
-        assert!(p.contains("ASCII") || p.contains("ascii"), "must specify ASCII (renderer has no Mermaid)");
+        // Diagrams: prefer Mermaid (renderer supports it), text as fallback.
+        assert!(p.contains("Mermaid") || p.contains("mermaid"), "must mention Mermaid (renderer renders it as SVG)");
+        assert!(p.contains("```mermaid"), "must show the mermaid fence");
+        assert!(p.contains("flowchart") && p.contains("sequenceDiagram") && p.contains("stateDiagram"),
+            "must list common Mermaid diagram types");
+        assert!(p.contains("Excalidraw") || p.contains("not render"),
+            "must call out renderer limitations (no Excalidraw / no images)");
         assert!(p.contains("Step-by-step") || p.contains("Step 1"), "must require step-by-step breakdown");
         assert!(p.contains("Common Pitfalls") || p.contains("pitfalls"), "must require pitfalls section");
         assert!(p.contains("Why this matters"), "must require 'Why this matters' framing");
         assert!(p.contains("Summary"), "must require a summary section");
+        // Code-snippet brevity: short relevant snippets, not long programs.
+        assert!(p.contains("snippet") || p.contains("5-15 lines"),
+            "must instruct short relevant code snippets, not long programs");
         // No top-level heading — UI renders the title
         assert!(p.contains("NOT include a top-level # heading"), "must forbid top-level heading");
         // Sanity: lesson position threaded into prompt

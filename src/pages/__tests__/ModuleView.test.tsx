@@ -390,6 +390,53 @@ describe("ModuleView — Phase 3 tabs and core behaviour", () => {
 
   // ── Active lesson highlight ──────────────────────────────────────────────
 
+  it("module_view_scrolls_to_top_on_lesson_change — switching lesson resets scroll", async () => {
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-1";
+
+    // Spy on Element.prototype.scrollTo so any scroll container we use is captured
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollTo;
+    Element.prototype.scrollTo = scrollSpy;
+
+    const { rerender } = renderModuleView();
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+    });
+    scrollSpy.mockClear();
+
+    // Change active lesson — simulates a sidebar click via store update
+    mockStore.currentLessonId = "s-2";
+    rerender(
+      <MemoryRouter initialEntries={["/track/track-1/module/mod-1"]}>
+        <Routes>
+          <Route path="/track/:trackId/module/:moduleId" element={<ModuleView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-2")).toBeInTheDocument();
+    });
+
+    // Either window or a container ref should be scrolled to top
+    expect(scrollSpy).toHaveBeenCalled();
+    const firstCall = scrollSpy.mock.calls[0][0];
+    if (typeof firstCall === "object") {
+      expect(firstCall.top).toBe(0);
+    } else {
+      // legacy form scrollTo(x, y)
+      expect(firstCall).toBe(0);
+    }
+
+    Element.prototype.scrollTo = original;
+  });
+
   it("module_view_renders_one_lesson_at_a_time — only the active lesson is in the DOM (Udemy convention)", async () => {
     const blocks = [
       makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),

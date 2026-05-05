@@ -47,6 +47,20 @@ export function SectionBlock({
     payload = { markdown: "Content unavailable." };
   }
 
+  // Lesson title from params: prefer camelCase, fall back to snake_case for
+  // legacy rows (the prompt instructs the LLM to omit any title heading from
+  // the markdown — the UI surfaces it here).
+  let lessonTitle: string | null = null;
+  try {
+    const params = JSON.parse(block.paramsJson) as Record<string, unknown>;
+    const t = params.lessonTitle ?? params.lesson_title;
+    if (typeof t === "string" && t.trim().length > 0) {
+      lessonTitle = t;
+    }
+  } catch {
+    /* keep null */
+  }
+
   function handleMarkComplete() {
     if (onMarkComplete) {
       onMarkComplete(block.id);
@@ -73,6 +87,17 @@ export function SectionBlock({
             Dismiss
           </button>
         </div>
+      )}
+
+      {lessonTitle && (
+        <header className="not-prose mb-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            Lesson {lessonIndex + 1}
+          </p>
+          <h2 className="mt-1 text-3xl font-bold leading-tight text-foreground">
+            {lessonTitle}
+          </h2>
+        </header>
       )}
 
       <MarkdownRenderer content={payload.markdown} />
