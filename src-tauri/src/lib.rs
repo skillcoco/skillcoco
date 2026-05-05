@@ -86,6 +86,9 @@ pub fn run() {
             // Profile commands
             commands::tracks::get_or_create_profile,
             commands::tracks::update_profile,
+            // Block commands (Phase 3 — Wave 1 cached-fetch + legacy wrap)
+            commands::blocks::get_module_blocks,
+            commands::blocks::generate_module_blocks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

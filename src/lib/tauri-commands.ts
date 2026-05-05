@@ -170,6 +170,12 @@ export async function getModuleBlocks(moduleId: string): Promise<import("@/types
   return invoke("get_module_blocks", { moduleId });
 }
 
+export async function generateModuleBlocks(
+  req: import("@/types/learning").GenerateModuleBlocksRequest,
+): Promise<import("@/types/learning").GenerateModuleBlocksResult> {
+  return invoke("generate_module_blocks", { req });
+}
+
 export async function markLessonComplete(moduleId: string, blockId: string): Promise<void> {
   return invoke("mark_lesson_complete", { request: { moduleId, blockId } });
 }
