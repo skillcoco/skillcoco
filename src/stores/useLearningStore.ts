@@ -25,6 +25,7 @@ interface LearningState {
   loadTracks: () => Promise<void>;
   selectTrack: (trackId: string) => Promise<void>;
   createTrack: (topic: string, domainModule: string, goal: string) => Promise<LearningTrack>;
+  deleteTrack: (trackId: string) => Promise<void>;
   loadDueCards: () => Promise<void>;
   completeExercises: (moduleId: string, trackId: string, scores: number[]) => Promise<import("@/types/learning").CompleteExercisesResult>;
 
@@ -80,6 +81,16 @@ export const useLearningStore = create<LearningState>((set, _get) => ({
     const track = await commands.createTrack(topic, domainModule, goal);
     set((s) => ({ tracks: [...s.tracks, track] }));
     return track;
+  },
+
+  deleteTrack: async (trackId) => {
+    await commands.deleteTrack(trackId);
+    set((s) => ({
+      tracks: s.tracks.filter((t) => t.id !== trackId),
+      currentTrack: s.currentTrack?.id === trackId ? null : s.currentTrack,
+      currentPath: s.currentTrack?.id === trackId ? null : s.currentPath,
+      moduleProgress: s.currentTrack?.id === trackId ? [] : s.moduleProgress,
+    }));
   },
 
   loadDueCards: async () => {

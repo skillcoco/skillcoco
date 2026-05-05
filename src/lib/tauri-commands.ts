@@ -47,6 +47,10 @@ export async function updateTrackStatus(trackId: string, status: string): Promis
   return invoke("update_track_status", { trackId, status });
 }
 
+export async function deleteTrack(trackId: string): Promise<void> {
+  return invoke("delete_track", { trackId });
+}
+
 // ── Learning Paths ──
 
 export async function getPath(trackId: string): Promise<LearningPath> {

@@ -9,6 +9,7 @@ vi.mock("@/lib/tauri-commands", () => ({
   getModuleProgress: vi.fn(),
   getDueCards: vi.fn(),
   createTrack: vi.fn(),
+  deleteTrack: vi.fn(),
   completeModuleExercises: vi.fn(),
   markLessonComplete: vi.fn(),
   submitQuiz: vi.fn(),
@@ -119,6 +120,30 @@ describe("useLearningStore phase 3 extensions", () => {
 
     const storedBlocks = useLearningStore.getState().moduleBlocks.get("mod-1");
     expect(storedBlocks).toHaveLength(8);
+  });
+
+  it("store_delete_track — deleteTrack calls IPC and removes from tracks list", async () => {
+    vi.mocked(commands.deleteTrack).mockResolvedValue(undefined);
+
+    const trackA = { id: "t1", topic: "K8s" } as unknown as import("@/types").LearningTrack;
+    const trackB = { id: "t2", topic: "Rust" } as unknown as import("@/types").LearningTrack;
+    useLearningStore.setState({
+      tracks: [trackA, trackB],
+      currentTrack: trackA,
+      currentPath: { id: "p1" } as unknown as import("@/types").LearningPath,
+      moduleProgress: [{ moduleId: "m1" } as unknown as import("@/types").ModuleProgress],
+    });
+
+    const store = useLearningStore.getState();
+    await store.deleteTrack("t1");
+
+    expect(commands.deleteTrack).toHaveBeenCalledWith("t1");
+
+    const state = useLearningStore.getState();
+    expect(state.tracks.map((t) => t.id)).toEqual(["t2"]);
+    expect(state.currentTrack).toBeNull();
+    expect(state.currentPath).toBeNull();
+    expect(state.moduleProgress).toEqual([]);
   });
 
   it("store_regenerate_lesson — regenerateLesson replaces block in map", async () => {
