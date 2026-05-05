@@ -276,6 +276,74 @@ mod tests {
         assert!(json.contains("\"streakDays\""), "streakDays must be camelCase in JSON");
     }
 
+    /// delete_track_cascades — deleting a track removes its paths, modules,
+    /// progress, exercises, sr_cards, blocks, and lesson_completions via the
+    /// existing ON DELETE CASCADE chain. Verifies FK pragma is on and cascade
+    /// reaches every child table.
+    #[test]
+    fn delete_track_cascades() {
+        let conn = setup_test_db();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Alice')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('t1', 'lp1', 'K8s', 'devops', 'CKA')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO learning_paths (id, track_id) VALUES ('p1', 't1')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO modules (id, path_id, title) VALUES ('m1', 'p1', 'Pods')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status) VALUES ('mp1', 'm1', 'lp1', 'in_progress')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO sr_cards (id, module_id, concept, front, back) VALUES ('s1', 'm1', 'pod', 'Q', 'A')",
+            [],
+        ).unwrap();
+
+        super::delete_track_inner(&conn, "t1").expect("delete should succeed");
+
+        let track_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM learning_tracks WHERE id = 't1'", [], |r| r.get(0))
+            .unwrap();
+        let path_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM learning_paths WHERE track_id = 't1'", [], |r| r.get(0))
+            .unwrap();
+        let module_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM modules WHERE path_id = 'p1'", [], |r| r.get(0))
+            .unwrap();
+        let progress_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM module_progress WHERE module_id = 'm1'", [], |r| r.get(0))
+            .unwrap();
+        let card_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sr_cards WHERE module_id = 'm1'", [], |r| r.get(0))
+            .unwrap();
+
+        assert_eq!(track_count, 0, "track row removed");
+        assert_eq!(path_count, 0, "paths cascaded");
+        assert_eq!(module_count, 0, "modules cascaded");
+        assert_eq!(progress_count, 0, "module_progress cascaded");
+        assert_eq!(card_count, 0, "sr_cards cascaded");
+    }
+
+    /// delete_track_unknown_id_is_noop — deleting a non-existent track returns
+    /// Ok(0) (rows-affected zero), not an error. UI should still treat as success.
+    #[test]
+    fn delete_track_unknown_id_is_noop() {
+        let conn = setup_test_db();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        let rows = super::delete_track_inner(&conn, "does-not-exist").unwrap();
+        assert_eq!(rows, 0);
+    }
+
     /// TEST-01: active_credential_round_trip — store API key, retrieve via get_active_credential.
     /// Note: full auth coverage already exists in auth::mod::tests (12 tests).
     /// This test explicitly covers the active_credential flow per TEST-01 requirements.
@@ -317,4 +385,19 @@ pub fn update_track_status(
         )
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn delete_track(state: State<AppState>, track_id: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    delete_track_inner(&db.conn, &track_id)?;
+    Ok(())
+}
+
+fn delete_track_inner(conn: &rusqlite::Connection, track_id: &str) -> Result<usize, String> {
+    conn.execute(
+        "DELETE FROM learning_tracks WHERE id = ?1",
+        rusqlite::params![track_id],
+    )
+    .map_err(|e| e.to_string())
 }

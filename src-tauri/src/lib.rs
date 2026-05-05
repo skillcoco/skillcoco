@@ -58,6 +58,7 @@ pub fn run() {
             commands::tracks::create_track,
             commands::tracks::get_track,
             commands::tracks::update_track_status,
+            commands::tracks::delete_track,
             // Learning commands
             commands::learning::get_path,
             commands::learning::get_module_progress,
