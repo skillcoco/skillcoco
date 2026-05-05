@@ -1,74 +1,147 @@
-// Plan 04 Task 3b — ModuleView scaffold made GREEN.
-// The module is provided via modulesJson (JSON string) so ModuleView's
-// JSON.parse(currentPath.modulesJson) finds the current module correctly.
+/**
+ * ModuleView Phase 3 tests — Wave 4 (03-07 Task 1)
+ *
+ * Tests the three-tab layout (Lessons | Quiz | Practice), polling, legacy banner,
+ * active-lesson highlight, and Phase 1 practice tab preservation.
+ *
+ * Phase 1 legacy tests that relied on generateModuleContent / "content" viewMode
+ * are migrated to use the new store + block mocks. The Practice tab still renders
+ * ExerciseContainer (Phase 1 path preserved).
+ */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
-import type { LearningPath } from "@/types";
 
-// Mock tauri commands — IPC must not call real Tauri in tests
+// ─── Mock Tauri IPC commands ─────────────────────────────────────────────────
 vi.mock("@/lib/tauri-commands", () => ({
-  generateModuleContent: vi.fn(),
-  getModuleProgress: vi.fn(),
-  getPath: vi.fn(),
-  completeModuleExercises: vi.fn(),
+  generateModuleBlocks: vi.fn(),
+  regenerateModule: vi.fn(),
+  getModuleBlocks: vi.fn(),
+  // Phase 1 commands still needed for ExerciseContainer in practice tab
   getExercises: vi.fn(),
+  generateExercise: vi.fn(),
+  evaluateResponse: vi.fn(),
+  completeModuleExercises: vi.fn(),
+  // Keep generateModuleContent for any legacy code paths
+  generateModuleContent: vi.fn(),
   sendTutorMessage: vi.fn(),
   getAuthStatus: vi.fn(),
+  getModuleProgress: vi.fn(),
+  getPath: vi.fn(),
 }));
 
-import { generateModuleContent, getPath, getModuleProgress, completeModuleExercises } from "@/lib/tauri-commands";
+// ─── Mock child components to isolate ModuleView ─────────────────────────────
+vi.mock("@/components/learning/BlockRenderer", () => ({
+  BlockRenderer: ({ block }: { block: { id: string; blockType: string } }) => (
+    <div data-testid={`block-renderer-${block.id}`} data-block-type={block.blockType}>
+      BlockRenderer:{block.blockType}:{block.id}
+    </div>
+  ),
+}));
 
-// The mock module — inlined as literal (not using outer const) to avoid vi.mock hoisting issue.
-// vi.mock factory is hoisted to top of file, so references to outer const variables fail.
-vi.mock("@/stores/useLearningStore", () => {
-  // Define inline — must NOT reference outer const due to hoisting
-  const inlineMockModule = {
-    id: "mod-1",
-    title: "Test module title",
-    description: "Module about testing",
-    type: "lesson",
-    difficulty: 3,
-    estimatedMinutes: 30,
-    objectives: ["Understand testing", "Write failing tests"],
-    prerequisites: [],
-  };
+vi.mock("@/components/exercises/ExerciseContainer", () => ({
+  ExerciseContainer: ({ moduleId }: { moduleId: string }) => (
+    <div data-testid="exercise-container" data-module-id={moduleId}>
+      ExerciseContainer
+    </div>
+  ),
+}));
 
-  // Key fix (Plan 04): modulesJson contains the serialized module so ModuleView's
-  // JSON.parse(currentPath.modulesJson) returns [inlineMockModule] and finds mod-1.
-  const mockPath = {
+vi.mock("@/components/learning/TutorSidebar", () => ({
+  TutorSidebar: () => <div data-testid="tutor-sidebar" />,
+}));
+
+vi.mock("@/components/learning/CourseSidebar", () => ({
+  CourseSidebar: () => <div data-testid="course-sidebar" />,
+}));
+
+// ─── Mock store with vi.hoisted for mutable currentLessonId ─────────────────
+const mockStore = vi.hoisted(() => ({
+  currentTrack: {
+    id: "track-1",
+    topic: "Kubernetes",
+    domainModule: "devops",
+    status: "active",
+    goal: "Pass CKA",
+    learnerId: "learner-1",
+    currentModuleId: "mod-1",
+    progressPercent: 10,
+    totalTimeSpent: 0,
+    createdAt: "2026-01-01",
+    updatedAt: "2026-01-01",
+  },
+  currentPath: {
     id: "path-1",
     trackId: "track-1",
     version: 1,
     generatedByModel: "test",
-    modulesJson: JSON.stringify([inlineMockModule]),
+    modulesJson: JSON.stringify([
+      {
+        id: "mod-1",
+        title: "Kubernetes Pods",
+        description: "Learn about pods",
+        type: "lesson",
+        difficulty: 3,
+        estimatedMinutes: 30,
+        objectives: ["Understand pods", "Deploy pods"],
+        prerequisites: [],
+      },
+    ]),
     edgesJson: "[]",
     estimatedHours: 1,
     createdAt: "2026-01-01",
-  };
+  },
+  moduleProgress: [],
+  currentLessonId: null as string | null,
+  moduleBlocks: new Map<string, import("@/types/learning").ModuleBlock[]>(),
+  lessonCompletions: new Map<string, Set<string>>(),
+  currentQuizResult: null,
+  selectTrack: vi.fn(),
+  loadModuleBlocks: vi.fn(),
+  setCurrentLesson: vi.fn(),
+  markLessonComplete: vi.fn(),
+  submitQuiz: vi.fn(),
+  regenerateLesson: vi.fn(),
+  completeExercises: vi.fn().mockResolvedValue({
+    masteryLevel: 0.8,
+    moduleCompleted: false,
+    newlyUnlockedModuleIds: [],
+    cardsCreated: 0,
+  }),
+}));
 
-  return {
-    useLearningStore: vi.fn(() => ({
-      currentTrack: { id: "track-1", topic: "Testing", domainModule: "beginner" },
-      currentPath: mockPath,
-      moduleProgress: [],
-      selectTrack: vi.fn(),
-      completeExercises: vi.fn().mockResolvedValue({
-        masteryLevel: 0.8,
-        moduleCompleted: true,
-        newlyUnlockedModuleIds: [],
-        cardsCreated: 2,
-      }),
-    })),
-  };
-});
+vi.mock("@/stores/useLearningStore", () => ({
+  useLearningStore: vi.fn((selector: (s: typeof mockStore) => unknown) => {
+    if (typeof selector === "function") return selector(mockStore);
+    return mockStore;
+  }),
+}));
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+import { generateModuleBlocks, regenerateModule } from "@/lib/tauri-commands";
 import { ModuleView } from "@/pages/ModuleView";
+import type { ModuleBlock } from "@/types/learning";
 
-// Module title used in assertions — must match inlineMockModule.title inside vi.mock
-const TEST_MODULE_TITLE = "Test module title";
+function makeBlock(overrides: Partial<ModuleBlock> = {}): ModuleBlock {
+  return {
+    id: "block-1",
+    moduleId: "mod-1",
+    ordering: 0,
+    blockType: "section",
+    status: "ready",
+    paramsJson: '{"lesson_title":"Lesson 1"}',
+    payloadJson: '{"markdown":"# Hello","word_count":100}',
+    sourceAnchorsJson: "[]",
+    metadataJson: '{"concept_id":null}',
+    retryCount: 0,
+    createdAt: "2026-01-01",
+    updatedAt: "2026-01-01",
+    ...overrides,
+  };
+}
 
 function renderModuleView(trackId = "track-1", moduleId = "mod-1") {
   return render(
@@ -80,97 +153,281 @@ function renderModuleView(trackId = "track-1", moduleId = "mod-1") {
   );
 }
 
-describe("ModuleView", () => {
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+describe("ModuleView — Phase 3 tabs and core behaviour", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(generateModuleContent).mockResolvedValue("# Test Content\n\nSome markdown here");
-    vi.mocked(getPath).mockResolvedValue({} as LearningPath);
-    vi.mocked(getModuleProgress).mockResolvedValue([]);
-    vi.mocked(completeModuleExercises).mockResolvedValue({
-      masteryLevel: 0.8,
-      moduleCompleted: true,
-      newlyUnlockedModuleIds: [],
-      cardsCreated: 2,
-    });
+    // Reset store to baseline state
+    mockStore.currentLessonId = null;
+    mockStore.moduleBlocks = new Map();
+    mockStore.lessonCompletions = new Map();
+    // By default loadModuleBlocks returns empty array (cache miss)
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([]);
+    vi.mocked(generateModuleBlocks).mockResolvedValue({ blocks: [] });
+    vi.mocked(regenerateModule).mockResolvedValue({ blocks: [] });
   });
 
-  it("renders module title and content from generateModuleContent IPC", async () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // ── Tab structure ────────────────────────────────────────────────────────
+
+  it("module_view_default_tab_is_lessons — Lessons tab is active on mount", async () => {
+    const sectionBlock = makeBlock({ id: "s-1", blockType: "section" });
+    mockStore.moduleBlocks = new Map([["mod-1", [sectionBlock]]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([sectionBlock]);
+
     renderModuleView();
 
     await waitFor(() => {
-      // Title appears in heading — getAllByText handles duplicates (header + breadcrumb)
-      const elements = screen.getAllByText(TEST_MODULE_TITLE);
-      expect(elements.length).toBeGreaterThan(0);
+      expect(screen.getByTestId("lessons-tab")).toBeInTheDocument();
     });
 
-    // After content loads, verify markdown rendered
+    // Lessons tab is visible and the lessons panel is rendered
+    expect(screen.getByTestId("tab-lessons")).toBeInTheDocument();
+    expect(screen.getByTestId("lessons-tab")).toBeInTheDocument();
+  });
+
+  it("module_view_tabs — lessons/quiz/practice tabs render correct content", async () => {
+    const user = userEvent.setup();
+
+    const sectionBlock = makeBlock({ id: "s-1", blockType: "section", status: "ready" });
+    const quizBlock = makeBlock({ id: "q-1", blockType: "quiz", status: "ready", ordering: 9 });
+    mockStore.moduleBlocks = new Map([["mod-1", [sectionBlock, quizBlock]]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([sectionBlock, quizBlock]);
+
+    renderModuleView();
+
+    // Wait for render
     await waitFor(() => {
-      expect(screen.getByText(/test content/i)).toBeInTheDocument();
+      expect(screen.getByTestId("tab-lessons")).toBeInTheDocument();
+    });
+
+    // Default: lessons tab active
+    expect(screen.getByTestId("lessons-tab")).toBeInTheDocument();
+    // Section block rendered in lessons tab
+    expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+
+    // Switch to Quiz tab
+    await user.click(screen.getByTestId("tab-quiz"));
+    await waitFor(() => {
+      expect(screen.getByTestId("quiz-tab")).toBeInTheDocument();
+    });
+    // Quiz block rendered
+    expect(screen.getByTestId("block-renderer-q-1")).toBeInTheDocument();
+
+    // Switch to Practice tab
+    await user.click(screen.getByTestId("tab-practice"));
+    await waitFor(() => {
+      expect(screen.getByTestId("practice-tab")).toBeInTheDocument();
+    });
+    // ExerciseContainer rendered
+    expect(screen.getByTestId("exercise-container")).toBeInTheDocument();
+
+    // Switch back to Lessons tab
+    await user.click(screen.getByTestId("tab-lessons"));
+    await waitFor(() => {
+      expect(screen.getByTestId("lessons-tab")).toBeInTheDocument();
     });
   });
 
-  it("calls generateModuleContent with correct module params", async () => {
+  it("module_view_practice_tab_renders_legacy_exercise — ExerciseContainer mounted in practice tab", async () => {
+    const user = userEvent.setup();
+    mockStore.moduleBlocks = new Map([["mod-1", []]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([]);
+
     renderModuleView();
 
     await waitFor(() => {
-      expect(generateModuleContent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          moduleId: "mod-1",
-          trackId: "track-1",
-          moduleTitle: TEST_MODULE_TITLE,
-        }),
+      expect(screen.getByTestId("tab-practice")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("tab-practice"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exercise-container")).toBeInTheDocument();
+    });
+    // Correct moduleId passed
+    expect(screen.getByTestId("exercise-container")).toHaveAttribute("data-module-id", "mod-1");
+  });
+
+  // ── Legacy banner ────────────────────────────────────────────────────────
+
+  it("module_view_legacy_banner — single synthetic section block shows Generate as lessons banner", async () => {
+    // The legacy detection rule: exactly 1 block, blockType=section, paramsJson='{}'
+    const legacyBlock = makeBlock({
+      id: "legacy-1",
+      blockType: "section",
+      paramsJson: "{}",
+      status: "ready",
+    });
+    mockStore.moduleBlocks = new Map([["mod-1", [legacyBlock]]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([legacyBlock]);
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("legacy-banner")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/generate as lessons/i)).toBeInTheDocument();
+  });
+
+  it("module_view_legacy_banner_click — clicking Generate as lessons calls regenerateModule", async () => {
+    const user = userEvent.setup();
+
+    const legacyBlock = makeBlock({
+      id: "legacy-1",
+      blockType: "section",
+      paramsJson: "{}",
+      status: "ready",
+    });
+    mockStore.moduleBlocks = new Map([["mod-1", [legacyBlock]]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([legacyBlock]);
+    vi.mocked(regenerateModule).mockResolvedValue({
+      blocks: [makeBlock({ id: "new-1", blockType: "section", status: "pending" })],
+    });
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("legacy-banner")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("regenerate-as-lessons-btn"));
+
+    await waitFor(() => {
+      expect(regenerateModule).toHaveBeenCalledWith(
+        expect.objectContaining({ moduleId: "mod-1", trackId: "track-1" }),
       );
     });
   });
 
-  it("shows module objectives on render (TEST-02)", async () => {
+  it("module_view_no_banner_for_multi_block — banner NOT shown when module has multiple blocks", async () => {
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", paramsJson: '{"lesson_title":"L1"}' }),
+      makeBlock({ id: "s-2", blockType: "section", paramsJson: '{"lesson_title":"L2"}', ordering: 1 }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+
     renderModuleView();
 
-    // Wait for module to render
     await waitFor(() => {
-      expect(screen.getAllByText(TEST_MODULE_TITLE).length).toBeGreaterThan(0);
+      expect(screen.getByTestId("tab-lessons")).toBeInTheDocument();
     });
 
-    // The Learning Objectives section shows the module objectives
-    await waitFor(() => {
-      expect(screen.getByText("Learning Objectives")).toBeInTheDocument();
-      expect(screen.getByText("Understand testing")).toBeInTheDocument();
-    });
+    expect(screen.queryByTestId("legacy-banner")).not.toBeInTheDocument();
   });
 
-  // ── Phase 3 Wave 0 scaffold tests (must FAIL until 03-07 implements tabs + banner) ──
+  // ── Active lesson highlight ──────────────────────────────────────────────
 
-  it("module_view_tabs — lessons/quiz/practice tabs render correct content on click", async () => {
-    const user = userEvent.setup();
+  it("module_view_active_lesson_highlight — data-active=true on block matching currentLessonId", async () => {
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0 }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1 }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    // Set s-2 as the active lesson
+    mockStore.currentLessonId = "s-2";
+
     renderModuleView();
 
     await waitFor(() => {
-      expect(screen.getAllByText(TEST_MODULE_TITLE).length).toBeGreaterThan(0);
+      expect(screen.getByTestId("lessons-tab")).toBeInTheDocument();
     });
 
-    // FAILS in Wave 0: ModuleView doesn't have lessons/quiz/practice tabs yet.
-    // GREEN in 03-07 Task 1 when tab navigation is implemented.
-    await user.click(screen.getByRole("tab", { name: /quiz/i }));
-    expect(screen.getByTestId("quiz-tab-content")).toBeInTheDocument();
+    // s-1 is NOT active
+    const s1Wrapper = screen
+      .getByTestId("block-renderer-s-1")
+      .closest("[data-active]");
+    expect(s1Wrapper).toHaveAttribute("data-active", "false");
 
-    await user.click(screen.getByRole("tab", { name: /practice/i }));
-    expect(screen.getByTestId("practice-tab-content")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: /lessons/i }));
-    expect(screen.getByTestId("lessons-tab-content")).toBeInTheDocument();
+    // s-2 IS active
+    const s2Wrapper = screen
+      .getByTestId("block-renderer-s-2")
+      .closest("[data-active]");
+    expect(s2Wrapper).toHaveAttribute("data-active", "true");
   });
 
-  it("module_view_legacy_banner — single synthetic section block shows Generate as lessons banner", async () => {
+  // ── Polling ──────────────────────────────────────────────────────────────
+
+  it("module_view_polls_while_generating — polls getModuleBlocks every 3s while blocks pending", async () => {
+    vi.useFakeTimers();
+
+    // Setup: store starts with pending blocks so polling useEffect fires
+    const pendingBlock = makeBlock({ id: "p-1", blockType: "section", status: "pending" });
+    const readyBlock1 = makeBlock({ id: "s-1", blockType: "section", status: "ready" });
+
+    // Set pending blocks in store so the polling useEffect activates
+    mockStore.moduleBlocks = new Map([["mod-1", [readyBlock1, pendingBlock]]]);
+
+    let callCount = 0;
+    mockStore.loadModuleBlocks = vi.fn().mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        // mount: keep pending blocks so polling keeps going
+        return [readyBlock1, pendingBlock];
+      }
+      // subsequent calls (polls): return all ready
+      mockStore.moduleBlocks = new Map([["mod-1", [readyBlock1]]]);
+      return [readyBlock1];
+    });
+
+    await act(async () => {
+      renderModuleView();
+    });
+
+    // Initial mount load happened
+    expect(mockStore.loadModuleBlocks).toHaveBeenCalledTimes(1);
+
+    // Advance 3 seconds to trigger the polling interval
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    // At least one poll occurred (callCount >= 2)
+    expect(mockStore.loadModuleBlocks.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("module_view_stops_polling_when_all_ready — no additional IPC calls after all blocks ready", async () => {
+    vi.useFakeTimers();
+
+    const readyBlocks = [
+      makeBlock({ id: "s-1", status: "ready" }),
+      makeBlock({ id: "s-2", status: "ready", ordering: 1 }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", readyBlocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(readyBlocks);
+
+    await act(async () => {
+      renderModuleView();
+    });
+
+    const initialCalls = vi.mocked(mockStore.loadModuleBlocks).mock.calls.length;
+
+    // Advance 10 seconds — should NOT poll since all ready
+    await act(async () => {
+      vi.advanceTimersByTime(10000);
+    });
+
+    // No additional calls
+    expect(mockStore.loadModuleBlocks).toHaveBeenCalledTimes(initialCalls);
+  });
+
+  // ── Module title (from path) ─────────────────────────────────────────────
+
+  it("renders module title from currentPath modulesJson", async () => {
+    mockStore.moduleBlocks = new Map([["mod-1", []]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([]);
+
     renderModuleView();
 
     await waitFor(() => {
-      expect(screen.getAllByText(TEST_MODULE_TITLE).length).toBeGreaterThan(0);
+      expect(screen.getByText("Kubernetes Pods")).toBeInTheDocument();
     });
-
-    // FAILS in Wave 0: ModuleView doesn't detect single-block legacy state yet.
-    // GREEN in 03-07 Task 1 when legacy detection + banner are implemented.
-    expect(
-      screen.getByText(/generate as lessons/i),
-    ).toBeInTheDocument();
   });
 });

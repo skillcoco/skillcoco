@@ -37,7 +37,7 @@ export function BlockRenderer({
   moduleId,
   lessonIndex,
   priorCompletedCount,
-  trackId: _trackId,
+  trackId,
 }: BlockRendererProps) {
   const regenerateLesson = useLearningStore((s) => s.regenerateLesson);
 
@@ -75,7 +75,7 @@ export function BlockRenderer({
     case "callout":
       return <CalloutBlock block={block} />;
     case "quiz":
-      return <QuizBlock block={block} />;
+      return <QuizBlock block={block} moduleId={moduleId} trackId={trackId} />;
     case "flash_cards":
       return (
         <FlashCardsBlock
