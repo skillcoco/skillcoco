@@ -86,9 +86,11 @@ pub fn run() {
             // Profile commands
             commands::tracks::get_or_create_profile,
             commands::tracks::update_profile,
-            // Block commands (Phase 3 — Wave 1 cached-fetch + legacy wrap)
+            // Block commands (Phase 3 — Wave 2: full pipeline + regeneration, 03-03)
             commands::blocks::get_module_blocks,
             commands::blocks::generate_module_blocks,
+            commands::blocks::regenerate_lesson,
+            commands::blocks::regenerate_module,
             // Quiz + Flash Card commands (Phase 3 — Wave 2 BKT re-rooting, 03-04)
             commands::learning::submit_quiz,
             commands::learning::rate_flash_card,

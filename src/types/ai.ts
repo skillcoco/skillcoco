@@ -110,6 +110,12 @@ export interface TutorMessage {
   trackId?: string;
   /** Display label only (backend ignores for grounding when moduleId is set). */
   moduleTitle?: string;
+  /**
+   * Block ID of the active section lesson (Phase 3 BLOCK-04).
+   * Backend resolves this to section payload and uses it as primary tutor context.
+   * Sticky on click (not scroll-derived) per CONTEXT.md locked decision.
+   */
+  currentSectionId?: string;
   /** @deprecated kept for one release — use moduleId instead. */
   moduleContext?: string;
   history?: AIMessage[];
