@@ -251,6 +251,11 @@ pub struct TutorMessageRequest {
     /// When set, backend fetches authoritative module + track context from DB.
     #[serde(default)]
     pub module_id: Option<String>,
+    /// Block ID of the active section lesson (Phase 3 BLOCK-04 ABI extension).
+    /// Wave 2 (03-03 Task 3) wires this into the tutor system prompt.
+    /// Not yet used — declared here so frontend scaffolds can compile against the new field.
+    #[serde(default)]
+    pub current_section_id: Option<String>,
     /// Free-text fallback (legacy frontend); used only when `module_id` lookup fails.
     #[serde(default)]
     pub module_context: Option<String>,

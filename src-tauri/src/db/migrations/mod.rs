@@ -29,6 +29,8 @@ use rusqlite::Connection;
 pub mod v001_initial;
 pub mod v002_drop_ai_config;
 pub mod v003_streak_columns;
+pub mod v004_module_blocks;
+pub mod v005_lesson_completions;
 
 /// A single schema migration.
 pub struct Migration {
@@ -55,6 +57,16 @@ fn registered_migrations() -> Vec<Migration> {
             version: v003_streak_columns::VERSION,
             name: v003_streak_columns::NAME,
             up: v003_streak_columns::up,
+        },
+        Migration {
+            version: v004_module_blocks::VERSION,
+            name: v004_module_blocks::NAME,
+            up: v004_module_blocks::up,
+        },
+        Migration {
+            version: v005_lesson_completions::VERSION,
+            name: v005_lesson_completions::NAME,
+            up: v005_lesson_completions::up,
         },
     ]
 }
@@ -145,7 +157,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 3, "After all migrations, version must be 3 (v1 baseline + v2 drop_ai_config + v3 streak_columns)");
+        assert_eq!(version, 5, "After all migrations, version must be 5 (v1..v3 existing + v4 module_blocks + v5 lesson_completions stubs)");
     }
 
     #[test]
@@ -162,7 +174,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 3, "Idempotent: exactly three rows in schema_migrations (v1, v2, v3)");
+        assert_eq!(count, 5, "Idempotent: exactly five rows in schema_migrations (v1..v3 + v4 module_blocks + v5 lesson_completions)");
     }
 
     #[test]
@@ -186,9 +198,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3 (streak_columns).
-        // Max is now 3.
-        assert_eq!(version, 3, "current_version returns MAX(version) = 3 after v3 is applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3 (streak_columns), v4, v5.
+        // Max is now 5.
+        assert_eq!(version, 5, "current_version returns MAX(version) = 5 after v3..v5 applied");
     }
 
     #[test]

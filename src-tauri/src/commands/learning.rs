@@ -5,6 +5,91 @@ use crate::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+// ── Phase 3 IPC Structs (Wave 0 stubs — camelCase serde required per FIX-02) ──
+
+/// Answer to a single MCQ question. Matches by option ID, not index (shuffle-safe).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuizAnswer {
+    pub question_id: String,
+    pub selected_option_id: String,
+}
+
+/// Request to submit a completed quiz attempt.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitQuizRequest {
+    pub module_id: String,
+    pub track_id: String,
+    pub block_id: String,
+    pub answers: Vec<QuizAnswer>,
+}
+
+/// Per-question review entry returned after quiz submit.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuizQuestionReview {
+    pub question_id: String,
+    pub stem: String,
+    pub learner_option_id: String,
+    pub correct_option_id: String,
+    pub is_correct: bool,
+    pub explanation: String,
+}
+
+/// Result returned from submit_quiz.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitQuizResult {
+    pub score_percent: f64,
+    pub passed: bool,
+    pub mastery_level: f64,
+    pub module_completed: bool,
+    pub newly_unlocked_module_ids: Vec<String>,
+    pub cards_created: usize,
+    pub review: Vec<QuizQuestionReview>,
+}
+
+/// Request to rate a flash card (SM-2 quality signal + optional BKT reinforcement).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RateFlashCardRequest {
+    pub block_id: String,
+    pub card_id: String,
+    pub module_id: String,
+    pub quality: u8, // 1-5; >= 4 = "good/easy"
+}
+
+/// Mark-lesson-complete stub. Fields finalized in 03-05 Task 1.
+/// Declared as marker struct here so the camelCase serde test FAILS in Wave 0
+/// (no camelCase fields to assert) and turns GREEN when 03-05 adds module_id + block_id.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkLessonCompleteRequest;
+
+// ── Phase 3 stub function signatures ──
+
+/// Submit a completed quiz attempt. Wave 2 (03-04 Task 2) implements.
+pub async fn submit_quiz_stub(_req: SubmitQuizRequest) -> Result<SubmitQuizResult, String> {
+    Err("Wave 2 (03-04) implements submit_quiz".to_string())
+}
+
+/// Rate a flash card. Wave 2 (03-04 Task 3) implements.
+pub async fn rate_flash_card_stub(
+    _req: RateFlashCardRequest,
+) -> Result<serde_json::Value, String> {
+    Err("Wave 2 (03-04) implements rate_flash_card".to_string())
+}
+
+/// Generate SR cards from a module's flash_cards blocks.
+/// Wave 2 (03-04 Task 2) implements; stub returns Err so tests FAIL.
+pub fn generate_sr_cards_from_flash_blocks(
+    _conn: &rusqlite::Connection,
+    _module_id: &str,
+) -> Result<usize, String> {
+    Err("Wave 2 (03-04) implements generate_sr_cards_from_flash_blocks".to_string())
+}
+
 // ── LOOP-01: BKT Mastery Update Helper ──
 
 /// Outcome of a single mastery update step.
@@ -1013,5 +1098,181 @@ mod tests {
         assert!(json.contains("newIntervalDays"), "must serialize to newIntervalDays (camelCase)");
         assert!(json.contains("nextReview"), "must serialize to nextReview (camelCase)");
         assert!(json.contains("easeFactor"), "must serialize to easeFactor (camelCase)");
+    }
+}
+
+// ── Phase 3 TDD scaffolds (Wave 0 — all tests must FAIL until Wave 2 implements) ──
+
+#[cfg(test)]
+mod phase3_tests {
+    use super::*;
+    use crate::db::migrations::apply_migrations;
+    use crate::db::schema;
+    use rusqlite::Connection;
+
+    fn fresh_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        conn.execute_batch(schema::CREATE_TABLES).unwrap();
+        apply_migrations(&conn).unwrap();
+        conn
+    }
+
+    // ── camelCase serde tests for Phase 3 IPC structs ──
+    // These PASS in Wave 0 for structs with real fields (FIX-02 contract must hold from day one).
+
+    #[test]
+    fn test_submit_quiz_request_camel_case() {
+        let req = SubmitQuizRequest {
+            module_id: "mod-1".to_string(),
+            track_id: "trk-1".to_string(),
+            block_id: "blk-1".to_string(),
+            answers: vec![],
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("moduleId"), "must serialize to moduleId");
+        assert!(json.contains("trackId"), "must serialize to trackId");
+        assert!(json.contains("blockId"), "must serialize to blockId");
+    }
+
+    #[test]
+    fn test_submit_quiz_result_camel_case() {
+        let result = SubmitQuizResult {
+            score_percent: 75.0,
+            passed: true,
+            mastery_level: 0.8,
+            module_completed: true,
+            newly_unlocked_module_ids: vec![],
+            cards_created: 0,
+            review: vec![],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("scorePercent"), "must serialize to scorePercent");
+        assert!(json.contains("masteryLevel"), "must serialize to masteryLevel");
+        assert!(json.contains("moduleCompleted"), "must serialize to moduleCompleted");
+        assert!(json.contains("newlyUnlockedModuleIds"), "must serialize to newlyUnlockedModuleIds");
+        assert!(json.contains("cardsCreated"), "must serialize to cardsCreated");
+    }
+
+    #[test]
+    fn test_quiz_answer_camel_case() {
+        let answer = QuizAnswer {
+            question_id: "q1".to_string(),
+            selected_option_id: "o2".to_string(),
+        };
+        let json = serde_json::to_string(&answer).unwrap();
+        assert!(json.contains("questionId"), "must serialize to questionId");
+        assert!(json.contains("selectedOptionId"), "must serialize to selectedOptionId");
+    }
+
+    #[test]
+    fn test_rate_flash_card_camel_case() {
+        let req = RateFlashCardRequest {
+            block_id: "blk-1".to_string(),
+            card_id: "fc-1".to_string(),
+            module_id: "mod-1".to_string(),
+            quality: 4,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("blockId"), "must serialize to blockId");
+        assert!(json.contains("cardId"), "must serialize to cardId");
+        assert!(json.contains("moduleId"), "must serialize to moduleId");
+    }
+
+    /// FAILS in Wave 0: MarkLessonCompleteRequest is a marker struct with no camelCase
+    /// fields to assert. GREEN in 03-05 Task 1 when module_id + block_id are finalized.
+    #[test]
+    fn test_mark_lesson_complete_request_camel_case() {
+        let req = MarkLessonCompleteRequest;
+        let json = serde_json::to_string(&req).unwrap();
+        // These fields don't exist on the marker stub — assertions FAIL in Wave 0.
+        assert!(json.contains("moduleId"), "must serialize to moduleId (fails until 03-05 adds fields)");
+        assert!(json.contains("blockId"), "must serialize to blockId (fails until 03-05 adds fields)");
+    }
+
+    // ── BKT removal / quiz scoring tests ──
+    // These FAIL in Wave 0 because implementation hasn't landed yet.
+
+    /// FAILS: complete_module_exercises still calls apply_mastery_update (Phase 1 wiring).
+    /// GREEN in 03-04 Task 1 when BKT is removed from complete_module_exercises.
+    #[test]
+    fn complete_exercises_does_not_update_mastery() {
+        panic!("WAVE 2 STUB — implement BKT removal from complete_module_exercises (03-04 Task 1)");
+    }
+
+    /// FAILS: score_quiz stub doesn't exist yet.
+    /// GREEN in 03-04 Task 2 when quiz scoring by option_id is implemented.
+    #[test]
+    fn quiz_scoring_option_id_based() {
+        panic!("WAVE 2 STUB — implement quiz scoring by option_id (03-04 Task 2)");
+    }
+
+    /// FAILS: 70% threshold logic not implemented yet.
+    /// GREEN in 03-04 Task 2.
+    #[test]
+    fn quiz_70_percent_pass_threshold() {
+        panic!("WAVE 2 STUB — implement 70% pass threshold in submit_quiz (03-04 Task 2)");
+    }
+
+    /// FAILS: submit_quiz_stub returns Err; BKT is not yet called from quiz path.
+    /// GREEN in 03-04 Task 2.
+    #[test]
+    fn submit_quiz_calls_bkt() {
+        panic!("WAVE 2 STUB — implement BKT call from submit_quiz (03-04 Task 2)");
+    }
+
+    /// FAILS: submit_quiz_stub returns Err; check_unlock_modules not yet called.
+    /// GREEN in 03-04 Task 2.
+    #[test]
+    fn submit_quiz_unlocks_module() {
+        panic!("WAVE 2 STUB — implement module unlock from submit_quiz (03-04 Task 2)");
+    }
+
+    // ── Integration stubs (full-pipeline tests) ──
+    // These three represent the negative-coverage and idempotency contracts.
+
+    /// Full pipeline: pass quiz -> BKT update -> module unlock -> SR cards -> streak.
+    /// FAILS in Wave 0 stub; GREEN in 03-04 Task 2.
+    #[test]
+    fn integration_submit_quiz_full_pipeline() {
+        panic!("WAVE 2 STUB — implement submit_quiz pipeline then assert BKT+unlock+SR+streak");
+    }
+
+    /// Failing quiz: no unlock, mastery reflects negative BKT update.
+    /// FAILS in Wave 0 stub; GREEN in 03-04 Task 2.
+    #[test]
+    fn integration_quiz_fail_no_unlock() {
+        panic!("WAVE 2 STUB — implement submit_quiz pipeline then assert no unlock on fail");
+    }
+
+    /// Concurrent submit / double-click negative coverage.
+    /// Second submit must be idempotent (no double-BKT, UNIQUE constraint respected).
+    /// FAILS in Wave 0 stub; GREEN in 03-04 Task 2.
+    #[test]
+    fn test_quiz_submit_idempotent() {
+        panic!("WAVE 2 STUB — implement submit_quiz idempotency then assert double-click no-ops");
+    }
+
+    // ── SR cards from flash blocks ──
+
+    /// FAILS: generate_sr_cards_from_flash_blocks returns Err in Wave 0.
+    /// GREEN in 03-04 Task 2.
+    #[test]
+    fn sr_from_flash_cards_inserts() {
+        panic!("WAVE 2 STUB — implement generate_sr_cards_from_flash_blocks inserts");
+    }
+
+    /// FAILS: generate_sr_cards_from_flash_blocks returns Err in Wave 0.
+    /// GREEN in 03-04 Task 2 when idempotency guard implemented.
+    #[test]
+    fn sr_from_flash_cards_idempotent() {
+        panic!("WAVE 2 STUB — implement generate_sr_cards_from_flash_blocks idempotency");
+    }
+
+    /// FAILS: rate_flash_card_stub returns Err; above-threshold guard not implemented.
+    /// GREEN in 03-04 Task 3.
+    #[test]
+    fn flash_card_no_bkt_above_threshold() {
+        panic!("WAVE 2 STUB — implement rate_flash_card above-threshold no-op guard");
     }
 }
