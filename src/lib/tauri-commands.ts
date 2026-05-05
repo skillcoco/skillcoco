@@ -191,3 +191,17 @@ export async function rateFlashCard(
 ): Promise<{ masteryLevel: number }> {
   return invoke("rate_flash_card", { req });
 }
+
+// ── Phase 3 Wave 2: Block regeneration commands (03-03) ──
+
+export async function regenerateLesson(
+  req: import("@/types/learning").RegenerateLessonRequest,
+): Promise<import("@/types/learning").ModuleBlock> {
+  return invoke("regenerate_lesson", { req });
+}
+
+export async function regenerateModule(
+  req: import("@/types/learning").RegenerateModuleRequest,
+): Promise<import("@/types/learning").GenerateModuleBlocksResult> {
+  return invoke("regenerate_module", { req });
+}

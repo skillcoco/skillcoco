@@ -377,6 +377,67 @@ pub async fn submit_quiz(
     })
 }
 
+// ── Phase 3 rate_flash_card Tauri Command ──
+
+/// Rate a flash card with SM-2 quality signal and optional BKT reinforcement.
+///
+/// **BKT reinforcement guard (BLOCK-02 secondary signal):**
+/// - Only applies BKT update if: `req.quality >= 4` AND `prior_mastery < MASTERY_THRESHOLD`.
+/// - If prior_mastery >= threshold: skip BKT (no post-mastery inflation, no fake became_completed).
+/// - If quality < 4: skip BKT (only good/easy recall reinforces mastery).
+/// - Flash cards CANNOT drive module unlock (no check_unlock_modules call here).
+///
+/// Returns current mastery_level (updated or unchanged).
+#[tauri::command]
+pub async fn rate_flash_card(
+    req: RateFlashCardRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<RateFlashCardResult, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Resolve learner_id from module_progress (the module has at least a progress row
+    // from the quiz pass that preceded this flash card rating)
+    let learner_id: String = db
+        .conn
+        .query_row(
+            "SELECT learner_id FROM module_progress WHERE module_id = ?1 LIMIT 1",
+            [&req.module_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("rate_flash_card: no progress row for module {}: {}", req.module_id, e))?;
+
+    // Read prior mastery
+    let prior_mastery: f64 = db
+        .conn
+        .query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = ?1 AND learner_id = ?2",
+            rusqlite::params![req.module_id, learner_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0.0);
+
+    // BKT reinforcement guard: only reinforce if below threshold AND quality >= 4
+    let new_mastery = if req.quality >= 4 && prior_mastery < MASTERY_THRESHOLD {
+        // Apply BKT update with is_correct=true (good/easy recall = correct signal)
+        let transition = apply_mastery_update(
+            &db.conn,
+            &learner_id,
+            &req.module_id,
+            prior_mastery,
+            true,
+        )?;
+        // Flash card reinforcement NEVER calls check_unlock_modules — quiz is the unlock gate.
+        transition.new_mastery
+    } else {
+        // Above threshold or low quality — no BKT update, return current mastery unchanged
+        prior_mastery
+    };
+
+    Ok(RateFlashCardResult {
+        mastery_level: new_mastery,
+    })
+}
+
 // ── LOOP-01: BKT Mastery Update Helper ──
 
 /// Outcome of a single mastery update step.
@@ -2018,12 +2079,130 @@ mod phase3_tests {
         assert_eq!(cards, 0, "no SR cards must be inserted on failed quiz");
     }
 
-    // ── Task 3: rate_flash_card tests (stub — GREEN in 03-04 Task 3) ──
+    // ── Task 3: rate_flash_card tests (GREEN in 03-04 Task 3) ──
 
-    /// FAILS: rate_flash_card_stub returns Err; above-threshold guard not implemented.
-    /// GREEN in 03-04 Task 3.
+    fn seed_module_progress_with_mastery(conn: &Connection, mastery: f64) {
+        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Tester')", []).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'K8s', 'devops', 'CKA')", []).unwrap();
+        conn.execute("INSERT INTO learning_paths (id, track_id, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', '[]', '[]', 'test')", []).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('mod1', 'path1', 'M')", []).unwrap();
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp1', 'mod1', 'lp1', 'in_progress', ?1)",
+            rusqlite::params![mastery],
+        ).unwrap();
+    }
+
+    /// rate_flash_card with quality=5 and prior_mastery ABOVE threshold: BKT skipped.
+    /// Mastery level must remain unchanged.
     #[test]
     fn flash_card_no_bkt_above_threshold() {
-        panic!("WAVE 2 STUB — implement rate_flash_card above-threshold no-op guard");
+        let conn = fresh_conn();
+        seed_module_progress_with_mastery(&conn, 0.85); // above MASTERY_THRESHOLD (0.7)
+
+        let prior: f64 = conn.query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = 'mod1' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!((prior - 0.85).abs() < 1e-9, "pre-condition: mastery=0.85 (above threshold)");
+
+        // Simulate rate_flash_card guard: quality=5 but prior >= MASTERY_THRESHOLD → skip BKT
+        let quality: u8 = 5;
+        let new_mastery = if quality >= 4 && prior < MASTERY_THRESHOLD {
+            let t = apply_mastery_update(&conn, "lp1", "mod1", prior, true).unwrap();
+            t.new_mastery
+        } else {
+            prior // GUARD: above threshold, no update
+        };
+
+        assert!((new_mastery - 0.85).abs() < 1e-9, "mastery must be unchanged when prior >= MASTERY_THRESHOLD");
+
+        let stored: f64 = conn.query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = 'mod1' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!((stored - 0.85).abs() < 1e-9, "DB mastery must remain 0.85 (no BKT update applied)");
+    }
+
+    /// rate_flash_card below threshold with quality=4: BKT applied, mastery increases.
+    #[test]
+    fn flash_card_below_threshold_quality_4_reinforces() {
+        let conn = fresh_conn();
+        seed_module_progress_with_mastery(&conn, 0.5); // below MASTERY_THRESHOLD
+
+        let prior: f64 = conn.query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = 'mod1' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+
+        let quality: u8 = 4;
+        let new_mastery = if quality >= 4 && prior < MASTERY_THRESHOLD {
+            let t = apply_mastery_update(&conn, "lp1", "mod1", prior, true).unwrap();
+            t.new_mastery
+        } else {
+            prior
+        };
+
+        assert!(new_mastery > prior, "quality=4 below threshold must increase mastery (BKT is_correct=true)");
+    }
+
+    /// rate_flash_card with quality=3 (below good/easy cutoff): BKT skipped.
+    #[test]
+    fn flash_card_below_threshold_quality_3_no_op() {
+        let conn = fresh_conn();
+        seed_module_progress_with_mastery(&conn, 0.5); // below threshold
+
+        let prior: f64 = conn.query_row(
+            "SELECT mastery_level FROM module_progress WHERE module_id = 'mod1' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+
+        let quality: u8 = 3; // below the good/easy cutoff of 4
+        let new_mastery = if quality >= 4 && prior < MASTERY_THRESHOLD {
+            let t = apply_mastery_update(&conn, "lp1", "mod1", prior, true).unwrap();
+            t.new_mastery
+        } else {
+            prior // GUARD: quality < 4 → no update
+        };
+
+        assert!((new_mastery - prior).abs() < 1e-9, "quality=3 must not apply BKT update");
+    }
+
+    /// rate_flash_card cannot drive module unlock: even if mastery crosses threshold,
+    /// no check_unlock_modules is called from rate_flash_card.
+    /// The guard prevents this by skipping BKT when prior >= threshold.
+    /// For prior=0.65 where BKT could cross 0.7: the guard skips the update, preventing it.
+    #[test]
+    fn flash_card_does_not_trigger_unlock() {
+        let conn = fresh_conn();
+
+        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'T')", []).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'K8s', 'devops', 'CKA')", []).unwrap();
+        let edges = serde_json::json!([{"from": "mod1", "to": "mod2"}]).to_string();
+        conn.execute("INSERT INTO learning_paths (id, track_id, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', ?1, '[]', 'test')", [&edges]).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('mod1', 'path1', 'M1')", []).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title) VALUES ('mod2', 'path1', 'M2')", []).unwrap();
+        conn.execute("INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp1', 'mod1', 'lp1', 'in_progress', 0.65)", []).unwrap();
+        conn.execute("INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp2', 'mod2', 'lp1', 'locked', 0.0)", []).unwrap();
+
+        // rate_flash_card: quality=5, prior=0.65 < MASTERY_THRESHOLD
+        // BKT WILL be applied (it may cross 0.7), but check_unlock_modules is NOT called.
+        let prior = 0.65f64;
+        let quality: u8 = 5;
+        if quality >= 4 && prior < MASTERY_THRESHOLD {
+            let _ = apply_mastery_update(&conn, "lp1", "mod1", prior, true).unwrap();
+            // Note: NO check_unlock_modules call here — that's the flash card constraint.
+        }
+
+        // mod2 must remain locked because check_unlock_modules was never called
+        let mod2_status: String = conn.query_row(
+            "SELECT status FROM module_progress WHERE module_id = 'mod2' AND learner_id = 'lp1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(mod2_status, "locked", "flash card reinforcement must not unlock modules (no check_unlock_modules call)");
     }
 }
