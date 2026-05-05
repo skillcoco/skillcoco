@@ -390,14 +390,14 @@ describe("ModuleView — Phase 3 tabs and core behaviour", () => {
 
   // ── Active lesson highlight ──────────────────────────────────────────────
 
-  it("module_view_active_lesson_highlight — data-active=true on block matching currentLessonId", async () => {
+  it("module_view_renders_one_lesson_at_a_time — only the active lesson is in the DOM (Udemy convention)", async () => {
     const blocks = [
-      makeBlock({ id: "s-1", blockType: "section", ordering: 0 }),
-      makeBlock({ id: "s-2", blockType: "section", ordering: 1 }),
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+      makeBlock({ id: "s-3", blockType: "section", ordering: 2, status: "ready" }),
     ];
     mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
     mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
-    // Set s-2 as the active lesson
     mockStore.currentLessonId = "s-2";
 
     renderModuleView();
@@ -406,17 +406,104 @@ describe("ModuleView — Phase 3 tabs and core behaviour", () => {
       expect(screen.getByTestId("lessons-tab")).toBeInTheDocument();
     });
 
-    // s-1 is NOT active
-    const s1Wrapper = screen
-      .getByTestId("block-renderer-s-1")
-      .closest("[data-active]");
-    expect(s1Wrapper).toHaveAttribute("data-active", "false");
+    // Only the active lesson (s-2) is rendered
+    expect(screen.getByTestId("block-renderer-s-2")).toBeInTheDocument();
+    expect(screen.queryByTestId("block-renderer-s-1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("block-renderer-s-3")).not.toBeInTheDocument();
+  });
 
-    // s-2 IS active
-    const s2Wrapper = screen
-      .getByTestId("block-renderer-s-2")
-      .closest("[data-active]");
-    expect(s2Wrapper).toHaveAttribute("data-active", "true");
+  it("module_view_defaults_to_first_lesson — when currentLessonId is null, first ready lesson renders", async () => {
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = null;
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("block-renderer-s-2")).not.toBeInTheDocument();
+  });
+
+  it("module_view_next_lesson_button — advances currentLessonId to next section block", async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+      makeBlock({ id: "s-3", blockType: "section", ordering: 2, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-1";
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /next lesson/i }));
+    expect(mockStore.setCurrentLesson).toHaveBeenCalledWith("s-2");
+  });
+
+  it("module_view_prev_lesson_button — moves currentLessonId to previous section block", async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-2";
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-2")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /previous lesson/i }));
+    expect(mockStore.setCurrentLesson).toHaveBeenCalledWith("s-1");
+  });
+
+  it("module_view_prev_disabled_on_first — Prev button disabled when on lesson 1", async () => {
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-1";
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: /previous lesson/i })).toBeDisabled();
+  });
+
+  it("module_view_next_disabled_on_last — Next button disabled when on last lesson", async () => {
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-2";
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-2")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: /next lesson/i })).toBeDisabled();
   });
 
   // ── Polling ──────────────────────────────────────────────────────────────

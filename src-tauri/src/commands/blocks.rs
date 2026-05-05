@@ -429,6 +429,57 @@ impl AIClientTrait for BlockAIClient<'_> {
 }
 
 /// Generate a section block's content via LLM.
+/// Build the section-generation system prompt. Extracted for unit-testing the
+/// pedagogical instructions (analogies, diagrams, pitfalls) without making an
+/// LLM call.
+pub(crate) fn build_section_prompt(
+    module_title: &str,
+    lesson_title: &str,
+    objectives: &[String],
+    index: usize,
+    total: usize,
+) -> String {
+    format!(
+        "You are an expert teacher writing lesson {lesson_num} of {total} for the module \
+         \"{module_title}\". Your audience is a learner who is new to this topic and learns \
+         best from concrete analogies, simple breakdowns, and visual structure.\n\n\
+         Lesson title: \"{lesson_title}\"\n\
+         Objectives: {objectives:?}\n\n\
+         Write 1000-2500 words of rich markdown content. The lesson MUST include, in order:\n\n\
+         1. **Why this matters** (1 short paragraph). Frame the lesson around a real problem \
+         the learner will face — what breaks if they don't know this?\n\
+         2. **An analogy or simplified mental model**. Compare the concept to something familiar \
+         (a kitchen, a post office, a queue at a store, traffic lights, etc.). Use the analogy \
+         to motivate every key idea that follows. Reuse the same analogy throughout — don't \
+         introduce a new one for every paragraph.\n\
+         3. **A diagram** in a fenced code block (use ```text or ```ascii) showing the \
+         relationship, flow, or structure being taught. Examples: a state diagram with arrows, \
+         a sequence of steps with `→`, a tree with indentation, a timeline. ASCII art only — \
+         the renderer does NOT support Mermaid or images.\n\
+         4. **Step-by-step breakdown** with subheadings (## Step 1: ..., ## Step 2: ...). \
+         Each step should be small enough to follow without re-reading.\n\
+         5. **A worked example** in a fenced code block with the language tag (```python, \
+         ```javascript, etc.). Walk through what each line does in prose immediately after \
+         the block.\n\
+         6. **Common pitfalls** — a `## Common Pitfalls` subsection with 2-4 bullets describing \
+         mistakes a learner is likely to make and how to avoid them.\n\
+         7. **Summary** — a `## Summary` section with 3-5 bullet points recapping the lesson.\n\n\
+         Style rules:\n\
+         - Key terms in **bold** the first time they appear.\n\
+         - Short paragraphs (3-4 sentences max). Prefer bullets and numbered lists over walls of text.\n\
+         - When you introduce jargon, immediately gloss it in plain English.\n\
+         - Avoid meta-commentary like \"In this lesson we will...\" — just teach.\n\n\
+         Output rules:\n\
+         - Do NOT include a top-level # heading. The UI provides the lesson title.\n\
+         - Return ONLY the markdown content. No JSON wrapper, no preamble like \"Here's the lesson:\".",
+        lesson_num = index + 1,
+        total = total,
+        module_title = module_title,
+        lesson_title = lesson_title,
+        objectives = objectives,
+    )
+}
+
 pub(crate) async fn generate_section_with_client<C: AIClientTrait>(
     client: &C,
     block: &ModuleBlock,
@@ -449,23 +500,7 @@ pub(crate) async fn generate_section_with_client<C: AIClientTrait>(
         })
         .unwrap_or_default();
 
-    let sys = format!(
-        "You are writing lesson {} of {} for the module \"{module_title}\".\n\
-         Lesson title: \"{lesson_title}\"\n\
-         Objectives: {objectives:?}\n\n\
-         Write 1000-2500 words of rich markdown content. Include:\n\
-         - Clear explanations with real-world analogies\n\
-         - Code examples with fenced code blocks (syntax highlighted)\n\
-         - Key concepts in **bold**\n\
-         - A \"## Summary\" section at the end\n\n\
-         Do NOT include a title heading — the UI provides the title.\n\
-         Return ONLY the markdown, no JSON wrapper.",
-        index + 1,
-        total,
-        module_title = module_title,
-        lesson_title = lesson_title,
-        objectives = objectives,
-    );
+    let sys = build_section_prompt(module_title, lesson_title, &objectives, index, total);
 
     let req = crate::ai::service::AIServiceRequest {
         system_prompt: sys,
@@ -1170,6 +1205,34 @@ pub(crate) mod tests {
     use tokio::sync::Mutex as TokioMutex;
 
     // ── Test helpers ──
+
+    #[test]
+    fn build_section_prompt_requires_pedagogical_elements() {
+        let p = build_section_prompt(
+            "Async Programming",
+            "Event Loop Fundamentals",
+            &["Understand the event loop".to_string(), "Identify blocking calls".to_string()],
+            0,
+            8,
+        );
+        // The prompt must instruct the model on every pedagogical element the
+        // user expects: analogies, simplified mental models, ASCII diagrams,
+        // step-by-step breakdowns, common pitfalls, and a summary.
+        assert!(p.contains("analogy") || p.contains("Analogy"), "must mention analogy");
+        assert!(p.contains("mental model"), "must mention mental model");
+        assert!(p.contains("diagram") || p.contains("Diagram"), "must require diagram");
+        assert!(p.contains("ASCII") || p.contains("ascii"), "must specify ASCII (renderer has no Mermaid)");
+        assert!(p.contains("Step-by-step") || p.contains("Step 1"), "must require step-by-step breakdown");
+        assert!(p.contains("Common Pitfalls") || p.contains("pitfalls"), "must require pitfalls section");
+        assert!(p.contains("Why this matters"), "must require 'Why this matters' framing");
+        assert!(p.contains("Summary"), "must require a summary section");
+        // No top-level heading — UI renders the title
+        assert!(p.contains("NOT include a top-level # heading"), "must forbid top-level heading");
+        // Sanity: lesson position threaded into prompt
+        assert!(p.contains("lesson 1 of 8"), "must include lesson N of M");
+        assert!(p.contains("Async Programming"), "must include module title");
+        assert!(p.contains("Event Loop Fundamentals"), "must include lesson title");
+    }
 
     pub(crate) fn fresh_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

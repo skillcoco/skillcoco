@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, MessageCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, MessageCircle, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { BlockRenderer } from "@/components/learning/BlockRenderer";
 import { ExerciseContainer } from "@/components/exercises/ExerciseContainer";
@@ -28,6 +28,7 @@ export function ModuleView() {
   );
   const loadModuleBlocks = useLearningStore((s) => s.loadModuleBlocks);
   const selectTrack = useLearningStore((s) => s.selectTrack);
+  const setCurrentLesson = useLearningStore((s) => s.setCurrentLesson);
 
   const [tab, setTab] = useState<Tab>("lessons");
   const [tutorOpen, setTutorOpen] = useState(false);
@@ -144,6 +145,27 @@ export function ModuleView() {
   const quizBlock = useMemo(
     () => blocks.find((b) => b.blockType === "quiz"),
     [blocks],
+  );
+
+  // Active lesson resolution: prefer currentLessonId from store; fall back to
+  // the first section block. Index is computed against the section list so
+  // Prev/Next can hop with bounds checks.
+  const activeLessonIndex = useMemo(() => {
+    if (sectionBlocks.length === 0) return -1;
+    const idx = sectionBlocks.findIndex((b) => b.id === currentLessonId);
+    return idx >= 0 ? idx : 0;
+  }, [sectionBlocks, currentLessonId]);
+  const activeLesson =
+    activeLessonIndex >= 0 ? sectionBlocks[activeLessonIndex] : undefined;
+
+  const goToLesson = useCallback(
+    (delta: number) => {
+      if (activeLessonIndex < 0) return;
+      const next = activeLessonIndex + delta;
+      if (next < 0 || next >= sectionBlocks.length) return;
+      setCurrentLesson(sectionBlocks[next].id);
+    },
+    [activeLessonIndex, sectionBlocks, setCurrentLesson],
   );
 
   // Legacy banner handler: calls regenerateModule IPC with PagePlanner-first atomicity
@@ -308,23 +330,64 @@ export function ModuleView() {
                   </button>
                 </div>
               )}
-              {sectionBlocks.map((block, i) => {
-                const priorCompletedCount = sectionBlocks
-                  .slice(0, i)
-                  .filter((sb) => lessonCompletions?.has(sb.id)).length;
-                const isActive = currentLessonId === block.id;
-                return (
-                  <div key={block.id} data-active={String(isActive)}>
+              {activeLesson && (
+                <>
+                  <div
+                    key={activeLesson.id}
+                    data-active="true"
+                    data-lesson-index={activeLessonIndex}
+                  >
                     <BlockRenderer
-                      block={block}
-                      lessonIndex={i}
-                      priorCompletedCount={priorCompletedCount}
+                      block={activeLesson}
+                      lessonIndex={activeLessonIndex}
+                      priorCompletedCount={
+                        sectionBlocks
+                          .slice(0, activeLessonIndex)
+                          .filter((sb) => lessonCompletions?.has(sb.id)).length
+                      }
                       moduleId={moduleId!}
                       trackId={trackId}
                     />
                   </div>
-                );
-              })}
+
+                  {/* Prev/Next lesson navigation — bottom of the active lesson */}
+                  <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
+                    <button
+                      type="button"
+                      aria-label="Previous lesson"
+                      onClick={() => goToLesson(-1)}
+                      disabled={activeLessonIndex <= 0}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        activeLessonIndex <= 0
+                          ? "cursor-not-allowed text-muted-foreground/40"
+                          : "text-foreground hover:bg-accent",
+                      )}
+                    >
+                      <ChevronLeft size={16} />
+                      <span>Previous lesson</span>
+                    </button>
+                    <span className="text-xs text-muted-foreground">
+                      Lesson {activeLessonIndex + 1} of {sectionBlocks.length}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Next lesson"
+                      onClick={() => goToLesson(1)}
+                      disabled={activeLessonIndex >= sectionBlocks.length - 1}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        activeLessonIndex >= sectionBlocks.length - 1
+                          ? "cursor-not-allowed text-muted-foreground/40"
+                          : "bg-primary text-primary-foreground hover:bg-primary/90",
+                      )}
+                    >
+                      <span>Next lesson</span>
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
