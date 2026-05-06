@@ -1174,15 +1174,21 @@ pub async fn regenerate_module(
     state: State<'_, AppState>,
     auth: State<'_, AuthState>,
 ) -> Result<GenerateModuleBlocksResult, String> {
-    // Fetch module metadata (brief lock)
-    let (title, objectives_json, level) = {
+    // Fetch module metadata (brief lock).
+    // `difficulty` is INTEGER 1-10 in schema; map to learner-level string PagePlanner expects.
+    let (title, objectives_json, difficulty_int) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         db.conn.query_row(
-            "SELECT title, COALESCE(objectives_json, '[]'), COALESCE(difficulty, 'beginner') FROM modules WHERE id=?1",
+            "SELECT title, COALESCE(objectives_json, '[]'), COALESCE(difficulty, 5) FROM modules WHERE id=?1",
             [&req.module_id],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i32>(2)?)),
         ).map_err(|e| e.to_string())?
     };
+    let level = match difficulty_int {
+        i if i <= 3 => "beginner",
+        i if i <= 7 => "intermediate",
+        _ => "advanced",
+    }.to_string();
     let objectives: Vec<String> = serde_json::from_str(&objectives_json).unwrap_or_default();
 
     // Run PagePlanner FIRST — if it fails, existing blocks are untouched
