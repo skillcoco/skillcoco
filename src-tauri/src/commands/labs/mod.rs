@@ -1,13 +1,36 @@
-//! # commands::labs — Tauri IPC for hands-on labs (Phase 03.1, Wave 0 stub)
+//! # commands::labs — Tauri IPC for hands-on labs (Phase 03.1)
 //!
 //! Per RESEARCH.md § Tauri IPC Contract. Every request / result struct uses
-//! `#[serde(rename_all = "camelCase")]` (FIX-02 — non-negotiable). Wave 0
-//! lays out the complete struct surface so 03.1-05 IPC handler plan can
-//! turn each `#[tauri::command]` body green without touching the wire
-//! types.
+//! `#[serde(rename_all = "camelCase")]` (FIX-02 — non-negotiable). The
+//! handlers compose `labs::{spec, evaluator, prompt_detect, host_shell,
+//! docker, test_support}` behind nine `#[tauri::command]` entry points
+//! registered in `lib.rs::run`'s `invoke_handler!`.
+//!
+//! Submodule layout (split per RESEARCH risk row — files <500 lines):
+//!
+//! - `session` — `lab_session_open`, `lab_session_close`, `lab_pty_write`,
+//!   `lab_pty_resize`, `lab_runtime_detect` + the OSC 133 init script.
+//! - `eval` — `lab_check_step`, `lab_show_hint` + AI-judge persistence.
+//! - `state` — `lab_reset`, `lab_get_progress` + `recompute_practical_mastery`
+//!   + `reset_surgical` + `reset_clears_progress`.
 
 use crate::labs::spec::LabSpec;
 use serde::{Deserialize, Serialize};
+
+pub mod eval;
+pub mod session;
+pub mod state;
+
+// Re-exports — keep `commands::labs::lab_*` paths stable for `lib.rs`.
+pub use eval::{lab_check_step, lab_show_hint};
+pub use session::{
+    lab_pty_resize, lab_pty_write, lab_runtime_detect, lab_session_close, lab_session_open,
+    OSC_133_INIT_SCRIPT,
+};
+pub use state::{
+    lab_get_progress, lab_reset, recompute_practical_mastery, reset_clears_progress,
+    reset_surgical,
+};
 
 // ── IPC structs (all camelCase) ──
 
@@ -120,92 +143,19 @@ pub struct LabProgress {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LabRuntimeDetectRequest {
+    /// Optional: defaults to `"autoDetect"` when omitted.
+    #[serde(default)]
+    pub setting: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LabRuntimeDetectResult {
     pub docker_available: bool,
     pub docker_version: Option<String>,
     pub effective_runtime: String, // "docker" | "host_shell"
     pub setting: String,           // "docker" | "hostShell" | "autoDetect"
-}
-
-// ── Stub command handlers (03.1-05 wires the bodies) ──
-
-#[tauri::command]
-pub async fn lab_session_open(
-    _request: LabSessionOpenRequest,
-) -> Result<LabSessionOpenResult, String> {
-    Err("lab_session_open: implemented in 03.1-05".to_string())
-}
-
-#[tauri::command]
-pub async fn lab_session_close(_request: LabSessionCloseRequest) -> Result<(), String> {
-    Err("lab_session_close: implemented in 03.1-05".to_string())
-}
-
-#[tauri::command]
-pub async fn lab_pty_write(_request: LabPtyWriteRequest) -> Result<(), String> {
-    Err("lab_pty_write: implemented in 03.1-05".to_string())
-}
-
-#[tauri::command]
-pub async fn lab_pty_resize(_request: LabPtyResizeRequest) -> Result<(), String> {
-    Err("lab_pty_resize: implemented in 03.1-05".to_string())
-}
-
-#[tauri::command]
-pub async fn lab_check_step(_request: LabCheckStepRequest) -> Result<LabCheckStepResult, String> {
-    Err("lab_check_step: implemented in 03.1-05".to_string())
-}
-
-#[tauri::command]
-pub async fn lab_show_hint(_request: LabShowHintRequest) -> Result<LabShowHintResult, String> {
-    Err("lab_show_hint: implemented in 03.1-05".to_string())
-}
-
-#[tauri::command]
-pub async fn lab_reset(_request: LabResetRequest) -> Result<LabResetResult, String> {
-    Err("lab_reset: implemented in 03.1-05".to_string())
-}
-
-#[tauri::command]
-pub async fn lab_get_progress(_request: LabGetProgressRequest) -> Result<LabProgress, String> {
-    Err("lab_get_progress: implemented in 03.1-05".to_string())
-}
-
-#[tauri::command]
-pub async fn lab_runtime_detect() -> Result<LabRuntimeDetectResult, String> {
-    Err("lab_runtime_detect: implemented in 03.1-05".to_string())
-}
-
-// ── Helpers (Wave 0 stubs) ──
-
-/// LAB-07 — surgical reset: remove only files in `creates: []` from the
-/// workspace. Wave 1 (03.1-05) implements; Wave 0 stub returns Err.
-pub fn reset_surgical(
-    _workspace: &std::path::Path,
-    _creates: &[String],
-) -> Result<Vec<String>, String> {
-    Err("reset_surgical: implemented in 03.1-05".to_string())
-}
-
-/// LAB-07 — clears completed_step_ids + current_step in lab_progress for
-/// the given (block_id, learner_id). Wave 1 (03.1-05) implements.
-pub fn reset_clears_progress(
-    _conn: &rusqlite::Connection,
-    _block_id: &str,
-    _learner_id: &str,
-) -> Result<(), String> {
-    Err("reset_clears_progress: implemented in 03.1-05".to_string())
-}
-
-/// LAB-08 — recompute module_progress.practical_mastery from the labs
-/// in the module. Linear: sum(completed_steps) / sum(total_steps) across
-/// all labs in the module. Wave 1 (03.1-02 / 03.1-05) implements.
-pub fn recompute_practical_mastery(
-    _conn: &rusqlite::Connection,
-    _module_id: &str,
-    _learner_id: &str,
-) -> Result<f64, String> {
-    Err("recompute_practical_mastery: implemented in 03.1-02".to_string())
 }
 
 #[cfg(test)]
@@ -231,20 +181,14 @@ mod tests {
             learner_id: "lp-1".to_string(),
         };
         let json = serde_json::to_string(&req).unwrap();
-        assert_camel(&json, "blockId");
-        assert_camel(&json, "trackId");
-        assert_camel(&json, "moduleId");
-        assert_camel(&json, "learnerId");
+        for k in ["blockId", "trackId", "moduleId", "learnerId"] {
+            assert_camel(&json, k);
+        }
     }
 
     /// LAB-02 — LabSessionOpenResult serializes to camelCase.
-    /// FAILS Wave 0 because `LabSpec` has Default-like skeleton and the
-    /// real wave-1 round-trip asserts on `effectiveRuntime`, `workspacePath`,
-    /// `practicalMastery` (under progress), `lastUpdated`, etc.
     #[test]
     fn lab_session_open_result_camel_case() {
-        // Build a synthetic result with a minimal spec — round-trip tests
-        // the IPC wire shape, not the spec content.
         let result = LabSessionOpenResult {
             session_id: "sess-1".to_string(),
             effective_runtime: "docker".to_string(),
@@ -268,25 +212,28 @@ mod tests {
             warning: None,
         };
         let json = serde_json::to_string(&result).unwrap();
-        assert_camel(&json, "sessionId");
-        assert_camel(&json, "effectiveRuntime");
-        assert_camel(&json, "workspacePath");
-        // Nested progress
-        assert_camel(&json, "blockId");
-        assert_camel(&json, "currentStep");
-        assert_camel(&json, "completedStepIds");
-        assert_camel(&json, "lastUpdated");
-        assert_camel(&json, "practicalMastery");
-        // Nested spec
-        assert_camel(&json, "requiresDocker");
+        for k in [
+            "sessionId",
+            "effectiveRuntime",
+            "workspacePath",
+            "blockId",
+            "currentStep",
+            "completedStepIds",
+            "lastUpdated",
+            "practicalMastery",
+            "requiresDocker",
+        ] {
+            assert_camel(&json, k);
+        }
     }
 
     #[test]
     fn lab_pty_write_request_camel_case() {
         let req = LabPtyWriteRequest { session_id: "s".to_string(), data: vec![1, 2, 3] };
         let json = serde_json::to_string(&req).unwrap();
-        assert_camel(&json, "sessionId");
-        assert_camel(&json, "data");
+        for k in ["sessionId", "data"] {
+            assert_camel(&json, k);
+        }
     }
 
     #[test]
@@ -350,7 +297,8 @@ mod tests {
 
     #[test]
     fn lab_show_hint_result_camel_case() {
-        let result = LabShowHintResult { tier: 1, text: "hint text".to_string(), final_tier: false };
+        let result =
+            LabShowHintResult { tier: 1, text: "hint text".to_string(), final_tier: false };
         let json = serde_json::to_string(&result).unwrap();
         for k in ["tier", "text", "finalTier"] {
             assert_camel(&json, k);
@@ -378,7 +326,8 @@ mod tests {
 
     #[test]
     fn lab_get_progress_request_camel_case() {
-        let req = LabGetProgressRequest { block_id: "b".to_string(), learner_id: "l".to_string() };
+        let req =
+            LabGetProgressRequest { block_id: "b".to_string(), learner_id: "l".to_string() };
         let json = serde_json::to_string(&req).unwrap();
         for k in ["blockId", "learnerId"] {
             assert_camel(&json, k);
@@ -395,7 +344,8 @@ mod tests {
             practical_mastery: 0.5,
         };
         let json = serde_json::to_string(&p).unwrap();
-        for k in ["blockId", "currentStep", "completedStepIds", "lastUpdated", "practicalMastery"] {
+        for k in ["blockId", "currentStep", "completedStepIds", "lastUpdated", "practicalMastery"]
+        {
             assert_camel(&json, k);
         }
     }
@@ -415,14 +365,10 @@ mod tests {
     }
 
     /// LAB-04 — round-trip a lab block's params_json (which holds the
-    /// source LAB.md text and generation prompt for regen). Wave 0 stub
-    /// uses parse_lab_md which returns Err; the test fails because the
-    /// expected LabSpec round-trip doesn't survive the missing parser.
+    /// source LAB.md text and generation prompt for regen).
     #[test]
     fn lab_block_paramsjson_roundtrip() {
-        let lab_md = include_str!(
-            "../../tests/fixtures/labs/specs/valid-pod-create.lab.md"
-        );
+        let lab_md = include_str!("../../../tests/fixtures/labs/specs/valid-pod-create.lab.md");
 
         // params_json mirrors what 03.1-04 will store: the LAB.md source
         // plus the prompt that produced it (or "topic_pack" sentinel for
@@ -442,58 +388,5 @@ mod tests {
         assert_eq!(spec.slug, "pod-create-and-inspect");
         assert_eq!(spec.steps.len(), 4);
         assert!(!body.trim().is_empty(), "body must round-trip for paramsJson");
-    }
-
-    /// LAB-07 — surgical reset removes only the files listed in
-    /// `creates: []`; sibling files remain.
-    #[test]
-    fn reset_surgical_only_removes_declared() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let foo = dir.path().join("foo.txt");
-        let bar = dir.path().join("bar.txt");
-        let manifest_dir = dir.path().join("manifests");
-        std::fs::create_dir_all(&manifest_dir).unwrap();
-        let pod_yaml = manifest_dir.join("pod.yaml");
-        let notes_dir = dir.path().join("notes");
-        std::fs::create_dir_all(&notes_dir).unwrap();
-        let run_output = notes_dir.join("run-output.txt");
-
-        for p in [&foo, &bar, &pod_yaml, &run_output] {
-            std::fs::write(p, "x").unwrap();
-        }
-
-        let creates = vec![
-            "manifests/pod.yaml".to_string(),
-            "notes/run-output.txt".to_string(),
-        ];
-        let removed = reset_surgical(dir.path(), &creates)
-            .expect("reset_surgical must succeed once 03.1-05 lands");
-        assert_eq!(removed.len(), 2);
-        assert!(!pod_yaml.exists(), "pod.yaml must be deleted");
-        assert!(!run_output.exists(), "run-output.txt must be deleted");
-        assert!(foo.exists(), "foo.txt must remain (not in creates)");
-        assert!(bar.exists(), "bar.txt must remain (not in creates)");
-    }
-
-    /// LAB-07 — reset clears the lab_progress row's
-    /// completed_step_ids and current_step.
-    #[test]
-    fn reset_clears_progress_row() {
-        // Wave 0: reset_clears_progress returns Err so this test fails.
-        // Wave 1 implements against rusqlite + the v006 lab_progress table.
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        let result = reset_clears_progress(&conn, "blk-1", "lp-1");
-        result.expect("reset_clears_progress must succeed once 03.1-05 lands");
-    }
-
-    /// LAB-08 — recompute_practical_mastery sums completed/total across
-    /// the module's labs. (3/4) + (5/5) = 8/9 ≈ 0.888…; empty -> 0.0.
-    #[test]
-    fn practical_mastery_compute() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        // Empty case
-        let zero = recompute_practical_mastery(&conn, "mod-1", "lp-1")
-            .expect("recompute must succeed once 03.1-02 lands");
-        assert!(zero.abs() < 1e-9, "empty case must return 0.0, got {}", zero);
     }
 }

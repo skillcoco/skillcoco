@@ -10,17 +10,34 @@ use auth::AuthState;
 use db::Database;
 use labs::LabSession;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use vector::VectorState;
 
+/// Sidecar metadata carried alongside each live `LabSession` in the
+/// `AppState.lab_sessions` registry. Lets `lab_reset` / `lab_pty_*` /
+/// `lab_check_step` recover the (learner, module, block, workspace) tuple
+/// from a session id without re-querying the DB.
+pub struct LabSessionEntry {
+    pub session: Box<dyn LabSession + Send>,
+    pub block_id: String,
+    pub learner_id: String,
+    pub module_id: String,
+    pub workspace: PathBuf,
+    pub total_steps: usize,
+    /// Per-session AI-judge budget (decremented on each LLM call). Initial
+    /// value matches `labs::evaluator` default budget (5).
+    pub ai_budget_remaining: u32,
+}
+
 pub struct AppState {
     pub db: Arc<Mutex<Database>>,
     /// Registry of live lab PTY/Docker sessions keyed by session UUID.
-    /// Populated by `commands::labs::lab_session_open` (lands in 03.1-05) and
-    /// drained by `lab_session_close` / PTY exit. The `Send` bound makes the
-    /// boxed sessions safe to store in tokio task contexts.
-    pub lab_sessions: Arc<Mutex<HashMap<String, Box<dyn LabSession + Send>>>>,
+    /// Populated by `commands::labs::lab_session_open` and drained by
+    /// `lab_session_close` / PTY exit. Each entry carries sidecar metadata
+    /// so per-session IPC handlers don't need a fresh DB lookup.
+    pub lab_sessions: Arc<Mutex<HashMap<String, LabSessionEntry>>>,
 }
 
 pub fn run() {

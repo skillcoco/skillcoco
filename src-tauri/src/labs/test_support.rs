@@ -12,7 +12,7 @@
 use super::{LabError, LabRuntime, LabSession};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Configurable runtime test double. Tests use the builder methods to
 /// pre-load it with the session it should return on `start()`.
@@ -84,20 +84,24 @@ impl LabRuntime for MockLabRuntime {
 /// Configurable session test double. Records every write / resize / close
 /// call. Builder methods support preloading the session_id and asserting on
 /// recorded interactions after the test exercises the IPC handler.
+///
+/// `writes` / `resizes` / `closed` are wrapped in `Arc<Mutex<...>>` so tests
+/// can clone a handle BEFORE moving the session into the AppState registry,
+/// then read recorded interactions back without re-acquiring ownership.
 pub struct MockLabSession {
     pub session_id: String,
-    pub writes: Mutex<Vec<Vec<u8>>>,
-    pub resizes: Mutex<Vec<(u16, u16)>>,
-    pub closed: Mutex<bool>,
+    pub writes: Arc<Mutex<Vec<Vec<u8>>>>,
+    pub resizes: Arc<Mutex<Vec<(u16, u16)>>>,
+    pub closed: Arc<Mutex<bool>>,
 }
 
 impl MockLabSession {
     pub fn new(session_id: impl Into<String>) -> Self {
         Self {
             session_id: session_id.into(),
-            writes: Mutex::new(Vec::new()),
-            resizes: Mutex::new(Vec::new()),
-            closed: Mutex::new(false),
+            writes: Arc::new(Mutex::new(Vec::new())),
+            resizes: Arc::new(Mutex::new(Vec::new())),
+            closed: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -105,6 +109,23 @@ impl MockLabSession {
     pub fn with_session_id(mut self, id: impl Into<String>) -> Self {
         self.session_id = id.into();
         self
+    }
+
+    /// Clone an `Arc<Mutex<Vec<bytes>>>` handle to the writes buffer so the
+    /// test can read recorded writes after the session is moved into the
+    /// AppState registry.
+    pub fn writes_arc(&self) -> Arc<Mutex<Vec<Vec<u8>>>> {
+        self.writes.clone()
+    }
+
+    /// Clone an `Arc<Mutex<Vec<(u16, u16)>>>` handle to the resizes buffer.
+    pub fn resizes_arc(&self) -> Arc<Mutex<Vec<(u16, u16)>>> {
+        self.resizes.clone()
+    }
+
+    /// Clone an `Arc<Mutex<bool>>` handle to the closed flag.
+    pub fn closed_arc(&self) -> Arc<Mutex<bool>> {
+        self.closed.clone()
     }
 }
 
