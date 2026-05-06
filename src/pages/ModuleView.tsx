@@ -232,15 +232,36 @@ export function ModuleView() {
     }
   }, [moduleId, trackId, generating, loadModuleBlocks]);
 
-  const handleRegenerateConfirmed = useCallback(() => {
+  const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
+  const [regenerateError, setRegenerateError] = useState<string | null>(null);
+
+  const handleRegenerateClick = useCallback(() => {
     if (generating) return;
-    const ok = window.confirm(
-      "Regenerate this module? All current lessons, quiz, flashcards, and labs will be replaced. Your mastery progress is preserved.",
-    );
-    if (ok) {
-      void handleRegenerateLegacy();
+    setRegenerateError(null);
+    setRegenerateDialogOpen(true);
+  }, [generating]);
+
+  const handleRegenerateConfirm = useCallback(async () => {
+    setRegenerateDialogOpen(false);
+    if (!moduleId || !trackId || generating) return;
+    setGenerating(true);
+    setRegenerateError(null);
+    try {
+      await regenerateModule({ moduleId, trackId });
+      if (!cancelRef.current) {
+        await loadModuleBlocks(moduleId);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!cancelRef.current) {
+        setRegenerateError(`Couldn't regenerate: ${msg}`);
+      }
+    } finally {
+      if (!cancelRef.current) {
+        setGenerating(false);
+      }
     }
-  }, [generating, handleRegenerateLegacy]);
+  }, [moduleId, trackId, generating, loadModuleBlocks]);
 
   const progressPercent =
     progress?.masteryLevel != null
@@ -301,20 +322,20 @@ export function ModuleView() {
                 <span className="font-medium text-foreground">{progressPercent}%</span>
                 <button
                   type="button"
-                  onClick={handleRegenerateConfirmed}
+                  onClick={handleRegenerateClick}
                   disabled={generating}
                   title="Regenerate this module — replaces lessons, quiz, flashcards, and labs"
                   aria-label="Regenerate module"
                   data-testid="regenerate-module-btn"
                   className={cn(
-                    "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                    "flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium transition-colors",
                     generating
                       ? "cursor-not-allowed text-muted-foreground/50"
                       : "text-muted-foreground hover:bg-accent hover:text-foreground",
                   )}
                 >
                   <RefreshCw size={12} className={generating ? "animate-spin" : undefined} />
-                  <span>{generating ? "Regenerating..." : "Regenerate"}</span>
+                  <span>{generating ? "Regenerating..." : "Regenerate Module"}</span>
                 </button>
               </div>
             </div>
@@ -570,6 +591,79 @@ export function ModuleView() {
         moduleId={moduleId ?? ""}
         moduleTitle={currentModule.title}
       />
+
+      {regenerateDialogOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="regenerate-module-dialog-title"
+          data-testid="regenerate-module-dialog"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 p-4 backdrop-blur-sm"
+          onClick={() => setRegenerateDialogOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-lg border border-border p-5 shadow-xl"
+            style={{
+              background: "var(--glass-bg)",
+              borderColor: "var(--glass-border)",
+            }}
+          >
+            <h3
+              id="regenerate-module-dialog-title"
+              className="text-base font-semibold text-foreground"
+            >
+              Regenerate this module?
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              All current lessons, quiz questions, flashcards, and labs for this module will be
+              <strong className="text-foreground"> replaced</strong> with freshly generated content.
+              Your mastery progress and SR cards are preserved.
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Generation typically takes 30-60 seconds.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRegenerateDialogOpen(false)}
+                data-testid="regenerate-cancel-btn"
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRegenerateConfirm}
+                data-testid="regenerate-confirm-btn"
+                className="rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                Regenerate Module
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {regenerateError && (
+        <div
+          role="alert"
+          data-testid="regenerate-error-toast"
+          className="fixed bottom-20 right-6 z-40 max-w-sm rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-foreground shadow-lg"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span>{regenerateError}</span>
+            <button
+              type="button"
+              onClick={() => setRegenerateError(null)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Dismiss error"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
