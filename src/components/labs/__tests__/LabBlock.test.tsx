@@ -23,10 +23,47 @@ vi.mock("@/stores/useLabStore", () => ({
 vi.mock("@/lib/tauri-commands", () => ({
   // Lab IPC commands are added by 03.1-05; this stub keeps imports resolvable.
   getLessonCompletions: vi.fn().mockResolvedValue([]),
+  getOrCreateProfile: vi.fn().mockResolvedValue({ id: "learner-1" }),
+  labShowHint: vi.fn().mockResolvedValue({ tier: 1, text: "", finalTier: false }),
+  labReset: vi.fn().mockResolvedValue({ filesRemoved: [], progressReset: true }),
 }));
 
 vi.mock("@/hooks/useTheme", () => ({
   useTheme: vi.fn(() => ({ theme: "dark", setTheme: vi.fn(), toggleTheme: vi.fn() })),
+}));
+
+// LabTerminal is the real component now — it imports @xterm/xterm which
+// touches jsdom-incompatible APIs (matchMedia). Mock the addon + xterm
+// modules to keep the LabBlock test focused on the split-pane / lifecycle
+// surface and out of the terminal canvas. The LabTerminal-specific test
+// file owns the xterm + Tauri-event behaviour assertions.
+vi.mock("@xterm/xterm", () => ({
+  Terminal: vi.fn().mockImplementation(() => ({
+    open: vi.fn(),
+    write: vi.fn(),
+    dispose: vi.fn(),
+    loadAddon: vi.fn(),
+    onData: vi.fn(),
+    onResize: vi.fn(),
+  })),
+}));
+
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: vi.fn().mockImplementation(() => ({ fit: vi.fn(), activate: vi.fn(), dispose: vi.fn() })),
+}));
+
+vi.mock("@xterm/addon-web-links", () => ({
+  WebLinksAddon: vi.fn().mockImplementation(() => ({ activate: vi.fn(), dispose: vi.fn() })),
+}));
+
+vi.mock("@xterm/addon-search", () => ({
+  SearchAddon: vi.fn().mockImplementation(() => ({ activate: vi.fn(), dispose: vi.fn() })),
+}));
+
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
 }));
 
 import { LabBlock } from "@/components/labs/LabBlock";

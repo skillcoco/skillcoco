@@ -35,6 +35,35 @@ vi.mock("@/hooks/useTheme", () => ({
 
 vi.mock("@/lib/tauri-commands", () => ({
   getLessonCompletions: vi.fn().mockResolvedValue([]),
+  getOrCreateProfile: vi.fn().mockResolvedValue({ id: "learner-1" }),
+  labShowHint: vi.fn().mockResolvedValue({ tier: 1, text: "", finalTier: false }),
+  labReset: vi.fn().mockResolvedValue({ filesRemoved: [], progressReset: true }),
+}));
+
+// Mock xterm + Tauri events so LabTerminal renders in jsdom without
+// touching the real terminal canvas (jsdom lacks matchMedia).
+vi.mock("@xterm/xterm", () => ({
+  Terminal: vi.fn().mockImplementation(() => ({
+    open: vi.fn(),
+    write: vi.fn(),
+    dispose: vi.fn(),
+    loadAddon: vi.fn(),
+    onData: vi.fn(),
+    onResize: vi.fn(),
+  })),
+}));
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: vi.fn().mockImplementation(() => ({ fit: vi.fn(), activate: vi.fn(), dispose: vi.fn() })),
+}));
+vi.mock("@xterm/addon-web-links", () => ({
+  WebLinksAddon: vi.fn().mockImplementation(() => ({ activate: vi.fn(), dispose: vi.fn() })),
+}));
+vi.mock("@xterm/addon-search", () => ({
+  SearchAddon: vi.fn().mockImplementation(() => ({ activate: vi.fn(), dispose: vi.fn() })),
+}));
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
 }));
 
 import { LabBlock } from "@/components/labs/LabBlock";

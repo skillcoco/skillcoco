@@ -22,6 +22,30 @@ vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(() => xtermState),
 }));
 
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: vi.fn().mockImplementation(() => ({
+    fit: vi.fn(),
+    activate: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+
+vi.mock("@xterm/addon-web-links", () => ({
+  WebLinksAddon: vi.fn().mockImplementation(() => ({
+    activate: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+
+vi.mock("@xterm/addon-search", () => ({
+  SearchAddon: vi.fn().mockImplementation(() => ({
+    activate: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
 const eventState = vi.hoisted(() => ({
   listenCalls: [] as Array<{ event: string; cb: (e: { payload: unknown }) => void }>,
   unlisten: vi.fn(),
@@ -90,7 +114,9 @@ describe("LabTerminal — Phase 03.1 Wave 0 (failing scaffolds)", () => {
     dataCb("hello");
     expect(invokeFn).toHaveBeenCalledWith(
       "lab_pty_write",
-      expect.objectContaining({ sessionId: "sess-1" }),
+      expect.objectContaining({
+        request: expect.objectContaining({ sessionId: "sess-1" }),
+      }),
     );
   });
 
@@ -106,7 +132,13 @@ describe("LabTerminal — Phase 03.1 Wave 0 (failing scaffolds)", () => {
     resizeCb({ cols: 120, rows: 30 });
     expect(invokeFn).toHaveBeenCalledWith(
       "lab_pty_resize",
-      expect.objectContaining({ sessionId: "sess-1", cols: 120, rows: 30 }),
+      expect.objectContaining({
+        request: expect.objectContaining({
+          sessionId: "sess-1",
+          cols: 120,
+          rows: 30,
+        }),
+      }),
     );
   });
 
