@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, MessageCircle, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, MessageCircle, Loader2, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { BlockRenderer } from "@/components/learning/BlockRenderer";
 import { ExerciseContainer } from "@/components/exercises/ExerciseContainer";
@@ -215,7 +215,8 @@ export function ModuleView() {
     }
   }, [activeLesson?.id]);
 
-  // Legacy banner handler: calls regenerateModule IPC with PagePlanner-first atomicity
+  // Calls regenerateModule IPC with PagePlanner-first atomicity (used by both
+  // legacy banner and the user-facing "Regenerate" button in the header).
   const handleRegenerateLegacy = useCallback(async () => {
     if (!moduleId || !trackId || generating) return;
     setGenerating(true);
@@ -230,6 +231,16 @@ export function ModuleView() {
       }
     }
   }, [moduleId, trackId, generating, loadModuleBlocks]);
+
+  const handleRegenerateConfirmed = useCallback(() => {
+    if (generating) return;
+    const ok = window.confirm(
+      "Regenerate this module? All current lessons, quiz, flashcards, and labs will be replaced. Your mastery progress is preserved.",
+    );
+    if (ok) {
+      void handleRegenerateLegacy();
+    }
+  }, [generating, handleRegenerateLegacy]);
 
   const progressPercent =
     progress?.masteryLevel != null
@@ -286,7 +297,26 @@ export function ModuleView() {
           <div className="glass rounded-lg p-4">
             <div className="mb-2 flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Module Progress</span>
-              <span className="font-medium text-foreground">{progressPercent}%</span>
+              <div className="flex items-center gap-3">
+                <span className="font-medium text-foreground">{progressPercent}%</span>
+                <button
+                  type="button"
+                  onClick={handleRegenerateConfirmed}
+                  disabled={generating}
+                  title="Regenerate this module — replaces lessons, quiz, flashcards, and labs"
+                  aria-label="Regenerate module"
+                  data-testid="regenerate-module-btn"
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                    generating
+                      ? "cursor-not-allowed text-muted-foreground/50"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <RefreshCw size={12} className={generating ? "animate-spin" : undefined} />
+                  <span>{generating ? "Regenerating..." : "Regenerate"}</span>
+                </button>
+              </div>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-secondary">
               <div
