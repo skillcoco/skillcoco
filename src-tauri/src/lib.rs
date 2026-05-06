@@ -2,18 +2,25 @@ mod ai;
 mod auth;
 pub mod commands;
 pub mod db;
-mod labs;
+pub mod labs;
 pub mod learning;
 mod vector;
 
 use auth::AuthState;
 use db::Database;
+use labs::LabSession;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use vector::VectorState;
 
 pub struct AppState {
     pub db: Arc<Mutex<Database>>,
+    /// Registry of live lab PTY/Docker sessions keyed by session UUID.
+    /// Populated by `commands::labs::lab_session_open` (lands in 03.1-05) and
+    /// drained by `lab_session_close` / PTY exit. The `Send` bound makes the
+    /// boxed sessions safe to store in tokio task contexts.
+    pub lab_sessions: Arc<Mutex<HashMap<String, Box<dyn LabSession + Send>>>>,
 }
 
 pub fn run() {
@@ -33,6 +40,7 @@ pub fn run() {
             let database = Database::new(&db_path).expect("Failed to initialize database");
             app.manage(AppState {
                 db: Arc::new(Mutex::new(database)),
+                lab_sessions: Arc::new(Mutex::new(HashMap::new())),
             });
 
             // Auth credential store

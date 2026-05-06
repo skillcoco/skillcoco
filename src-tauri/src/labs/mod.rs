@@ -1,17 +1,17 @@
 //! # labs — Hands-on lab subsystem (Phase 03.1)
 //!
-//! Wave 0 scaffold. Real implementations land in plans 03.1-02 .. 03.1-07.
-//!
 //! Public surface:
 //! - `LabRuntime` / `LabSession` traits — hybrid Docker / host-shell isolation.
 //! - `LabError` — single error type for spec / eval / runtime / io failures.
-//! - `workspace_path()` — resolves `~/.learnforge/labs/<track>/<module>/`.
+//! - `workspace_path()` — resolves `~/.learnforge/labs/<track>/<module>/` and
+//!   creates the directory tree (with traversal-attack guard).
 //! - `detect_runtime()` — picks Docker vs host shell from settings + probe.
+//! - `requires_docker_notice()` / `effective_runtime_with_warning()` — surface
+//!   the override notice when a host-only learner opens a docker-required lab.
+//! - `new_session_id()` — UUID v4 string for session topic routing.
 //!
-//! Submodules carry the per-feature scaffolds:
-//!   `pty`, `docker`, `host_shell`, `spec`, `evaluator`, `prompt_detect`,
-//!   `pageplanner_labs`. Each contains its own `#[cfg(test)] mod tests` block
-//!   with FAILING tests that downstream Wave 1+ tasks turn green.
+//! Submodules: `pty`, `docker`, `host_shell`, `spec`, `evaluator`,
+//! `prompt_detect`, `pageplanner_labs`. See each for its own surface.
 
 pub mod docker;
 pub mod evaluator;
@@ -24,7 +24,7 @@ pub mod spec;
 #[cfg(test)]
 pub mod test_support;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use serde::{Deserialize, Serialize};
@@ -45,6 +45,9 @@ pub enum LabError {
     /// IO error bubbled from std::fs / std::io.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    /// Database / persistence failure.
+    #[error("db error: {0}")]
+    Db(String),
 }
 
 /// User-selected runtime preference. Persisted in Settings.
@@ -57,6 +60,10 @@ pub enum RuntimeSetting {
 }
 
 /// Resolved runtime after consulting `RuntimeSetting` + Docker probe.
+///
+/// Two names: `EffectiveRuntime` is the original Wave 0 alias; `RuntimeChoice`
+/// is the new Phase 03.1-02 name promoted to public API. Both are kept as
+/// type aliases to avoid breaking the wider crate during this wave.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectiveRuntime {
@@ -64,22 +71,22 @@ pub enum EffectiveRuntime {
     HostShell,
 }
 
+/// Promoted alias used by Phase 03.1-02+ code.
+pub type RuntimeChoice = EffectiveRuntime;
+
 /// A handle to a running lab (Docker container or host PTY shell). Each lab
-/// open creates one of these. Wave 1 (03.1-02) fills in the impls on
-/// `docker::DockerRuntime` and `host_shell::HostRuntime`.
+/// open creates one of these.
 pub trait LabRuntime: Send + Sync {
     /// Start the runtime against `workspace` (the per-learner per-module bind
     /// mount root) and return the session handle.
     fn start<'a>(
         &'a self,
-        workspace: &'a std::path::Path,
+        workspace: &'a Path,
         session_id: &'a str,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Box<dyn LabSession>, LabError>> + Send + 'a>>;
 }
 
-/// A live lab session. Wave 1 fills in the impls; Wave 0 keeps the trait
-/// shape stable so downstream files (`commands/labs.rs`, IPC handler tests)
-/// can reference it.
+/// A live lab session.
 pub trait LabSession: Send + Sync {
     /// Write bytes to the PTY's stdin.
     fn write<'a>(
@@ -103,72 +110,174 @@ pub trait LabSession: Send + Sync {
     fn session_id(&self) -> &str;
 }
 
-/// Resolve the per-learner per-module workspace path. Wave 1 (03.1-02)
-/// implements; this stub returns `Err` so the workspace_path_resolution test
-/// fails loudly.
-pub fn workspace_path(_track_id: &str, _module_id: &str) -> Result<PathBuf, LabError> {
-    Err(LabError::Runtime(
-        "workspace_path: implemented in 03.1-02".to_string(),
-    ))
+/// Generate a fresh UUID v4 string for use as a session topic suffix.
+pub fn new_session_id() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
-/// Resolve `RuntimeSetting` + probe to an `EffectiveRuntime`. Wave 1
-/// (03.1-02) wires `docker::DockerProbe` against bollard; this stub returns
-/// `Err` so the auto_detect_resolution test fails.
-pub fn detect_runtime(
-    _setting: RuntimeSetting,
-    _probe: &dyn docker::DockerProbe,
-) -> Result<EffectiveRuntime, LabError> {
-    Err(LabError::Runtime(
-        "detect_runtime: implemented in 03.1-02".to_string(),
-    ))
+/// Validate a path component — must match `^[A-Za-z0-9_-]+$` to prevent
+/// traversal attacks in `workspace_path`.
+fn is_safe_component(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// Resolve the per-learner per-module workspace path under
+/// `~/.learnforge/labs/<track>/<module>/`. Creates the directory tree
+/// idempotently. Rejects components that contain path separators or
+/// traversal sequences (`..`).
+pub fn workspace_path(track_id: &str, module_id: &str) -> Result<PathBuf, LabError> {
+    if !is_safe_component(track_id) {
+        return Err(LabError::Runtime(format!(
+            "workspace_path: track_id contains unsafe characters: {:?}",
+            track_id
+        )));
+    }
+    if !is_safe_component(module_id) {
+        return Err(LabError::Runtime(format!(
+            "workspace_path: module_id contains unsafe characters: {:?}",
+            module_id
+        )));
+    }
+    let home = dirs::home_dir().ok_or_else(|| {
+        LabError::Runtime("workspace_path: unable to resolve home directory".to_string())
+    })?;
+    let path = home
+        .join(".learnforge")
+        .join("labs")
+        .join(track_id)
+        .join(module_id);
+    std::fs::create_dir_all(&path)?;
+    Ok(path)
+}
+
+/// Resolve `RuntimeSetting` + probe to a `RuntimeChoice`.
+///
+/// Behavior:
+/// - `Docker` setting → always Docker (caller must handle docker-unavailable
+///   downstream by surfacing the failure on `start()`).
+/// - `HostShell` setting → always HostShell.
+/// - `AutoDetect` → Docker iff probe returns Ok, else HostShell.
+pub async fn detect_runtime(
+    setting: RuntimeSetting,
+    probe: &dyn docker::DockerProbe,
+) -> RuntimeChoice {
+    match setting {
+        RuntimeSetting::Docker => RuntimeChoice::Docker,
+        RuntimeSetting::HostShell => RuntimeChoice::HostShell,
+        RuntimeSetting::AutoDetect => match probe.probe() {
+            Ok(Some(_)) => RuntimeChoice::Docker,
+            _ => RuntimeChoice::HostShell,
+        },
+    }
 }
 
 /// When the learner picked HostShell-only and the lab declares
 /// `requires_docker: true`, surface a notice so the UI can offer
-/// "switch to Auto-detect for this session". Wave 1 implements.
+/// "switch to Auto-detect for this session".
 pub fn requires_docker_notice(
-    _setting: RuntimeSetting,
-    _spec_requires_docker: bool,
+    setting: RuntimeSetting,
+    spec_requires_docker: bool,
 ) -> Option<String> {
-    // Returning None unconditionally makes the failing test obvious — Wave 1
-    // returns Some("...") for the (HostShell, true) case.
-    None
+    if spec_requires_docker && setting == RuntimeSetting::HostShell {
+        Some(
+            "This lab requires Docker. Switch to Auto-detect for this session \
+            to run it inside a container."
+                .to_string(),
+        )
+    } else {
+        None
+    }
+}
+
+/// Combine `detect_runtime` + `requires_docker_notice` so the IPC handler can
+/// receive both the effective runtime and an optional override notice in a
+/// single call. When the lab requires Docker but the user picked HostShell,
+/// the runtime is forced to Docker AND a notice is returned.
+pub async fn effective_runtime_with_warning(
+    setting: RuntimeSetting,
+    probe: &dyn docker::DockerProbe,
+    requires_docker: bool,
+) -> (RuntimeChoice, Option<String>) {
+    if requires_docker && setting == RuntimeSetting::HostShell {
+        let notice = requires_docker_notice(setting, requires_docker);
+        return (RuntimeChoice::Docker, notice);
+    }
+    let runtime = detect_runtime(setting, probe).await;
+    (runtime, None)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// LAB-07 / LAB-03 — workspace_path resolves to ~/.learnforge/labs/<track>/<module>/.
-    /// Wave 0: workspace_path returns Err so this test fails.
+    /// LAB-07 / LAB-03 — workspace_path resolves to ~/.learnforge/labs/<track>/<module>/
+    /// and the directory exists after the call.
     #[test]
     fn workspace_path_resolution() {
         let p = workspace_path("track-1", "module-1")
-            .expect("workspace_path must resolve once 03.1-02 lands");
+            .expect("workspace_path must resolve");
         assert!(
-            p.ends_with(std::path::Path::new("learnforge/labs/track-1/module-1")),
-            "workspace_path must end with learnforge/labs/<track>/<module>, got {:?}",
+            p.ends_with(std::path::Path::new(".learnforge/labs/track-1/module-1")),
+            "workspace_path must end with .learnforge/labs/<track>/<module>, got {:?}",
             p
         );
+        assert!(
+            p.exists(),
+            "workspace_path must create the directory tree, got {:?}",
+            p
+        );
+        assert!(p.is_dir(), "workspace_path must be a directory");
     }
 
-    /// LAB-03 — Auto-detect + DockerProbe(available=true) -> Docker.
-    /// Wave 0: detect_runtime returns Err so this test fails.
+    /// LAB-07 — traversal attempts are rejected.
     #[test]
-    fn auto_detect_resolution() {
-        let probe = docker::MockDockerProbe::new(true);
-        let resolved = detect_runtime(RuntimeSetting::AutoDetect, &probe)
-            .expect("detect_runtime must resolve once 03.1-02 lands");
+    fn workspace_path_rejects_traversal() {
+        let result = workspace_path("../etc", "module-1");
+        assert!(
+            result.is_err(),
+            "traversal track_id must be rejected, got {:?}",
+            result
+        );
+        let result = workspace_path("track-1", "../bin");
+        assert!(
+            result.is_err(),
+            "traversal module_id must be rejected, got {:?}",
+            result
+        );
+        let result = workspace_path("a/b", "module-1");
+        assert!(result.is_err(), "slash in track_id must be rejected");
+    }
+
+    /// LAB-03 — Auto-detect + DockerProbe(available=true) -> Docker;
+    /// AutoDetect + probe Err -> HostShell.
+    #[tokio::test]
+    async fn auto_detect_resolution() {
+        let ok_probe = docker::MockDockerProbe::new(true);
+        let resolved = detect_runtime(RuntimeSetting::AutoDetect, &ok_probe).await;
         assert_eq!(
             resolved,
-            EffectiveRuntime::Docker,
+            RuntimeChoice::Docker,
             "AutoDetect + Docker available must resolve to Docker"
         );
+
+        let err_probe = docker::MockDockerProbe::new(false);
+        let resolved = detect_runtime(RuntimeSetting::AutoDetect, &err_probe).await;
+        assert_eq!(
+            resolved,
+            RuntimeChoice::HostShell,
+            "AutoDetect + Docker unavailable must resolve to HostShell"
+        );
+
+        // Explicit settings ignore the probe.
+        let resolved = detect_runtime(RuntimeSetting::Docker, &err_probe).await;
+        assert_eq!(resolved, RuntimeChoice::Docker);
+        let resolved = detect_runtime(RuntimeSetting::HostShell, &ok_probe).await;
+        assert_eq!(resolved, RuntimeChoice::HostShell);
     }
 
     /// LAB-03 — HostShell + spec.requires_docker=true -> Some(notice).
-    /// Wave 0: requires_docker_notice returns None so this test fails.
     #[test]
     fn requires_docker_override_notice() {
         let notice = requires_docker_notice(RuntimeSetting::HostShell, true);
@@ -182,5 +291,38 @@ mod tests {
             "notice text should mention Docker or Auto-detect, got {:?}",
             txt
         );
+
+        // Negative cases
+        assert!(
+            requires_docker_notice(RuntimeSetting::HostShell, false).is_none(),
+            "no notice when spec doesn't require docker"
+        );
+        assert!(
+            requires_docker_notice(RuntimeSetting::AutoDetect, true).is_none(),
+            "no notice when setting is AutoDetect"
+        );
+        assert!(
+            requires_docker_notice(RuntimeSetting::Docker, true).is_none(),
+            "no notice when setting is Docker"
+        );
+    }
+
+    /// LAB-03 — effective_runtime_with_warning returns (Docker, Some(notice))
+    /// when host-only learner opens docker-required lab; else (resolved, None).
+    #[tokio::test]
+    async fn effective_runtime_with_warning_host_plus_required() {
+        let probe = docker::MockDockerProbe::new(false);
+        let (rt, notice) =
+            effective_runtime_with_warning(RuntimeSetting::HostShell, &probe, true).await;
+        assert_eq!(rt, RuntimeChoice::Docker);
+        assert!(notice.is_some());
+    }
+
+    /// LAB-02 — new_session_id returns a non-empty UUID string.
+    #[test]
+    fn new_session_id_is_uuid_v4() {
+        let id = new_session_id();
+        assert_eq!(id.len(), 36, "UUID v4 string is 36 chars: {}", id);
+        assert_eq!(id.matches('-').count(), 4);
     }
 }
