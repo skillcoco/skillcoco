@@ -94,6 +94,13 @@ export interface ModuleProgress {
   timeSpent: number; // seconds
   attempts: number;
   masteryLevel: number; // 0-1 (BKT probability)
+  /**
+   * Phase 03.1 LAB-08 — practical mastery dimension. Linear:
+   * `completed_steps / total_steps` summed across the module's labs.
+   * Defaults to 0 from the v006 migration. Selector helper:
+   * `selectModulePracticalMastery(moduleId)` in `useLearningStore`.
+   */
+  practicalMastery: number;
   startedAt: string | null;
   completedAt: string | null;
 }

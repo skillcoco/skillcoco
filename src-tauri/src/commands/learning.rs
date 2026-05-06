@@ -955,7 +955,7 @@ pub fn get_module_progress(
     let mut stmt = db
         .conn
         .prepare(
-            "SELECT mp.id, mp.module_id, mp.learner_id, mp.status, mp.score, mp.time_spent, mp.attempts, mp.mastery_level, mp.started_at, mp.completed_at
+            "SELECT mp.id, mp.module_id, mp.learner_id, mp.status, mp.score, mp.time_spent, mp.attempts, mp.mastery_level, mp.practical_mastery, mp.started_at, mp.completed_at
              FROM module_progress mp
              JOIN modules m ON mp.module_id = m.id
              JOIN learning_paths lp ON m.path_id = lp.id
@@ -974,8 +974,9 @@ pub fn get_module_progress(
                 time_spent: row.get(5)?,
                 attempts: row.get(6)?,
                 mastery_level: row.get(7)?,
-                started_at: row.get(8)?,
-                completed_at: row.get(9)?,
+                practical_mastery: row.get(8)?,
+                started_at: row.get(9)?,
+                completed_at: row.get(10)?,
             })
         })
         .map_err(|e| e.to_string())?

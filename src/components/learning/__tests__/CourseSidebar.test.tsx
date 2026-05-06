@@ -83,6 +83,7 @@ const mockProgress: ModuleProgress[] = [
     timeSpent: 0,
     attempts: 0,
     masteryLevel: 0.2,
+    practicalMastery: 0,
     startedAt: "2026-05-05T00:00:00Z",
     completedAt: null,
   },

@@ -38,6 +38,27 @@ interface LearningState {
   regenerateLesson: (blockId: string) => Promise<void>;
 }
 
+/**
+ * Phase 03.1 LAB-08 — practical mastery selector.
+ *
+ * Reads `practicalMastery` from the per-module `module_progress` row loaded
+ * by `selectTrack` / `submitQuiz` / `completeExercises` via the existing
+ * `get_module_progress` IPC. The Rust ModuleProgress struct gained the
+ * `practical_mastery` field in this plan, so the IPC payload now carries
+ * `practicalMastery` automatically (camelCase per `#[serde(rename_all)]`).
+ *
+ * Returns 0 when no row is loaded for that module — consistent with the
+ * v006 migration default. Use as a Zustand selector:
+ *
+ *   const mastery = useLearningStore(selectModulePracticalMastery(moduleId));
+ */
+export const selectModulePracticalMastery =
+  (moduleId: string) =>
+  (s: LearningState): number => {
+    const mp = s.moduleProgress.find((p) => p.moduleId === moduleId);
+    return mp?.practicalMastery ?? 0;
+  };
+
 export const useLearningStore = create<LearningState>((set, _get) => ({
   tracks: [],
   currentTrack: null,

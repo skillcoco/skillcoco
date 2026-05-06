@@ -17,9 +17,10 @@ vi.mock("@/lib/tauri-commands", () => ({
   regenerateLesson: vi.fn(),
 }));
 
-import { useLearningStore } from "@/stores/useLearningStore";
+import { useLearningStore, selectModulePracticalMastery } from "@/stores/useLearningStore";
 import * as commands from "@/lib/tauri-commands";
 import type { ModuleBlock } from "@/types/learning";
+import type { ModuleProgress } from "@/types";
 
 function makeBlock(overrides: Partial<ModuleBlock> = {}): ModuleBlock {
   return {
@@ -144,6 +145,34 @@ describe("useLearningStore phase 3 extensions", () => {
     expect(state.currentTrack).toBeNull();
     expect(state.currentPath).toBeNull();
     expect(state.moduleProgress).toEqual([]);
+  });
+
+  // ── Phase 03.1 LAB-08 — practical mastery selector ──
+
+  it("select_module_practical_mastery — returns practicalMastery for a loaded module", () => {
+    const mp: ModuleProgress = {
+      id: "mp-1",
+      moduleId: "mod-1",
+      learnerId: "p1",
+      status: "in_progress",
+      score: null,
+      timeSpent: 0,
+      attempts: 0,
+      masteryLevel: 0.8,
+      practicalMastery: 0.65,
+      startedAt: null,
+      completedAt: null,
+    };
+    useLearningStore.setState({ moduleProgress: [mp] });
+
+    const value = selectModulePracticalMastery("mod-1")(useLearningStore.getState());
+    expect(value).toBe(0.65);
+  });
+
+  it("select_module_practical_mastery — returns 0 for an unknown module", () => {
+    useLearningStore.setState({ moduleProgress: [] });
+    const value = selectModulePracticalMastery("missing")(useLearningStore.getState());
+    expect(value).toBe(0);
   });
 
   it("store_regenerate_lesson — regenerateLesson replaces block in map", async () => {

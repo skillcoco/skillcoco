@@ -56,6 +56,11 @@ pub struct ModuleProgress {
     pub time_spent: i64,
     pub attempts: i32,
     pub mastery_level: f64,
+    /// Phase 03.1 LAB-08 — practical mastery dimension. Computed linearly
+    /// across the module's labs as completed_steps / total_steps. Default
+    /// 0.0 from the v006 migration ALTER TABLE column default.
+    #[serde(default)]
+    pub practical_mastery: f64,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
 }
@@ -168,6 +173,7 @@ mod tests {
             time_spent: 1200,
             attempts: 2,
             mastery_level: 0.65,
+            practical_mastery: 0.4,
             started_at: Some("2026-01-01".to_string()),
             completed_at: None,
         };
@@ -175,6 +181,7 @@ mod tests {
         assert!(json.contains("\"moduleId\""), "Expected moduleId, got: {}", json);
         assert!(json.contains("\"learnerId\""), "Expected learnerId, got: {}", json);
         assert!(json.contains("\"masteryLevel\""), "Expected masteryLevel, got: {}", json);
+        assert!(json.contains("\"practicalMastery\""), "Expected practicalMastery, got: {}", json);
         assert!(json.contains("\"timeSpent\""), "Expected timeSpent, got: {}", json);
         assert!(json.contains("\"startedAt\""), "Expected startedAt, got: {}", json);
         assert!(json.contains("\"completedAt\""), "Expected completedAt, got: {}", json);
