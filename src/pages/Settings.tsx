@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTheme } from "@/hooks/useTheme";
 import * as commands from "@/lib/tauri-commands";
 import type { ProviderAuthStatus, LoginRequest } from "@/types/ai";
+import { SettingsLabsSection } from "@/pages/SettingsLabsSection";
 import {
   Shield,
   Key,
@@ -705,6 +706,9 @@ export function Settings() {
           </div>
         </div>
       </section>
+
+      {/* ── Labs (Phase 03.1 LAB-03) ── */}
+      <SettingsLabsSection />
 
       {/* ── Preferences ── */}
       <section className="space-y-4">

@@ -15,6 +15,15 @@ vi.mock("@/lib/tauri-commands", () => ({
   detectSystemProviders: vi.fn(),
   getOrCreateProfile: vi.fn(),
   updateProfile: vi.fn(),
+  // Phase 03.1 LAB-03 — Labs runtime selector dependencies
+  labRuntimeDetect: vi.fn(),
+  // Provider auth surface used by Settings.tsx via the wildcard import.
+  // Tests don't assert on these, but the module must export them or the
+  // wildcard `import * as commands` returns undefined for missing keys.
+  getAuthStatus: vi.fn(),
+  loginProvider: vi.fn(),
+  logoutProvider: vi.fn(),
+  setActiveProvider: vi.fn(),
 }));
 
 import {
@@ -22,6 +31,8 @@ import {
   startOAuthLogin,
   detectSystemProviders,
   getOrCreateProfile,
+  labRuntimeDetect,
+  getAuthStatus,
 } from "@/lib/tauri-commands";
 
 // Mock useAppStore to prevent Tauri state dependencies
@@ -47,6 +58,7 @@ describe("Settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(detectSystemProviders).mockResolvedValue([]);
+    vi.mocked(getAuthStatus).mockResolvedValue([]);
     vi.mocked(getOrCreateProfile).mockResolvedValue({
       id: "p1",
       displayName: "Test User",
@@ -62,6 +74,12 @@ describe("Settings", () => {
       authenticated: false,
     });
     vi.mocked(startOAuthLogin).mockResolvedValue({ started: true, provider: "claude" });
+    vi.mocked(labRuntimeDetect).mockResolvedValue({
+      dockerAvailable: true,
+      dockerVersion: "24.0.5",
+      effectiveRuntime: "docker",
+      setting: "autoDetect",
+    });
   });
 
   it("displays inline error alert when OAuthStatusResult.error is set", async () => {
