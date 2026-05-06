@@ -198,7 +198,10 @@ pub(crate) async fn run_page_planner_with_client<C>(
 where
     C: AIClientTrait,
 {
-    let sys = build_page_planner_prompt(module_title, objectives, learner_level);
+    let base = build_page_planner_prompt(module_title, objectives, learner_level);
+    // LAB-05 — append the labs-emission rule (track-pref opt-out plumbing
+    // arrives in a future plan; default-on for now).
+    let sys = crate::labs::pageplanner_labs::extend_page_planner_prompt(&base, true);
     let req = crate::ai::service::AIServiceRequest {
         system_prompt: sys,
         messages: vec![crate::ai::service::ServiceMessage {
@@ -394,6 +397,34 @@ pub(crate) fn insert_skeleton_blocks(
             module_id: module_id.to_string(),
             ordering: (n + 1) as i32,
             block_type: "flash_cards".to_string(),
+            status: "pending".to_string(),
+            params_json: params,
+            payload_json: "{}".to_string(),
+            source_anchors_json: "[]".to_string(),
+            metadata_json: r#"{"concept_id": null}"#.to_string(),
+            retry_count: 0,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        };
+        insert_block(&tx, &block).map_err(|e| e.to_string())?;
+        blocks.push(block);
+    }
+
+    // LAB-05 — lab skeletons (one per outline.labs entry). Source markdown
+    // and parsed payload are filled by the parallel generator's `lab` arm.
+    let lab_base_ordering = blocks.len() as i32;
+    for (i, lab) in outline.labs.iter().enumerate() {
+        let params = serde_json::json!({
+            "outline": lab,
+            "generationPrompt": "",
+            "source": ""
+        })
+        .to_string();
+        let block = ModuleBlock {
+            id: uuid::Uuid::new_v4().to_string(),
+            module_id: module_id.to_string(),
+            ordering: lab_base_ordering + i as i32,
+            block_type: "lab".to_string(),
             status: "pending".to_string(),
             params_json: params,
             payload_json: "{}".to_string(),
@@ -699,6 +730,27 @@ where
                 "quiz" => generate_quiz_with_client(client.as_ref(), &block, &module_title).await,
                 "flash_cards" => {
                     generate_flash_cards_with_client(client.as_ref(), &block, &module_title).await
+                }
+                "lab" => {
+                    let c = Arc::clone(&client);
+                    crate::labs::pageplanner_labs::generate_lab_block_payload(
+                        &block.params_json, &module_title,
+                        move |p: String| {
+                            let c = Arc::clone(&c);
+                            Box::pin(async move {
+                                c.request(crate::ai::service::AIServiceRequest {
+                                    system_prompt: p,
+                                    messages: vec![crate::ai::service::ServiceMessage {
+                                        role: "user".to_string(),
+                                        content: "Return ONLY the LAB.md content.".to_string(),
+                                    }],
+                                    max_tokens: Some(3000),
+                                    temperature: Some(0.4),
+                                    response_format: None,
+                                }, 2).await
+                            })
+                        },
+                    ).await
                 }
                 _ => Err(format!("Unknown block type: {}", block.block_type)),
             };

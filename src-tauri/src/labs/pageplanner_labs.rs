@@ -208,6 +208,30 @@ pub trait LabContentRunner: Send + Sync {
 
 const MAX_LAB_GEN_ATTEMPTS: u32 = 2;
 
+/// Closure adapter — wraps any
+/// `Fn(prompt) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>`
+/// as a `LabContentRunner`. Lets `commands/blocks.rs` build a runner from its
+/// `AIClientTrait` callback in a single line, keeping that file under its
+/// ≤ 60-line net-add budget.
+pub struct ClosureRunner<F> {
+    pub call: F,
+}
+
+type LabRunFuture =
+    Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'static>>;
+
+impl<F> LabContentRunner for ClosureRunner<F>
+where
+    F: Fn(String) -> LabRunFuture + Send + Sync,
+{
+    fn run<'a>(
+        &'a self,
+        prompt: &'a str,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>> {
+        (self.call)(prompt.to_string())
+    }
+}
+
 /// Generate a LAB.md for one outline item via the LLM and parse it. Returns
 /// the typed spec + raw markdown (caller stores raw in `params_json` per
 /// CONTEXT.md "AI-generated `LAB.md` lives in DB only"). On parse failure,
@@ -251,6 +275,31 @@ pub async fn generate_lab_with_client<R: LabContentRunner + ?Sized>(
     )))
 }
 
+/// LAB-05 — Adapter helper used by `commands/blocks.rs`'s parallel generator
+/// arm. Parses the lab outline from `params_json`, builds a `ClosureRunner`
+/// from the AI request callback, and returns a JSON payload `{spec, source,
+/// outline}` ready for `update_block_payload`. Lives here (not in
+/// `commands/blocks.rs`) to honor that file's ≤ 60-line net-add budget.
+pub async fn generate_lab_block_payload<F>(
+    params_json: &str,
+    module_title: &str,
+    ai_request: F,
+) -> Result<String, String>
+where
+    F: Fn(String) -> LabRunFuture + Send + Sync,
+{
+    let params: serde_json::Value = serde_json::from_str(params_json).unwrap_or_default();
+    let outline: LabOutlineItem = serde_json::from_value(
+        params.get("outline").cloned().unwrap_or(serde_json::Value::Null),
+    )
+    .map_err(|e| format!("lab outline parse: {}", e))?;
+    let runner = ClosureRunner { call: ai_request };
+    let (spec, source) = generate_lab_with_client(module_title, &outline, &runner)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({"spec": spec, "source": source, "outline": outline}).to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,25 +312,13 @@ mod tests {
         include_str!("../../tests/fixtures/labs/specs/valid-pod-create.lab.md");
 
     /// Closure-backed `LabContentRunner` for tests.
-    struct MockRunner<F: Fn(&str) -> Result<String, String> + Send + Sync> {
-        dispatcher: F,
-        call_count: Arc<AtomicUsize>,
-    }
-    impl<F: Fn(&str) -> Result<String, String> + Send + Sync> MockRunner<F> {
-        fn new(dispatcher: F) -> Self {
-            Self {
-                dispatcher,
-                call_count: Arc::new(AtomicUsize::new(0)),
-            }
-        }
-    }
+    struct MockRunner<F: Fn(&str) -> Result<String, String> + Send + Sync>(F);
     impl<F: Fn(&str) -> Result<String, String> + Send + Sync> LabContentRunner for MockRunner<F> {
         fn run<'a>(
             &'a self,
             prompt: &'a str,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>> {
-            self.call_count.fetch_add(1, Ordering::SeqCst);
-            let result = (self.dispatcher)(prompt);
+            let result = (self.0)(prompt);
             Box::pin(async move { result })
         }
     }
@@ -356,7 +393,7 @@ mod tests {
     #[tokio::test]
     async fn generate_lab_with_client_parses_llm_output() {
         let canned = VALID_LAB_MD.to_string();
-        let runner = MockRunner::new(move |_p: &str| Ok(canned.clone()));
+        let runner = MockRunner(move |_p: &str| Ok(canned.clone()));
         let lab = LabOutlineItem {
             slug: "pod-create-and-inspect".to_string(),
             title: "Create and inspect a Pod".to_string(),
@@ -384,7 +421,7 @@ mod tests {
         let attempts = Arc::new(AtomicUsize::new(0));
         let attempts_in = Arc::clone(&attempts);
         let valid_md = VALID_LAB_MD.to_string();
-        let runner = MockRunner::new(move |_p: &str| {
+        let runner = MockRunner(move |_p: &str| {
             let n = attempts_in.fetch_add(1, Ordering::SeqCst);
             if n == 0 {
                 Ok("This is not a LAB.md".to_string())
@@ -404,7 +441,7 @@ mod tests {
     async fn generate_lab_with_client_fails_after_two_attempts() {
         let attempts = Arc::new(AtomicUsize::new(0));
         let attempts_in = Arc::clone(&attempts);
-        let runner = MockRunner::new(move |_p: &str| {
+        let runner = MockRunner(move |_p: &str| {
             attempts_in.fetch_add(1, Ordering::SeqCst);
             Ok("Still not valid LAB.md".to_string())
         });
@@ -433,21 +470,10 @@ mod tests {
         };
         let json = serde_json::to_string(&item).unwrap();
         for key in [
-            "slug",
-            "title",
-            "image",
-            "rationale",
-            "requiresDocker",
-            "estimatedMinutes",
-            "stepCountTarget",
-            "platform",
+            "slug", "title", "image", "rationale",
+            "requiresDocker", "estimatedMinutes", "stepCountTarget", "platform",
         ] {
-            assert!(
-                json.contains(&format!("\"{}\"", key)),
-                "expected camelCase key {:?} in {}",
-                key,
-                json
-            );
+            assert!(json.contains(&format!("\"{}\"", key)), "missing camelCase key {:?}", key);
         }
         let round: LabOutlineItem = serde_json::from_str(&json).unwrap();
         assert_eq!(round, item);
