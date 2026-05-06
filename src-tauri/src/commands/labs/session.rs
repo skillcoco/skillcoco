@@ -47,12 +47,30 @@ cd /workspace 2>/dev/null || true
 /// Accepts `setting: "docker" | "hostShell" | "autoDetect"` (defaults to
 /// `"autoDetect"`). Returns the effective runtime + Docker version when
 /// available, alongside the setting string for the UI to round-trip.
+///
+/// Plan 03.1-09 GAP-02 — when the request omits `setting`, fall back to
+/// the persisted preference on the (single-learner) profile rather than
+/// hardcoding AutoDetect, so the Settings page reflects the resolved
+/// runtime after reload.
 #[tauri::command]
 pub async fn lab_runtime_detect(
     request: LabRuntimeDetectRequest,
+    state: State<'_, AppState>,
 ) -> Result<LabRuntimeDetectResult, String> {
-    let setting_str = request.setting.unwrap_or_else(|| "autoDetect".to_string());
-    let setting = parse_runtime_setting(&setting_str)?;
+    let setting = match request.setting.clone() {
+        Some(s) => parse_runtime_setting(&s)?,
+        None => {
+            // v1 single-learner reality: read the persisted setting from
+            // the first (and only) learner profile.
+            match first_learner_id(state.inner()) {
+                Some(learner_id) => {
+                    read_labs_runtime_preference(state.inner(), &learner_id)
+                }
+                None => RuntimeSetting::AutoDetect,
+            }
+        }
+    };
+    let setting_str = runtime_setting_to_camel_str(setting).to_string();
     let probe = RealDockerProbe::default();
     let probe_result = probe.probe();
     let docker_available = probe_result.is_ok();
@@ -70,13 +88,18 @@ pub async fn lab_runtime_detect(
 /// LabRuntime, register the session in `AppState.lab_sessions`, ensure a
 /// `lab_progress` row exists for (learner, block), and return the spec /
 /// progress / warning to the UI.
+///
+/// Plan 03.1-09 GAP-02 — runtime setting is read from the learner's
+/// persisted `preferences_json.labs_runtime` instead of being hardcoded
+/// to AutoDetect. Falls back to AutoDetect on any failure (missing
+/// profile, malformed JSON, unknown value) so a corrupted pref never
+/// blocks session-open.
 #[tauri::command]
 pub async fn lab_session_open(
     request: LabSessionOpenRequest,
     state: State<'_, AppState>,
 ) -> Result<LabSessionOpenResult, String> {
-    let setting = RuntimeSetting::AutoDetect; // Default; UI persists override
-                                               // separately via Settings IPC.
+    let setting = read_labs_runtime_preference(state.inner(), &request.learner_id);
     let probe = RealDockerProbe::default();
 
     open_session_with(
@@ -183,6 +206,66 @@ fn parse_runtime_setting(s: &str) -> Result<RuntimeSetting, String> {
         "autoDetect" | "auto_detect" | "AutoDetect" => Ok(RuntimeSetting::AutoDetect),
         other => Err(format!("unknown runtime setting: {:?}", other)),
     }
+}
+
+/// Plan 03.1-09 GAP-02 — round-trip a `RuntimeSetting` back to the
+/// camelCase string the UI expects in `LabRuntimeDetectResult.setting`.
+pub(crate) fn runtime_setting_to_camel_str(setting: RuntimeSetting) -> &'static str {
+    match setting {
+        RuntimeSetting::Docker => "docker",
+        RuntimeSetting::HostShell => "hostShell",
+        RuntimeSetting::AutoDetect => "autoDetect",
+    }
+}
+
+/// Plan 03.1-09 GAP-02 — read the learner's persisted `labs_runtime`
+/// preference from `learner_profiles.preferences_json` and convert it to
+/// a `RuntimeSetting`. Returns `RuntimeSetting::AutoDetect` on any
+/// failure (missing profile, absent field, malformed JSON, unknown
+/// value) so a malformed pref never blocks session-open.
+///
+/// Takes `&AppState` (not `tauri::State`) so the helper is testable
+/// outside the Tauri runtime — production callers thread
+/// `state.inner()` from the IPC handler.
+pub(crate) fn read_labs_runtime_preference(
+    state: &AppState,
+    learner_id: &str,
+) -> RuntimeSetting {
+    let db = match state.db.lock() {
+        Ok(db) => db,
+        Err(_) => return RuntimeSetting::AutoDetect,
+    };
+    let prefs_json: String = match db.conn.query_row(
+        "SELECT preferences_json FROM learner_profiles WHERE id = ?1",
+        rusqlite::params![learner_id],
+        |row| row.get(0),
+    ) {
+        Ok(s) => s,
+        Err(_) => return RuntimeSetting::AutoDetect,
+    };
+    let prefs: serde_json::Value = match serde_json::from_str(&prefs_json) {
+        Ok(v) => v,
+        Err(_) => return RuntimeSetting::AutoDetect,
+    };
+    let raw = prefs
+        .get("labs_runtime")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    parse_runtime_setting(raw).unwrap_or(RuntimeSetting::AutoDetect)
+}
+
+/// Plan 03.1-09 GAP-02 — fetch the first learner profile id (single-
+/// learner reality in v1.0). Returns None when no profile exists yet
+/// (pre-onboarding state) so the caller falls back to AutoDetect.
+fn first_learner_id(state: &AppState) -> Option<String> {
+    let db = state.db.lock().ok()?;
+    db.conn
+        .query_row(
+            "SELECT id FROM learner_profiles LIMIT 1",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
 }
 
 /// Pick the concrete `LabRuntime` impl for a given runtime + workspace path.

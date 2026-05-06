@@ -8,6 +8,12 @@ use tauri::State;
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
     pub display_name: Option<String>,
+    /// Plan 03.1-09 GAP-02 — JSON-encoded preferences blob. Frontend
+    /// (`SettingsLabsSection.tsx`) writes `{"labs_runtime":"..."}` here
+    /// for the labs runtime selector. Validated as a JSON object on
+    /// persist; `lab_session_open` reads it back via
+    /// `read_labs_runtime_preference`.
+    pub preferences_json: Option<String>,
 }
 
 #[tauri::command]
@@ -88,6 +94,24 @@ pub fn update_profile(
             .execute(
                 "UPDATE learner_profiles SET display_name = ?1, updated_at = datetime('now') WHERE id = ?2",
                 rusqlite::params![name, profile_id],
+            )
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Plan 03.1-09 GAP-02 — accept preferences_json (frontend was already
+    // sending it; serde was silently dropping the field before this change).
+    // Validate the payload is a JSON object; reject bare scalars/arrays so
+    // a UI bug doesn't quietly persist garbage.
+    if let Some(prefs) = profile.preferences_json {
+        let parsed: serde_json::Value = serde_json::from_str(&prefs)
+            .map_err(|e| format!("preferences_json must be valid JSON: {}", e))?;
+        if !parsed.is_object() {
+            return Err("preferences_json must be a JSON object".to_string());
+        }
+        db.conn
+            .execute(
+                "UPDATE learner_profiles SET preferences_json = ?1, updated_at = datetime('now') WHERE id = ?2",
+                rusqlite::params![prefs, profile_id],
             )
             .map_err(|e| e.to_string())?;
     }
