@@ -6,18 +6,51 @@
 
 use super::state::{read_lab_progress, recompute_practical_mastery};
 use super::{LabCheckStepRequest, LabCheckStepResult, LabShowHintRequest, LabShowHintResult};
+use crate::auth::AuthState;
 use crate::labs::evaluator::{evaluate_step, EvalContext, EvalOutcome};
 use crate::labs::spec::{LabSpec, StepCheck};
 use crate::AppState;
 use tauri::State;
 
+/// Plan 03.1-09 GAP-03 — compile-time marker referenced by the RED
+/// integration test in `eval_tests.rs::lab_check_step_passes_authenticated_state_to_ai_judge`.
+/// Existence of this symbol in the production module proves Task 4
+/// landed the AuthState plumbing seam (`lab_check_step_with`).
+#[cfg(test)]
+pub(crate) const lab_check_step_with_seam_marker: () = ();
+
 /// LAB-06 — evaluate a single step against the live session's terminal
 /// buffer. On `Pass`, atomically updates `lab_progress.completed_step_ids`
 /// and recomputes `module_progress.practical_mastery`.
+///
+/// Plan 03.1-09 GAP-03 — wires `tauri::State<AuthState>` into the
+/// EvalContext so `ai_authenticated` reflects production reality. The
+/// inner helper `lab_check_step_with` accepts the bool directly so unit
+/// tests can drive both branches without standing up Tauri State.
 #[tauri::command]
 pub async fn lab_check_step(
     request: LabCheckStepRequest,
     state: State<'_, AppState>,
+    auth_state: State<'_, AuthState>,
+) -> Result<LabCheckStepResult, String> {
+    // Resolve auth status once; map any failure (poisoned lock, missing
+    // store) to false so a problem on the auth side never errors out a
+    // lab session — the evaluator will fall back to Manual gracefully.
+    let ai_authenticated = auth_state
+        .get_active_credential()
+        .map(|opt| opt.is_some())
+        .unwrap_or(false);
+
+    lab_check_step_with(request, state, ai_authenticated).await
+}
+
+/// Plan 03.1-09 GAP-03 — inner helper. Accepts `ai_authenticated`
+/// directly so unit tests can exercise the authed / no-auth branches
+/// without constructing Tauri `State<AuthState>`.
+pub(crate) async fn lab_check_step_with(
+    request: LabCheckStepRequest,
+    state: State<'_, AppState>,
+    ai_authenticated: bool,
 ) -> Result<LabCheckStepResult, String> {
     // 1. Look up the session sidecar metadata.
     let (block_id, learner_id, module_id, workspace, ai_budget) = {
@@ -47,7 +80,7 @@ pub async fn lab_check_step(
         last_output: &request.last_output,
         last_exit_code: request.last_exit_code,
         workspace: &workspace,
-        ai_authenticated: false, // wired in 03.1-06 once the auth seam is plumbed
+        ai_authenticated,
         ai_budget_remaining: ai_budget,
     };
     let outcome = evaluate_step(&step.check, &ctx)
