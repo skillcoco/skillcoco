@@ -2559,4 +2559,60 @@ mod phase3_tests {
             .unwrap();
         assert!(empty.is_empty(), "unknown module must return empty Vec");
     }
+
+    // ── LAB-09 — practical_required gating tests (Phase 03.1) ──
+    //
+    // 03.1-05 implements:
+    //   pub fn module_completion_satisfied(
+    //       conceptual_mastery: f64,
+    //       practical_mastery: f64,
+    //       practical_required: bool,
+    //   ) -> bool
+    //
+    // Wave 0 stubs the function below as `false` so all three tests fail.
+    // Wave 1 (03.1-05) wires the real comparison against MASTERY_THRESHOLD
+    // (0.7) for both dimensions; the tests then go green.
+
+    fn module_completion_satisfied(
+        _conceptual_mastery: f64,
+        _practical_mastery: f64,
+        _practical_required: bool,
+    ) -> bool {
+        // Wave 0 stub — panic so all three tests fail RED. Wave 1 (03.1-05)
+        // replaces with the real gating against MASTERY_THRESHOLD (0.7).
+        panic!("module_completion_satisfied: implemented in 03.1-05");
+    }
+
+    /// LAB-09 — when practical_required=false (default), unlock depends
+    /// only on conceptual mastery. practical_mastery=0 must NOT block.
+    #[test]
+    fn unlock_unchanged_when_practical_optional() {
+        let satisfied = module_completion_satisfied(0.8, 0.0, false);
+        assert!(
+            satisfied,
+            "practical_required=false: conceptual >=0.7 must satisfy completion regardless of practical"
+        );
+    }
+
+    /// LAB-09 — when practical_required=true, both dimensions must be
+    /// >=0.7 for completion to be satisfied.
+    #[test]
+    fn completion_requires_both_dimensions() {
+        let satisfied = module_completion_satisfied(0.8, 0.8, true);
+        assert!(
+            satisfied,
+            "practical_required=true: both >=0.7 must satisfy completion"
+        );
+    }
+
+    /// LAB-09 — when practical_required=true, conceptual >=0.7 but
+    /// practical <0.7 must NOT satisfy.
+    #[test]
+    fn practical_below_threshold_blocks() {
+        let satisfied = module_completion_satisfied(0.85, 0.5, true);
+        assert!(
+            !satisfied,
+            "practical_required=true + practical<0.7 must block completion"
+        );
+    }
 }

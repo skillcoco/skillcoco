@@ -31,6 +31,7 @@ pub mod v002_drop_ai_config;
 pub mod v003_streak_columns;
 pub mod v004_module_blocks;
 pub mod v005_lesson_completions;
+pub mod v006_lab_progress;
 
 /// A single schema migration.
 pub struct Migration {
@@ -67,6 +68,11 @@ fn registered_migrations() -> Vec<Migration> {
             version: v005_lesson_completions::VERSION,
             name: v005_lesson_completions::NAME,
             up: v005_lesson_completions::up,
+        },
+        Migration {
+            version: v006_lab_progress::VERSION,
+            name: v006_lab_progress::NAME,
+            up: v006_lab_progress::up,
         },
     ]
 }
@@ -157,7 +163,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 5, "After all migrations, version must be 5 (v1..v3 existing + v4 module_blocks + v5 lesson_completions stubs)");
+        assert_eq!(version, 6, "After all migrations, version must be 6 (v1..v3 existing + v4 module_blocks + v5 lesson_completions + v6 lab_progress)");
     }
 
     #[test]
@@ -174,7 +180,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 5, "Idempotent: exactly five rows in schema_migrations (v1..v3 + v4 module_blocks + v5 lesson_completions)");
+        assert_eq!(count, 6, "Idempotent: exactly six rows in schema_migrations (v1..v3 + v4 module_blocks + v5 lesson_completions + v6 lab_progress)");
     }
 
     #[test]
@@ -198,9 +204,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3 (streak_columns), v4, v5.
-        // Max is now 5.
-        assert_eq!(version, 5, "current_version returns MAX(version) = 5 after v3..v5 applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3 (streak_columns), v4, v5, v6.
+        // Max is now 6.
+        assert_eq!(version, 6, "current_version returns MAX(version) = 6 after v3..v6 applied");
     }
 
     #[test]

@@ -59,6 +59,10 @@ pub struct PagePlannerOutline {
     pub quiz_topics: Vec<String>,
     #[serde(default)]
     pub flash_card_concepts: Vec<String>,
+    /// Phase 03.1 (LAB-05) — labs[] extension. `#[serde(default)]` keeps
+    /// existing PagePlanner JSON back-compatible.
+    #[serde(default)]
+    pub labs: Vec<crate::labs::pageplanner_labs::LabOutlineItem>,
 }
 
 // ── AI client abstraction for testability ──
@@ -1446,6 +1450,77 @@ pub(crate) mod tests {
         let result = GenerateModuleBlocksResult { blocks: vec![] };
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("blocks"), "must serialize blocks field");
+    }
+
+    /// LAB-05 — existing PagePlanner JSON without `labs` field must still
+    /// deserialize successfully (default = empty Vec). Plumbing test:
+    /// passes once `#[serde(default)] pub labs: Vec<...>` is added.
+    #[test]
+    fn outline_back_compat_no_labs_field() {
+        let json = r#"{
+            "lessons": [
+                {"title": "L1", "objectives": ["o1"]}
+            ],
+            "quizTopics": ["t1"],
+            "flashCardConcepts": ["c1"]
+        }"#;
+        let outline: PagePlannerOutline =
+            serde_json::from_str(json).expect("back-compat parse must succeed");
+        assert!(outline.labs.is_empty(), "labs default must be empty Vec");
+        assert_eq!(outline.lessons.len(), 1);
+    }
+
+    /// LAB-05 — JSON with labs[] populated deserializes into
+    /// Vec<LabOutlineItem>.
+    #[test]
+    fn outline_with_labs_field() {
+        let json = r#"{
+            "lessons": [{"title": "L1", "objectives": ["o1"]}],
+            "quizTopics": [],
+            "flashCardConcepts": [],
+            "labs": [
+                {
+                    "slug": "pod-create-and-inspect",
+                    "title": "Create and inspect a Pod",
+                    "image": "kindest/node:v1.30",
+                    "objective": "Apply a manifest and verify Running",
+                    "requiresDocker": true
+                }
+            ]
+        }"#;
+        let outline: PagePlannerOutline = serde_json::from_str(json)
+            .expect("labs[] field must deserialize");
+        assert_eq!(outline.labs.len(), 1);
+        assert_eq!(outline.labs[0].slug, "pod-create-and-inspect");
+        assert_eq!(outline.labs[0].requires_docker, true);
+        assert_eq!(outline.labs[0].image.as_deref(), Some("kindest/node:v1.30"));
+    }
+
+    /// LAB-05 — when labs are enabled, build_page_planner_prompt mentions
+    /// labs; when disabled, it must NOT. Wave 0: build_page_planner_prompt
+    /// has no labs awareness yet, so neither path mentions "labs:". The
+    /// test must therefore fail until 03.1-04 wires the rule via
+    /// `labs::pageplanner_labs::extend_page_planner_prompt`.
+    #[test]
+    fn prompt_labs_optout() {
+        let base = build_page_planner_prompt(
+            "Kubernetes Pods",
+            &["Understand pods".to_string()],
+            "beginner",
+        );
+        let with_labs =
+            crate::labs::pageplanner_labs::extend_page_planner_prompt(&base, true);
+        let without_labs =
+            crate::labs::pageplanner_labs::extend_page_planner_prompt(&base, false);
+
+        assert!(
+            with_labs.to_lowercase().contains("labs"),
+            "labs_enabled=true: prompt must mention labs (Wave 1 wires this)"
+        );
+        assert!(
+            !without_labs.to_lowercase().contains("labs"),
+            "labs_enabled=false: prompt must NOT mention labs (Wave 1 wires this)"
+        );
     }
 
     /// Legacy wrap shim: DB has modules.content="# Legacy", zero module_blocks rows.

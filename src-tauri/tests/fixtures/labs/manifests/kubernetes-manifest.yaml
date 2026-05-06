@@ -1,0 +1,7 @@
+schema_version: 1
+labs:
+  pods-101:
+    - pod-create-and-inspect
+    - pod-debug-with-kubectl
+  deployments:
+    - deploy-rolling-update

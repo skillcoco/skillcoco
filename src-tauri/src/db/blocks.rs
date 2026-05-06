@@ -10,6 +10,8 @@ pub enum BlockType {
     Callout,
     Quiz,
     FlashCards,
+    /// Phase 03.1 — Hands-on Lab block (LAB-01).
+    Lab,
 }
 
 /// Block generation/content status.
@@ -58,6 +60,7 @@ pub fn block_type_to_str(t: &BlockType) -> &'static str {
         BlockType::Callout => "callout",
         BlockType::Quiz => "quiz",
         BlockType::FlashCards => "flash_cards",
+        BlockType::Lab => "lab",
     }
 }
 
@@ -336,6 +339,26 @@ mod tests {
         // Deserialize status string back to enum
         let status: BlockStatus = serde_json::from_str(&format!("\"{}\"", fetched.status)).unwrap();
         assert_eq!(status, BlockStatus::Pending);
+    }
+
+    /// LAB-01 — BlockType::Lab serializes / deserializes as "lab" string.
+    /// Plumbing test: passes once the Lab arm is added in 03.1-01 (this plan).
+    /// Flagged as "pre-passing" in SUMMARY.md per plan pitfall #10.
+    #[test]
+    fn block_type_lab_serializes_as_lab() {
+        let bt = BlockType::Lab;
+        let json = serde_json::to_string(&bt).unwrap();
+        assert_eq!(json, "\"lab\"", "BlockType::Lab must serialize as \"lab\"");
+
+        let back: BlockType = serde_json::from_str("\"lab\"").unwrap();
+        assert_eq!(back, BlockType::Lab, "round-trip back to Lab variant");
+    }
+
+    /// LAB-01 — block_type_to_str arm for Lab returns "lab".
+    /// Plumbing test, see block_type_lab_serializes_as_lab.
+    #[test]
+    fn block_type_to_str_lab_arm() {
+        assert_eq!(block_type_to_str(&BlockType::Lab), "lab");
     }
 
     /// update_block_payload advances status and replaces payload.
