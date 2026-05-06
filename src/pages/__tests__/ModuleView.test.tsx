@@ -715,4 +715,71 @@ describe("ModuleView — Phase 3 tabs and core behaviour", () => {
       expect(screen.getByText("Kubernetes Pods")).toBeInTheDocument();
     });
   });
+
+  // ── GAP-01 (Plan 03.1-09): lab blocks in Practice tab ────────────────────
+
+  it("module_view_renders_lab_blocks_in_practice_tab — lab blocks dispatch via BlockRenderer when present", async () => {
+    const user = userEvent.setup();
+    const sectionBlock = makeBlock({ id: "s-1", blockType: "section", status: "ready" });
+    const labBlock = makeBlock({
+      id: "lab-1",
+      blockType: "lab",
+      status: "ready",
+      ordering: 5,
+      payloadJson: JSON.stringify({
+        spec: {
+          slug: "pod-inspect",
+          title: "Inspect a Pod",
+          requiresDocker: false,
+          creates: [],
+          steps: [],
+        },
+      }),
+    });
+    mockStore.moduleBlocks = new Map([["mod-1", [sectionBlock, labBlock]]]);
+    mockStore.loadModuleBlocks = vi
+      .fn()
+      .mockResolvedValue([sectionBlock, labBlock]);
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("tab-practice")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("tab-practice"));
+
+    // GAP-01: Practice tab now renders the lab block via BlockRenderer.
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-lab-1")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("block-renderer-lab-1")).toHaveAttribute(
+      "data-block-type",
+      "lab",
+    );
+    // The legacy ExerciseContainer is replaced when at least one lab block
+    // is present (preserves the "Practice = does the thing" framing).
+    expect(screen.queryByTestId("exercise-container")).not.toBeInTheDocument();
+  });
+
+  it("module_view_practice_tab_falls_back_to_exercise_container_when_no_labs — preserve legacy fallback", async () => {
+    const user = userEvent.setup();
+    const sectionBlock = makeBlock({ id: "s-1", blockType: "section", status: "ready" });
+    mockStore.moduleBlocks = new Map([["mod-1", [sectionBlock]]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue([sectionBlock]);
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("tab-practice")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("tab-practice"));
+
+    // No lab blocks → ExerciseContainer fallback remains (Phase-1 holdover
+    // preserved per VERIFICATION.md suggested fix).
+    await waitFor(() => {
+      expect(screen.getByTestId("exercise-container")).toBeInTheDocument();
+    });
+  });
 });

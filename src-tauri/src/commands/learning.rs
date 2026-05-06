@@ -2660,4 +2660,205 @@ mod phase3_tests {
         assert!(!read_practical_required(""));
         assert!(!read_practical_required("not json"));
     }
+
+    // ── GAP-04 (Plan 03.1-09): apply_mastery_update consults practical_required ──
+
+    /// Seed a single learner + path + module fixture for GAP-04 tests.
+    /// Uses `phase3_tests::fresh_conn` (already runs migrations through v006
+    /// so practical_mastery + lab_progress are available).
+    fn seed_gap04_fixture(conn: &Connection, content_json: &str) -> (String, String) {
+        let learner = "lp-gap04".to_string();
+        let module = "mod-gap04".to_string();
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES (?1, 'L')",
+            rusqlite::params![learner],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal)
+             VALUES ('trk-gap04', ?1, 'Topic', 'devops', 'Goal')",
+            rusqlite::params![learner],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO learning_paths (id, track_id, edges_json, modules_json, generated_by_model)
+             VALUES ('path-gap04', 'trk-gap04', '[]', '[]', 'test')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO modules (id, path_id, title, ordering, content_json)
+             VALUES (?1, 'path-gap04', 'M', 0, ?2)",
+            rusqlite::params![module, content_json],
+        )
+        .unwrap();
+        (learner, module)
+    }
+
+    /// GAP-04 — when `content_json.practical_required = true` and
+    /// `practical_mastery = 0`, conceptual mastery alone must NOT flip
+    /// status to 'completed'. FAILS today because `apply_mastery_update`
+    /// uses raw `prior < THRESHOLD && new >= THRESHOLD` without
+    /// consulting practical state. Closure: Task 5 calls
+    /// `module_completion_satisfied` with the practical dimension.
+    #[test]
+    fn module_completion_blocks_when_practical_required_unmet() {
+        let conn = fresh_conn();
+        let (learner, module) = seed_gap04_fixture(&conn, r#"{"practical_required": true}"#);
+
+        // Drive conceptual mastery >= 0.7 via repeated correct answers.
+        let mut prior = 0.0;
+        for _ in 0..30 {
+            let t = apply_mastery_update(&conn, &learner, &module, prior, true).unwrap();
+            prior = t.new_mastery;
+            if prior >= MASTERY_THRESHOLD {
+                break;
+            }
+        }
+        assert!(
+            prior >= MASTERY_THRESHOLD,
+            "conceptual mastery must cross 0.7"
+        );
+
+        // Read the module_progress row.
+        let (status, mastery_level): (String, f64) = conn
+            .query_row(
+                "SELECT status, mastery_level FROM module_progress
+                 WHERE module_id = ?1 AND learner_id = ?2",
+                rusqlite::params![module, learner],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?)),
+            )
+            .unwrap();
+        assert!(
+            mastery_level >= MASTERY_THRESHOLD,
+            "mastery_level must be persisted at >= 0.7"
+        );
+        assert_eq!(
+            status, "in_progress",
+            "GAP-04: practical_required=true + practical_mastery=0 must block status='completed'"
+        );
+
+        // practical_mastery column must still be 0.0 (no labs done).
+        let practical: f64 = conn
+            .query_row(
+                "SELECT practical_mastery FROM module_progress
+                 WHERE module_id = ?1 AND learner_id = ?2",
+                rusqlite::params![module, learner],
+                |r| r.get::<_, f64>(0),
+            )
+            .unwrap();
+        assert!(practical.abs() < 1e-9, "practical_mastery must remain 0.0");
+    }
+
+    /// GAP-04 — when `practical_required` is false (default / BLOCK-02
+    /// behavior), conceptual mastery alone still flips status to
+    /// 'completed'. Existing tests already pass on this — included here
+    /// so the GAP-04 closure doesn't accidentally regress the default
+    /// path.
+    #[test]
+    fn module_completes_when_practical_optional_default() {
+        let conn = fresh_conn();
+        let (learner, module) = seed_gap04_fixture(&conn, "{}");
+        // content_json='{}' (default) — practical_required is absent
+        // → read_practical_required returns false.
+
+        let mut prior = 0.0;
+        for _ in 0..30 {
+            let t = apply_mastery_update(&conn, &learner, &module, prior, true).unwrap();
+            prior = t.new_mastery;
+            if prior >= MASTERY_THRESHOLD {
+                break;
+            }
+        }
+
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM module_progress
+                 WHERE module_id = ?1 AND learner_id = ?2",
+                rusqlite::params![module, learner],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            status, "completed",
+            "default behavior unchanged: conceptual mastery alone completes the module"
+        );
+    }
+
+    /// GAP-04 — when `practical_required=true` AND practical_mastery >= 0.7
+    /// (e.g. all lab steps complete) AND conceptual >= 0.7, status flips
+    /// to 'completed'. The flip is driven by
+    /// `maybe_complete_on_practical_change` Task 5 lands in state.rs.
+    /// FAILS today because the helper doesn't exist.
+    #[test]
+    fn module_completes_when_both_dimensions_met() {
+        let conn = fresh_conn();
+        let (learner, module) = seed_gap04_fixture(&conn, r#"{"practical_required": true}"#);
+
+        // Drive conceptual >= 0.7. status stays in_progress because
+        // practical is 0.
+        let mut prior = 0.0;
+        for _ in 0..30 {
+            let t = apply_mastery_update(&conn, &learner, &module, prior, true).unwrap();
+            prior = t.new_mastery;
+            if prior >= MASTERY_THRESHOLD {
+                break;
+            }
+        }
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM module_progress
+                 WHERE module_id = ?1 AND learner_id = ?2",
+                rusqlite::params![module, learner],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "in_progress", "still in_progress before practical met");
+
+        // Now simulate practical_mastery crossing 0.7 (e.g. via labs):
+        // Insert a lab_progress row that yields >= 0.7 practical mastery.
+        conn.execute(
+            "INSERT INTO module_blocks (id, module_id, ordering, block_type, status,
+                params_json, payload_json, source_anchors_json, metadata_json, retry_count,
+                created_at, updated_at)
+             VALUES ('blk-lab-1', ?1, 0, 'lab', 'ready', '{}', '{}', '[]', '{}', 0,
+                datetime('now'), datetime('now'))",
+            rusqlite::params![module],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO lab_progress (learner_id, module_id, block_id, current_step,
+                completed_step_ids, total_steps, metadata_json, last_updated)
+             VALUES (?1, ?2, 'blk-lab-1', 4, '[\"s1\",\"s2\",\"s3\",\"s4\"]', 5, '{}', datetime('now'))",
+            rusqlite::params![learner, module],
+        )
+        .unwrap();
+
+        // Recompute practical mastery, then call the practical-side
+        // completion gate Task 5 introduces.
+        let practical = crate::commands::labs::state::recompute_practical_mastery(
+            &conn, &module, &learner,
+        )
+        .unwrap();
+        assert!(practical >= 0.7, "practical_mastery must cross 0.7, got {}", practical);
+
+        let flipped = super::maybe_complete_on_practical_change(
+            &conn, &learner, &module, practical,
+        )
+        .unwrap();
+        assert!(flipped, "maybe_complete_on_practical_change must return true");
+
+        let final_status: String = conn
+            .query_row(
+                "SELECT status FROM module_progress
+                 WHERE module_id = ?1 AND learner_id = ?2",
+                rusqlite::params![module, learner],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            final_status, "completed",
+            "both dimensions >= 0.7 must flip status to completed"
+        );
+    }
 }

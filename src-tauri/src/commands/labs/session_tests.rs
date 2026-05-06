@@ -347,3 +347,127 @@ fn osc_133_init_script_has_canonical_markers() {
     assert!(s.contains("PROMPT_COMMAND"), "missing PROMPT_COMMAND export");
     assert!(s.contains("xterm-256color"), "missing TERM export");
 }
+
+// ── GAP-02 (Plan 03.1-09): Settings labs_runtime preference round-trip ──
+
+/// Helper: write the labs_runtime preference for the seeded learner so the
+/// helper-under-test can read it back. Mirrors what
+/// `commands::tracks::update_profile` does for the persist side.
+fn set_labs_runtime_preference(state: &AppState, learner_id: &str, runtime: &str) {
+    let prefs = serde_json::json!({ "labs_runtime": runtime }).to_string();
+    let db = state.db.lock().unwrap();
+    db.conn
+        .execute(
+            "UPDATE learner_profiles SET preferences_json = ?1 WHERE id = ?2",
+            rusqlite::params![prefs, learner_id],
+        )
+        .unwrap();
+}
+
+/// GAP-02 — when the learner persisted `labs_runtime = "hostShell"` in
+/// `preferences_json`, opening a session must honor the choice and return
+/// `effective_runtime = "host_shell"` even when the Docker probe reports
+/// available. FAILS today because `lab_session_open` hardcodes
+/// `RuntimeSetting::AutoDetect` (session.rs:78-79). Closure: Task 3 lands
+/// `read_labs_runtime_preference` and threads it into `lab_session_open`.
+///
+/// The helper takes `&AppState` (not `&State<AppState>`) so it's testable
+/// outside the Tauri runtime — production callers thread `state.inner()`
+/// from the Tauri handler.
+#[tokio::test]
+async fn lab_session_open_respects_learner_runtime_preference() {
+    let state = test_app_state();
+    let (learner, module, block) = insert_lab_fixture(&state, VALID_LAB_MD);
+    set_labs_runtime_preference(&state, &learner, "hostShell");
+
+    // Resolve the setting via the helper Task 3 will introduce.
+    let setting = super::read_labs_runtime_preference(state.as_ref(), &learner);
+    assert_eq!(
+        setting,
+        RuntimeSetting::HostShell,
+        "persisted labs_runtime preference must round-trip through read_labs_runtime_preference",
+    );
+
+    // Docker is "available" but the persisted preference says HostShell —
+    // open_session must respect the persisted setting.
+    let probe = MockDockerProbe::new(true);
+    let result = open_session_for_test(
+        state.clone(),
+        LabSessionOpenRequest {
+            block_id: block,
+            track_id: "track-1".to_string(),
+            module_id: module,
+            learner_id: learner,
+        },
+        setting,
+        &probe,
+        MockLabSession::default(),
+    )
+    .await
+    .expect("open must succeed");
+
+    assert_eq!(
+        result.effective_runtime, "host_shell",
+        "Settings persisted hostShell must override Docker availability"
+    );
+}
+
+/// GAP-02 unit — docker preference round-trips.
+#[tokio::test]
+async fn read_labs_runtime_preference_returns_docker_for_docker_pref() {
+    let state = test_app_state();
+    let (learner, _module, _block) = insert_lab_fixture(&state, VALID_LAB_MD);
+    set_labs_runtime_preference(&state, &learner, "docker");
+    let setting = super::read_labs_runtime_preference(state.as_ref(), &learner);
+    assert_eq!(setting, RuntimeSetting::Docker);
+}
+
+/// GAP-02 unit — hostShell preference round-trips.
+#[tokio::test]
+async fn read_labs_runtime_preference_returns_host_shell_for_hostshell_pref() {
+    let state = test_app_state();
+    let (learner, _module, _block) = insert_lab_fixture(&state, VALID_LAB_MD);
+    set_labs_runtime_preference(&state, &learner, "hostShell");
+    let setting = super::read_labs_runtime_preference(state.as_ref(), &learner);
+    assert_eq!(setting, RuntimeSetting::HostShell);
+}
+
+/// GAP-02 unit — unknown values fall back to AutoDetect (defensive).
+#[tokio::test]
+async fn read_labs_runtime_preference_returns_auto_detect_for_unknown_value() {
+    let state = test_app_state();
+    let (learner, _module, _block) = insert_lab_fixture(&state, VALID_LAB_MD);
+    set_labs_runtime_preference(&state, &learner, "totally-not-a-runtime");
+    let setting = super::read_labs_runtime_preference(state.as_ref(), &learner);
+    assert_eq!(setting, RuntimeSetting::AutoDetect);
+}
+
+/// GAP-02 unit — malformed JSON falls back to AutoDetect (defensive).
+#[tokio::test]
+async fn read_labs_runtime_preference_returns_auto_detect_for_malformed_json() {
+    let state = test_app_state();
+    let (learner, _module, _block) = insert_lab_fixture(&state, VALID_LAB_MD);
+    {
+        let db = state.db.lock().unwrap();
+        db.conn
+            .execute(
+                "UPDATE learner_profiles SET preferences_json = ?1 WHERE id = ?2",
+                rusqlite::params!["not-valid-json{", learner],
+            )
+            .unwrap();
+    }
+    let setting = super::read_labs_runtime_preference(state.as_ref(), &learner);
+    assert_eq!(setting, RuntimeSetting::AutoDetect);
+}
+
+/// GAP-02 unit — missing profile falls back to AutoDetect (defensive).
+#[tokio::test]
+async fn read_labs_runtime_preference_returns_auto_detect_for_missing_profile() {
+    let state = test_app_state();
+    // No insert_lab_fixture — no profile rows exist.
+    let setting = super::read_labs_runtime_preference(
+        state.as_ref(),
+        "no-such-learner",
+    );
+    assert_eq!(setting, RuntimeSetting::AutoDetect);
+}

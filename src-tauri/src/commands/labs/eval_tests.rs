@@ -318,3 +318,100 @@ fn check_kind_strings() {
         "aiJudge"
     );
 }
+
+// ── GAP-03 (Plan 03.1-09): AuthState plumbing into lab_check_step ──
+
+/// GAP-03 — `lab_check_step` must read `AuthState` and pass
+/// `ai_authenticated = auth_state.has_active_credential()` into the
+/// `EvalContext` instead of hardcoded `false`. Closure: Task 4 introduces
+/// an inner `lab_check_step_with(state, ai_authenticated, ...)` helper
+/// that accepts the boolean directly; the Tauri handler resolves it from
+/// `State<AuthState>`.
+///
+/// FAILS today (compile error: `lab_check_step_with` does not exist) until
+/// Task 4 lands the inner helper.
+#[tokio::test]
+async fn lab_check_step_passes_authenticated_state_to_ai_judge() {
+    use crate::labs::evaluator::{evaluate_step_with_judge, AiJudgeRunner, EvalContext, EvalOutcome};
+    use crate::labs::spec::StepCheck;
+    use std::pin::Pin;
+
+    // Mock judge runner — returns a canned pass verdict so we can
+    // observe whether the AI-judge branch was actually exercised.
+    struct MockJudgeRunner {
+        called: std::sync::atomic::AtomicBool,
+    }
+    impl AiJudgeRunner for MockJudgeRunner {
+        fn run<'a>(
+            &'a self,
+            _prompt: &'a str,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>> {
+            self.called.store(true, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async {
+                Ok(r#"{"pass": true, "reason": "matches criteria"}"#.to_string())
+            })
+        }
+    }
+
+    let workspace = tempfile::tempdir().unwrap();
+    let workspace_path = workspace.path().to_path_buf();
+    let runner = MockJudgeRunner {
+        called: std::sync::atomic::AtomicBool::new(false),
+    };
+
+    // Behavior 1: ai_authenticated=false (current production behavior) —
+    // must short-circuit to Manual; runner NOT invoked.
+    let ctx_no_auth = EvalContext {
+        last_command: "kubectl get pods",
+        last_output: "pod-1   Running",
+        last_exit_code: Some(0),
+        workspace: &workspace_path,
+        ai_authenticated: false,
+        ai_budget_remaining: 5,
+    };
+    let check = StepCheck::AiJudge {
+        criteria: "Output shows pods".to_string(),
+        threshold: 0.7,
+    };
+    let no_auth_outcome = evaluate_step_with_judge(&check, &ctx_no_auth, Some(&runner))
+        .await
+        .unwrap();
+    assert!(
+        matches!(no_auth_outcome, EvalOutcome::Manual),
+        "no auth → Manual short-circuit (preserves existing behavior)"
+    );
+    assert!(
+        !runner.called.load(std::sync::atomic::Ordering::SeqCst),
+        "runner must NOT be invoked when ai_authenticated=false"
+    );
+
+    // Behavior 2: ai_authenticated=true — AI-judge path is exercised
+    // and the runner IS invoked. Outcome is Pass (mock returns pass=true).
+    let ctx_authed = EvalContext {
+        last_command: "kubectl get pods",
+        last_output: "pod-1   Running",
+        last_exit_code: Some(0),
+        workspace: &workspace_path,
+        ai_authenticated: true,
+        ai_budget_remaining: 5,
+    };
+    let authed_outcome = evaluate_step_with_judge(&check, &ctx_authed, Some(&runner))
+        .await
+        .unwrap();
+    assert!(
+        runner.called.load(std::sync::atomic::Ordering::SeqCst),
+        "runner MUST be invoked when ai_authenticated=true — proves the auth bool flowed through"
+    );
+    assert!(
+        matches!(authed_outcome, EvalOutcome::Pass),
+        "with auth + mock returning pass, outcome must be Pass; got {:?}",
+        authed_outcome
+    );
+
+    // Compile-time seam check: Task 4 introduces an inner
+    // `lab_check_step_with(...)` helper that accepts `ai_authenticated`
+    // directly so callers can exercise both branches without
+    // standing up Tauri State. Referencing the symbol forces a compile
+    // error until Task 4 lands (intended RED state).
+    let _seam = super::lab_check_step_with_seam_marker;
+}

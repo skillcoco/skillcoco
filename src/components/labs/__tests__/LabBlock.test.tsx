@@ -3,7 +3,7 @@
 // is a stub; plan 03.1-06 makes them green.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const labStoreState = vi.hoisted(() => ({
@@ -11,6 +11,16 @@ const labStoreState = vi.hoisted(() => ({
   closeSession: vi.fn(),
   markStepComplete: vi.fn(),
   getProgress: vi.fn(),
+  // GAP-05 (Plan 03.1-09): progress map keyed by blockId. LabBlock reads
+  // `useLabStore((s) => s.progress.get(blockId))` for currentStep +
+  // completedStepIds; tests pre-seed this Map.
+  progress: new Map<string, {
+    blockId: string;
+    currentStep: number;
+    completedStepIds: string[];
+    lastUpdated: string;
+    practicalMastery: number;
+  }>(),
 }));
 
 vi.mock("@/stores/useLabStore", () => ({
@@ -119,6 +129,14 @@ describe("LabBlock — Phase 03.1 Wave 0 (failing scaffolds)", () => {
       effectiveRuntime: "docker",
     });
     labStoreState.closeSession.mockResolvedValue(undefined);
+    labStoreState.getProgress.mockResolvedValue({
+      blockId: "blk-lab-1",
+      currentStep: 0,
+      completedStepIds: [],
+      lastUpdated: "2026-05-06T00:00:00Z",
+      practicalMastery: 0,
+    });
+    labStoreState.progress.clear();
   });
 
   it("lab_block_renders_60_40_split — split-pane container with role=separator divider", () => {
@@ -158,5 +176,84 @@ describe("LabBlock — Phase 03.1 Wave 0 (failing scaffolds)", () => {
     // Use findByText to wait for the post-mount openSession resolve.
     const notice = await screen.findByText(/host shell.*Docker not detected/i);
     expect(notice).toBeInTheDocument();
+  });
+
+  // ── GAP-05 (Plan 03.1-09): LabBlock reads progress from useLabStore ──────
+
+  it("lab_block_renders_progress_from_store_state — currentStep + completedStepIds reflect store, not hardcoded zero", async () => {
+    // Five-step lab; pre-seed the store with index=2, two steps already done.
+    labStoreState.progress.set("blk-lab-1", {
+      blockId: "blk-lab-1",
+      currentStep: 2,
+      completedStepIds: ["s1", "s2"],
+      lastUpdated: "2026-05-06T00:00:00Z",
+      practicalMastery: 0.4,
+    });
+    const fiveStepBlock = makeLabBlock({
+      steps: [
+        { id: "s1", title: "Step 1", prompt: "p1",
+          check: { kind: "command_regex" as const, pattern: "x" }, hints: [] },
+        { id: "s2", title: "Step 2", prompt: "p2",
+          check: { kind: "command_regex" as const, pattern: "x" }, hints: [] },
+        { id: "s3", title: "Step 3", prompt: "p3",
+          check: { kind: "command_regex" as const, pattern: "x" }, hints: [] },
+        { id: "s4", title: "Step 4", prompt: "p4",
+          check: { kind: "command_regex" as const, pattern: "x" }, hints: [] },
+        { id: "s5", title: "Step 5", prompt: "p5",
+          check: { kind: "command_regex" as const, pattern: "x" }, hints: [] },
+      ],
+    });
+    renderLabBlock(fiveStepBlock);
+
+    // Step 2 (0-based index 2 = "Step 3") must be marked active; the first
+    // two must be marked completed. FAILS today because LabBlock hardcodes
+    // currentStep=0, completedStepIds=[] (lines 215-217).
+    await waitFor(() => {
+      expect(screen.getByTestId("lab-step-2")).toHaveAttribute("data-active", "true");
+    });
+    expect(screen.getByTestId("lab-step-0")).toHaveAttribute("data-completed", "true");
+    expect(screen.getByTestId("lab-step-1")).toHaveAttribute("data-completed", "true");
+    expect(screen.getByTestId("lab-step-3")).toHaveAttribute("data-completed", "false");
+  });
+
+  it("lab_block_refreshes_progress_after_pass — store mutation re-renders LabInstructions", async () => {
+    // Mount with empty progress — currentStep=0 active.
+    const fiveStepBlock = makeLabBlock({
+      steps: [
+        { id: "s1", title: "Step 1", prompt: "p1",
+          check: { kind: "command_regex" as const, pattern: "x" }, hints: [] },
+        { id: "s2", title: "Step 2", prompt: "p2",
+          check: { kind: "command_regex" as const, pattern: "x" }, hints: [] },
+        { id: "s3", title: "Step 3", prompt: "p3",
+          check: { kind: "command_regex" as const, pattern: "x" }, hints: [] },
+      ],
+    });
+    const { rerender } = renderLabBlock(fiveStepBlock);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("lab-step-0")).toHaveAttribute("data-active", "true");
+    });
+
+    // Simulate the store mutation that follows a successful Pass: progress
+    // entry for blockId now reports step 1 active, s1 completed.
+    labStoreState.progress.set("blk-lab-1", {
+      blockId: "blk-lab-1",
+      currentStep: 1,
+      completedStepIds: ["s1"],
+      lastUpdated: "2026-05-06T00:01:00Z",
+      practicalMastery: 0.33,
+    });
+
+    // Force re-render so the store selector re-runs against the new map.
+    rerender(
+      <MemoryRouter>
+        <LabBlock block={fiveStepBlock} learnerId="learner-1" trackId="trk-1" />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("lab-step-1")).toHaveAttribute("data-active", "true");
+    });
+    expect(screen.getByTestId("lab-step-0")).toHaveAttribute("data-completed", "true");
   });
 });
