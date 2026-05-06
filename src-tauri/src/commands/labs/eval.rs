@@ -17,7 +17,7 @@ use tauri::State;
 /// Existence of this symbol in the production module proves Task 4
 /// landed the AuthState plumbing seam (`lab_check_step_with`).
 #[cfg(test)]
-pub(crate) const lab_check_step_with_seam_marker: () = ();
+pub(crate) const LAB_CHECK_STEP_WITH_SEAM_MARKER: () = ();
 
 /// LAB-06 — evaluate a single step against the live session's terminal
 /// buffer. On `Pass`, atomically updates `lab_progress.completed_step_ids`

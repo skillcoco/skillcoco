@@ -413,5 +413,5 @@ async fn lab_check_step_passes_authenticated_state_to_ai_judge() {
     // directly so callers can exercise both branches without
     // standing up Tauri State. Referencing the symbol forces a compile
     // error until Task 4 lands (intended RED state).
-    let _seam = super::lab_check_step_with_seam_marker;
+    let _seam = super::LAB_CHECK_STEP_WITH_SEAM_MARKER;
 }

@@ -86,6 +86,15 @@ pub fn recompute_practical_mastery(
         rusqlite::params![mastery, module_id, learner_id],
     );
 
+    // Plan 03.1-09 GAP-04 — mirror the conceptual-side completion gate
+    // from the practical side: when crossing the practical threshold (with
+    // conceptual already met and practical_required=true), flip status to
+    // 'completed'. Errors are non-fatal here so a flip failure doesn't
+    // mask the practical_mastery write that just succeeded.
+    let _ = crate::commands::learning::maybe_complete_on_practical_change(
+        conn, learner_id, module_id, mastery,
+    );
+
     Ok(mastery)
 }
 

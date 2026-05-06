@@ -578,6 +578,108 @@ pub fn read_practical_required(module_metadata_json: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Plan 03.1-09 GAP-04 — read a module's `content_json` column.
+/// Returns the empty string on missing module or DB error so
+/// `read_practical_required` defaults to `false` (BLOCK-02 behavior).
+fn read_module_content_json(
+    conn: &rusqlite::Connection,
+    module_id: &str,
+) -> String {
+    conn.query_row(
+        "SELECT content_json FROM modules WHERE id = ?1",
+        rusqlite::params![module_id],
+        |row| row.get::<_, String>(0),
+    )
+    .unwrap_or_default()
+}
+
+/// Plan 03.1-09 GAP-04 — read the current `practical_mastery` for
+/// (module, learner). Returns 0.0 when no row exists (consistent with
+/// the v006 column DEFAULT 0.0 — first lab Pass will UPSERT a row).
+fn read_practical_mastery(
+    conn: &rusqlite::Connection,
+    module_id: &str,
+    learner_id: &str,
+) -> f64 {
+    conn.query_row(
+        "SELECT COALESCE(practical_mastery, 0.0) FROM module_progress
+         WHERE module_id = ?1 AND learner_id = ?2",
+        rusqlite::params![module_id, learner_id],
+        |row| row.get::<_, f64>(0),
+    )
+    .unwrap_or(0.0)
+}
+
+/// Plan 03.1-09 GAP-04 — composite gate predicate that incorporates the
+/// practical dimension. Reads the module's `content_json` for
+/// `practical_required` + the learner's current practical_mastery, and
+/// returns the same boolean shape as
+/// `module_completion_satisfied(conceptual, practical, required)`.
+///
+/// This is the production wrapper that `apply_mastery_update` calls
+/// instead of the raw conceptual-only crossing check.
+fn module_progress_completion_satisfied(
+    conn: &rusqlite::Connection,
+    module_id: &str,
+    learner_id: &str,
+    new_conceptual_mastery: f64,
+) -> bool {
+    let content_json = read_module_content_json(conn, module_id);
+    let practical_required = read_practical_required(&content_json);
+    let current_practical = read_practical_mastery(conn, module_id, learner_id);
+    module_completion_satisfied(new_conceptual_mastery, current_practical, practical_required)
+}
+
+/// Plan 03.1-09 GAP-04 — the practical-side completion gate.
+///
+/// Called from `commands::labs::state::recompute_practical_mastery` after
+/// the practical_mastery column updates. When the module declares
+/// `practical_required: true` AND the learner now has both dimensions at
+/// or above 0.7, flip `module_progress.status` to 'completed' (mirrors
+/// the conceptual-side flip in `apply_mastery_update`).
+///
+/// Returns `Ok(true)` when this call flipped the status, `Ok(false)`
+/// otherwise (no flip needed, already completed, practical_required is
+/// false, etc.). Idempotent: calling repeatedly after a flip is a no-op.
+pub fn maybe_complete_on_practical_change(
+    conn: &rusqlite::Connection,
+    learner_id: &str,
+    module_id: &str,
+    new_practical: f64,
+) -> Result<bool, String> {
+    let content_json = read_module_content_json(conn, module_id);
+    let practical_required = read_practical_required(&content_json);
+    if !practical_required {
+        return Ok(false); // BLOCK-02 default — practical doesn't gate.
+    }
+    let row: Option<(String, f64)> = conn
+        .query_row(
+            "SELECT status, mastery_level FROM module_progress
+             WHERE module_id = ?1 AND learner_id = ?2",
+            rusqlite::params![module_id, learner_id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?)),
+        )
+        .ok();
+    let (status, conceptual) = match row {
+        Some(t) => t,
+        None => return Ok(false), // No progress row yet — nothing to flip.
+    };
+    if status == "completed" {
+        return Ok(false); // Already completed; no-op.
+    }
+    if module_completion_satisfied(conceptual, new_practical, practical_required) {
+        conn.execute(
+            "UPDATE module_progress SET status = 'completed',
+                completed_at = datetime('now')
+             WHERE module_id = ?1 AND learner_id = ?2",
+            rusqlite::params![module_id, learner_id],
+        )
+        .map_err(|e| format!("maybe_complete_on_practical_change: {}", e))?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 // ── LOOP-01: BKT Mastery Update Helper ──
 
 /// Outcome of a single mastery update step.
@@ -610,7 +712,14 @@ pub fn apply_mastery_update(
 ) -> Result<MasteryTransition, String> {
     let params = BKTParams::default();
     let new_mastery = update_mastery(&params, prior_mastery, is_correct);
-    let became_completed = prior_mastery < MASTERY_THRESHOLD && new_mastery >= MASTERY_THRESHOLD;
+    // Plan 03.1-09 GAP-04 — gate the status flip on the composite
+    // predicate (conceptual >= 0.7 AND, when practical_required, practical
+    // >= 0.7). For modules with practical_required=false (default) this
+    // reduces to the prior conceptual-only behavior.
+    let conceptual_crossed = prior_mastery < MASTERY_THRESHOLD && new_mastery >= MASTERY_THRESHOLD;
+    let composite_satisfied =
+        module_progress_completion_satisfied(conn, module_id, learner_id, new_mastery);
+    let became_completed = conceptual_crossed && composite_satisfied;
 
     // UPSERT: when this is the first interaction (no module_progress row yet),
     // INSERT it; on conflict on (module_id, learner_id), UPDATE in place. The
@@ -677,8 +786,14 @@ pub fn apply_mastery_update_iterative(
         current = update_mastery(&params, current, is_correct);
     }
     let new_mastery = current;
-    let became_completed =
+    // Plan 03.1-09 GAP-04 — same composite gate as apply_mastery_update.
+    // Quiz pass goes through this iterative form per LOOP-02 fix; gating
+    // here ensures practical_required modules don't auto-complete.
+    let conceptual_crossed =
         prior_mastery < MASTERY_THRESHOLD && new_mastery >= MASTERY_THRESHOLD;
+    let composite_satisfied =
+        module_progress_completion_satisfied(conn, module_id, learner_id, new_mastery);
+    let became_completed = conceptual_crossed && composite_satisfied;
 
     let new_id = uuid::Uuid::new_v4().to_string();
     if became_completed {
@@ -2834,19 +2949,16 @@ mod phase3_tests {
         )
         .unwrap();
 
-        // Recompute practical mastery, then call the practical-side
-        // completion gate Task 5 introduces.
+        // recompute_practical_mastery internally calls
+        // maybe_complete_on_practical_change (Task 5 wired the symmetric
+        // gate from the practical side). After this single call, the
+        // status MUST be 'completed' because both dimensions are >= 0.7
+        // and practical_required is true.
         let practical = crate::commands::labs::state::recompute_practical_mastery(
             &conn, &module, &learner,
         )
         .unwrap();
         assert!(practical >= 0.7, "practical_mastery must cross 0.7, got {}", practical);
-
-        let flipped = super::maybe_complete_on_practical_change(
-            &conn, &learner, &module, practical,
-        )
-        .unwrap();
-        assert!(flipped, "maybe_complete_on_practical_change must return true");
 
         let final_status: String = conn
             .query_row(
@@ -2858,7 +2970,16 @@ mod phase3_tests {
             .unwrap();
         assert_eq!(
             final_status, "completed",
-            "both dimensions >= 0.7 must flip status to completed"
+            "both dimensions >= 0.7 must flip status to completed (recompute_practical_mastery \
+             internally invoked maybe_complete_on_practical_change)"
         );
+
+        // Idempotence: a direct call to the helper now returns false
+        // because status is already 'completed'.
+        let flipped_again = super::maybe_complete_on_practical_change(
+            &conn, &learner, &module, practical,
+        )
+        .unwrap();
+        assert!(!flipped_again, "second call must be a no-op (idempotent)");
     }
 }

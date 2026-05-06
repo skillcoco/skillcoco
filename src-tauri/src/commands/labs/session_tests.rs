@@ -364,6 +364,34 @@ fn set_labs_runtime_preference(state: &AppState, learner_id: &str, runtime: &str
         .unwrap();
 }
 
+/// Minimal lab spec WITHOUT requires_docker — used by GAP-02 tests where
+/// the assertion is "HostShell setting → host_shell runtime". The
+/// `valid-pod-create.lab.md` fixture sets `requires_docker: true` which
+/// forces Docker per `effective_runtime_with_warning` semantics; that's
+/// the wrong fixture for the runtime-preference round-trip assertion.
+const HOST_SHELL_OK_LAB_MD: &str = "---
+slug: simple-shell-lab
+title: Simple shell lab
+image: alpine:3
+requires_docker: false
+creates: []
+steps:
+  - id: s1
+    title: Run a command
+    check:
+      kind: command_regex
+      pattern: \"hello\"
+    hints:
+      - \"Echo something\"
+      - \"Try echo hello\"
+      - \"Run: echo hello\"
+---
+
+# Simple shell lab
+
+Just print hello.
+";
+
 /// GAP-02 — when the learner persisted `labs_runtime = "hostShell"` in
 /// `preferences_json`, opening a session must honor the choice and return
 /// `effective_runtime = "host_shell"` even when the Docker probe reports
@@ -377,7 +405,9 @@ fn set_labs_runtime_preference(state: &AppState, learner_id: &str, runtime: &str
 #[tokio::test]
 async fn lab_session_open_respects_learner_runtime_preference() {
     let state = test_app_state();
-    let (learner, module, block) = insert_lab_fixture(&state, VALID_LAB_MD);
+    // Use a non-requires_docker spec so HostShell isn't forced back to
+    // Docker by `effective_runtime_with_warning`.
+    let (learner, module, block) = insert_lab_fixture(&state, HOST_SHELL_OK_LAB_MD);
     set_labs_runtime_preference(&state, &learner, "hostShell");
 
     // Resolve the setting via the helper Task 3 will introduce.
