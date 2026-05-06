@@ -21,7 +21,8 @@ describe("useLabStore — Phase 03.1 Wave 0 (failing scaffolds)", () => {
   });
 
   it("lab_store_open_session — invokes lab_session_open and stores LabSession", async () => {
-    // FAILS until 03.1-06: today the action throws "not implemented".
+    // 03.1-06 wires the action via `invoke('lab_session_open', { request })`
+    // (Rust handler signature is `request: LabSessionOpenRequest`).
     vi.mocked(invoke).mockResolvedValue({
       sessionId: "sess-1",
       effectiveRuntime: "docker",
@@ -34,10 +35,12 @@ describe("useLabStore — Phase 03.1 Wave 0 (failing scaffolds)", () => {
     expect(invoke).toHaveBeenCalledWith(
       "lab_session_open",
       expect.objectContaining({
-        blockId: "blk-1",
-        trackId: "trk-1",
-        moduleId: "mod-1",
-        learnerId: "learner-1",
+        request: expect.objectContaining({
+          blockId: "blk-1",
+          trackId: "trk-1",
+          moduleId: "mod-1",
+          learnerId: "learner-1",
+        }),
       }),
     );
     expect(session.sessionId).toBe("sess-1");
@@ -58,14 +61,22 @@ describe("useLabStore — Phase 03.1 Wave 0 (failing scaffolds)", () => {
 
     expect(invoke).toHaveBeenCalledWith(
       "lab_session_close",
-      expect.objectContaining({ sessionId: "sess-1" }),
+      expect.objectContaining({
+        request: expect.objectContaining({ sessionId: "sess-1" }),
+      }),
     );
     const sessions = useLabStore.getState().sessions;
     expect(sessions.size).toBe(0);
   });
 
   it("lab_store_mark_step_complete — invokes lab_check_step and updates progress on Pass", async () => {
-    vi.mocked(invoke).mockResolvedValue({ outcome: "pass", stepId: "s1" });
+    vi.mocked(invoke).mockResolvedValue({
+      stepIndex: 0,
+      passed: true,
+      reason: "Command output matched pattern",
+      checkKind: "command_regex",
+      masteryDelta: 0.1,
+    });
 
     const store = useLabStore.getState();
     const result = await store.markStepComplete("sess-1", 0, "kubectl get pods", "Running", 0);
@@ -73,9 +84,11 @@ describe("useLabStore — Phase 03.1 Wave 0 (failing scaffolds)", () => {
     expect(invoke).toHaveBeenCalledWith(
       "lab_check_step",
       expect.objectContaining({
-        sessionId: "sess-1",
-        stepIndex: 0,
-        lastCommand: "kubectl get pods",
+        request: expect.objectContaining({
+          sessionId: "sess-1",
+          stepIndex: 0,
+          lastCommand: "kubectl get pods",
+        }),
       }),
     );
     expect(result.outcome).toBe("pass");
@@ -95,7 +108,9 @@ describe("useLabStore — Phase 03.1 Wave 0 (failing scaffolds)", () => {
 
     expect(invoke).toHaveBeenCalledWith(
       "lab_get_progress",
-      expect.objectContaining({ blockId: "blk-1", learnerId: "learner-1" }),
+      expect.objectContaining({
+        request: expect.objectContaining({ blockId: "blk-1", learnerId: "learner-1" }),
+      }),
     );
     expect(progress.completedStepIds).toEqual(["s1"]);
     expect(useLabStore.getState().progress.get("blk-1")?.practicalMastery).toBe(0.5);

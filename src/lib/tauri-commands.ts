@@ -213,3 +213,64 @@ export async function regenerateModule(
 ): Promise<import("@/types/learning").GenerateModuleBlocksResult> {
   return invoke("regenerate_module", { req });
 }
+
+// ── Phase 03.1: Lab block IPC wrappers ──
+//
+// All 9 commands forward a `request` payload that matches the
+// camelCase Rust IPC structs in `src-tauri/src/commands/labs/`. The
+// argument key MUST be `request` to align with the Rust handler
+// signatures (verified in 03.1-05 SUMMARY).
+
+export async function labSessionOpen(
+  request: import("@/types/learning").LabSessionOpenRequest,
+): Promise<import("@/types/learning").LabSessionOpenResult> {
+  return invoke("lab_session_open", { request });
+}
+
+export async function labSessionClose(
+  request: import("@/types/learning").LabSessionCloseRequest,
+): Promise<void> {
+  return invoke("lab_session_close", { request });
+}
+
+export async function labPtyWrite(
+  request: import("@/types/learning").LabPtyWriteRequest,
+): Promise<void> {
+  return invoke("lab_pty_write", { request });
+}
+
+export async function labPtyResize(
+  request: import("@/types/learning").LabPtyResizeRequest,
+): Promise<void> {
+  return invoke("lab_pty_resize", { request });
+}
+
+export async function labCheckStep(
+  request: import("@/types/learning").LabCheckStepRequest,
+): Promise<import("@/types/learning").LabCheckStepResult> {
+  return invoke("lab_check_step", { request });
+}
+
+export async function labShowHint(
+  request: import("@/types/learning").LabShowHintRequest,
+): Promise<import("@/types/learning").LabShowHintResult> {
+  return invoke("lab_show_hint", { request });
+}
+
+export async function labReset(
+  request: import("@/types/learning").LabResetRequest,
+): Promise<import("@/types/learning").LabResetResult> {
+  return invoke("lab_reset", { request });
+}
+
+export async function labGetProgress(
+  request: import("@/types/learning").LabGetProgressRequest,
+): Promise<import("@/types/learning").LabProgress> {
+  return invoke("lab_get_progress", { request });
+}
+
+export async function labRuntimeDetect(
+  request: import("@/types/learning").LabRuntimeDetectRequest = {},
+): Promise<import("@/types/learning").LabRuntimeDetectResult> {
+  return invoke("lab_runtime_detect", { request });
+}

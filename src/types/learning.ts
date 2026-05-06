@@ -379,3 +379,95 @@ export interface LabSession {
   /** Resolved runtime — "docker" or "hostShell". */
   effectiveRuntime: "docker" | "hostShell";
 }
+
+// ── Phase 03.1 IPC request / response types (camelCase per FIX-02) ──
+//
+// These mirror the Rust IPC structs in `src-tauri/src/commands/labs/mod.rs`
+// (all marked `#[serde(rename_all = "camelCase")]`). Field names and
+// optionality must match the Rust side exactly so the typed wrappers in
+// `src/lib/tauri-commands.ts` round-trip cleanly across the Tauri boundary.
+
+export interface LabSessionOpenRequest {
+  blockId: string;
+  trackId: string;
+  moduleId: string;
+  learnerId: string;
+}
+
+export interface LabSessionOpenResult {
+  sessionId: string;
+  effectiveRuntime: "docker" | "hostShell";
+  workspacePath: string;
+  spec: LabSpec;
+  progress: LabProgress;
+  warning?: string;
+}
+
+export interface LabSessionCloseRequest {
+  sessionId: string;
+}
+
+export interface LabPtyWriteRequest {
+  sessionId: string;
+  data: number[];
+}
+
+export interface LabPtyResizeRequest {
+  sessionId: string;
+  cols: number;
+  rows: number;
+}
+
+export interface LabCheckStepRequest {
+  sessionId: string;
+  stepIndex: number;
+  lastCommand: string;
+  lastOutput: string;
+  lastExitCode: number | null;
+}
+
+export interface LabCheckStepResult {
+  stepIndex: number;
+  passed: boolean;
+  reason: string;
+  checkKind: string;
+  masteryDelta: number;
+}
+
+export interface LabShowHintRequest {
+  sessionId: string;
+  stepIndex: number;
+  currentTier: number;
+}
+
+export interface LabShowHintResult {
+  tier: number;
+  text: string;
+  finalTier: boolean;
+}
+
+export interface LabResetRequest {
+  sessionId: string;
+}
+
+export interface LabResetResult {
+  filesRemoved: string[];
+  progressReset: boolean;
+}
+
+export interface LabGetProgressRequest {
+  blockId: string;
+  learnerId: string;
+}
+
+export interface LabRuntimeDetectRequest {
+  /** Optional: defaults to `"autoDetect"` when omitted (Rust serde default). */
+  setting?: LabRuntimeChoice;
+}
+
+export interface LabRuntimeDetectResult {
+  dockerAvailable: boolean;
+  dockerVersion: string | null;
+  effectiveRuntime: "docker" | "hostShell";
+  setting: LabRuntimeChoice;
+}
