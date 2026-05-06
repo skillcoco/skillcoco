@@ -385,6 +385,12 @@ export interface LabSession {
   warning?: string;
   /** Resolved runtime — "docker" or "hostShell". */
   effectiveRuntime: "docker" | "hostShell";
+  /**
+   * Plan 03.1-09 GAP-05 — learner identity stashed on the session so
+   * post-Pass progress refreshes don't need to re-thread it through every
+   * `markStepComplete` call site. Optional for backward compat.
+   */
+  learnerId?: string;
 }
 
 // ── Phase 03.1 IPC request / response types (camelCase per FIX-02) ──

@@ -14,6 +14,11 @@ const labStoreState = vi.hoisted(() => ({
   closeSession: vi.fn().mockResolvedValue(undefined),
   markStepComplete: vi.fn(),
   getProgress: vi.fn(),
+  // Plan 03.1-09 GAP-05 — LabBlock subscribes to progress.get(blockId).
+  // The map is empty for theme tests (no labs in progress), so currentStep
+  // defaults to 0 and completedStepIds defaults to []. The theme assertion
+  // is independent of progress state.
+  progress: new Map(),
 }));
 
 vi.mock("@/stores/useLabStore", () => ({

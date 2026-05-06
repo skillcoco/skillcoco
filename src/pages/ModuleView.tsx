@@ -153,6 +153,11 @@ export function ModuleView() {
     () => blocks.find((b) => b.blockType === "quiz"),
     [blocks],
   );
+  // Phase 03.1 Plan 09 (GAP-01) — extract lab blocks for the Practice tab.
+  const labBlocks = useMemo(
+    () => blocks.filter((b) => b.blockType === "lab"),
+    [blocks],
+  );
 
   // Active lesson resolution: prefer currentLessonId from store; fall back to
   // the first section block. Index is computed against the section list so
@@ -473,18 +478,41 @@ export function ModuleView() {
             </div>
           )}
 
-          {/* Practice tab — Phase 1 exercises preserved, NO BKT side-effect */}
+          {/* Practice tab — Phase 03.1 Plan 09 (GAP-01):
+                When the module has at least one lab block, dispatch each
+                via BlockRenderer (which routes to LabBlock for blockType
+                === "lab"). When no lab blocks exist, fall back to the
+                Phase-1 ExerciseContainer so legacy modules keep their
+                Practice surface. The skeleton-then-fill lifecycle for
+                pending lab blocks is handled by BlockRenderer's existing
+                arm; the polling effect above already pulls progress as
+                blocks transition from pending → ready. */}
           {tab === "practice" && (
             <div data-testid="practice-tab" className="space-y-4">
-              <div className="glass rounded-lg border border-border px-4 py-3 text-sm text-foreground/80">
-                <strong className="font-semibold text-foreground">Bonus practice.</strong>{" "}
-                These coding exercises are optional and don't affect module
-                mastery — passing the <em>Quiz</em> is what completes the
-                module and unlocks the next one.
-              </div>
-              <div className="glass rounded-lg p-6">
-                <ExerciseContainer moduleId={moduleId!} />
-              </div>
+              {labBlocks.length > 0 ? (
+                <div className="space-y-4">
+                  {labBlocks.map((lab) => (
+                    <BlockRenderer
+                      key={lab.id}
+                      block={lab}
+                      moduleId={moduleId!}
+                      trackId={trackId}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <div className="glass rounded-lg border border-border px-4 py-3 text-sm text-foreground/80">
+                    <strong className="font-semibold text-foreground">Bonus practice.</strong>{" "}
+                    These coding exercises are optional and don't affect module
+                    mastery — passing the <em>Quiz</em> is what completes the
+                    module and unlocks the next one.
+                  </div>
+                  <div className="glass rounded-lg p-6">
+                    <ExerciseContainer moduleId={moduleId!} />
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

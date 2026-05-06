@@ -71,6 +71,10 @@ export const useLabStore = create<LabState>((set, _get) => ({
     const session: LabSession = {
       sessionId: result.sessionId,
       effectiveRuntime: result.effectiveRuntime,
+      // Plan 03.1-09 GAP-05 — stash learnerId so markStepComplete can
+      // call getProgress without re-threading the learner through the
+      // call site (LabBlock doesn't currently have it once mount unwinds).
+      learnerId,
       ...(result.warning ? { warning: result.warning } : {}),
     };
     set((s) => {
@@ -113,6 +117,31 @@ export const useLabStore = create<LabState>((set, _get) => ({
       lastExitCode,
     });
     const outcome = reasonToOutcome(result.reason, result.passed);
+
+    // Plan 03.1-09 GAP-05 — refresh the canonical lab_progress row from
+    // Rust on a successful Pass so the UI reflects the new
+    // currentStep + completedStepIds without an extra component round-trip.
+    if (result.passed) {
+      const state = useLabStore.getState();
+      let blockId: string | null = null;
+      let learnerId: string | null = null;
+      for (const [bId, sess] of state.sessions.entries()) {
+        if (sess.sessionId === sessionId) {
+          blockId = bId;
+          learnerId = sess.learnerId ?? null;
+          break;
+        }
+      }
+      if (blockId && learnerId) {
+        try {
+          await state.getProgress(blockId, learnerId);
+        } catch {
+          // Non-fatal: UI keeps the last-known progress until the next
+          // refresh; the Pass already crossed the IPC boundary.
+        }
+      }
+    }
+
     return { outcome };
   },
 

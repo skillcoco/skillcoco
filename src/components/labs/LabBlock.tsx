@@ -62,6 +62,11 @@ export function LabBlock({ block, learnerId, trackId }: LabBlockProps) {
   const { theme } = useTheme();
   const openSession = useLabStore((s) => s.openSession);
   const closeSession = useLabStore((s) => s.closeSession);
+  // Plan 03.1-09 GAP-05 — subscribe to progress for this block. The store
+  // populates this entry on `openSession` (initial snapshot) and refreshes
+  // it after each Pass via `markStepComplete`. Re-renders flow naturally
+  // through the Zustand selector when the progress map mutates.
+  const blockProgress = useLabStore((s) => s.progress.get(block.id));
 
   const { spec, parseError } = useMemo(
     () => parsePayload(block.payloadJson),
@@ -213,8 +218,14 @@ export function LabBlock({ block, learnerId, trackId }: LabBlockProps) {
   }
 
   const warning = session?.warning;
-  const currentStep = 0;
-  const completedStepIds: string[] = [];
+  // Plan 03.1-09 GAP-05 — derive progress from the store-backed entry.
+  // Defaults preserve the pre-mount visible state (step 0 active, none
+  // completed) until openSession resolves and seeds the map.
+  const currentStep = blockProgress?.currentStep ?? 0;
+  const completedStepIds = useMemo(
+    () => Array.from(new Set(blockProgress?.completedStepIds ?? [])),
+    [blockProgress?.completedStepIds],
+  );
   const activeHints =
     hintStepIndex != null && spec.steps[hintStepIndex]
       ? spec.steps[hintStepIndex].hints
