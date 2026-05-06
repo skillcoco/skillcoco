@@ -1,29 +1,66 @@
 //! Migration v006 — lab_progress table + module_progress.practical_mastery
 //!
-//! Wave 0 stub. 03.1-02 fills in the actual `up()` body. The Wave 0 contract:
-//! - `pub const VERSION: i32 = 6` and `pub const NAME: &str = "lab_progress"`
-//!   so `db::migrations::mod.rs::registered_migrations()` can wire it.
-//! - `up()` returns Err so the existing `test_apply_migrations_*` tests
-//!   in `db/migrations/mod.rs::tests` flip from green-(version=5) to
-//!   red — Wave 0 deliverable.
-//! - `v006_idempotent` test asserts the eventual schema (column + table +
-//!   indexes); fails today.
+//! Adds the practical-mastery dimension and per-lab progress storage required
+//! by Phase 03.1 (LAB-08). Mirrors the v005_lesson_completions.rs pattern:
+//! idempotent ALTER (via column-existence guard) + CREATE TABLE IF NOT EXISTS
+//! + CREATE INDEX IF NOT EXISTS.
 
 use rusqlite::{Connection, Result};
 
 pub const VERSION: i32 = 6;
 pub const NAME: &str = "lab_progress";
 
-/// Wave 0 stub — Wave 1 (03.1-02) replaces with the real ALTER TABLE +
-/// CREATE TABLE + CREATE INDEX batch from RESEARCH.md § DB Schema Delta.
+/// Apply the v006 migration.
 ///
-/// Returns `Ok(())` (no-op) so existing migration tests in
-/// `mod.rs::tests` go green at the new version=6 assertion without
-/// breaking the prior v003/v004/v005 idempotent tests. The `v006_idempotent`
-/// test in this file fails RED because the new column/table/indexes don't
-/// exist yet.
-pub fn up(_conn: &Connection) -> Result<()> {
-    Ok(())
+/// 1. ALTER TABLE module_progress ADD COLUMN practical_mastery REAL NOT NULL
+///    DEFAULT 0.0 — guarded with a column-existence check so a second apply
+///    doesn't fail with "duplicate column name" (mirrors v003_streak_columns
+///    pattern).
+/// 2. CREATE TABLE IF NOT EXISTS lab_progress with composite PK
+///    (learner_id, module_id, block_id) and a metadata_json TEXT NOT NULL
+///    DEFAULT '{}' column for the last AI-judge verdict (per
+///    03.1-RESEARCH.md Open Question #8).
+/// 3. CREATE INDEX IF NOT EXISTS on module_id and block_id for fast aggregate
+///    queries (practical_mastery recompute).
+pub fn up(conn: &Connection) -> Result<()> {
+    if !column_exists(conn, "module_progress", "practical_mastery")? {
+        conn.execute(
+            "ALTER TABLE module_progress ADD COLUMN practical_mastery REAL NOT NULL DEFAULT 0.0",
+            [],
+        )?;
+    }
+
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS lab_progress (
+            learner_id          TEXT NOT NULL REFERENCES learner_profiles(id),
+            module_id           TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+            block_id            TEXT NOT NULL REFERENCES module_blocks(id) ON DELETE CASCADE,
+            current_step        INTEGER NOT NULL DEFAULT 0,
+            completed_step_ids  TEXT NOT NULL DEFAULT '[]',
+            total_steps         INTEGER NOT NULL DEFAULT 0,
+            metadata_json       TEXT NOT NULL DEFAULT '{}',
+            last_updated        TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (learner_id, module_id, block_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_lab_progress_module
+            ON lab_progress(module_id);
+        CREATE INDEX IF NOT EXISTS idx_lab_progress_block
+            ON lab_progress(block_id);
+        "#,
+    )
+}
+
+/// Check whether `column` exists in `table` by querying PRAGMA table_info.
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+    let cols = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for c in cols {
+        if c? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
@@ -36,17 +73,14 @@ mod tests {
     /// LAB-08 — v006 idempotency. After two applies:
     ///  - module_progress.practical_mastery REAL DEFAULT 0.0 column exists
     ///  - lab_progress table exists with PK (learner_id, module_id, block_id)
+    ///  - metadata_json TEXT NOT NULL DEFAULT '{}' column exists
     ///  - idx_lab_progress_module + idx_lab_progress_block exist
-    ///
-    /// Wave 0: up() returns Err so apply_migrations fails before reaching
-    /// any of these assertions — the test fails. Wave 1 (03.1-02) wires
-    /// the real ALTER + CREATE statements and the assertions go green.
     #[test]
     fn v006_idempotent() {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         conn.execute_batch(schema::CREATE_TABLES).expect("baseline tables");
-        apply_migrations(&conn).expect("first apply must succeed once 03.1-02 lands v006");
+        apply_migrations(&conn).expect("first apply must succeed");
         apply_migrations(&conn).expect("second apply must succeed (idempotent)");
 
         // module_progress.practical_mastery column exists with default 0.0
@@ -94,7 +128,7 @@ mod tests {
 
         // PK is (learner_id, module_id, block_id)
         let mut stmt = conn.prepare("PRAGMA table_info(lab_progress)").unwrap();
-        let pk_cols: Vec<String> = stmt
+        let lab_cols: Vec<(i32, String)> = stmt
             .query_map([], |r| {
                 let pk: i32 = r.get(5)?;
                 let name: String = r.get(1)?;
@@ -102,16 +136,27 @@ mod tests {
             })
             .unwrap()
             .filter_map(|c| c.ok())
+            .collect();
+
+        let pk_cols: Vec<&String> = lab_cols
+            .iter()
             .filter(|(pk, _)| *pk > 0)
             .map(|(_, n)| n)
             .collect();
         for required in ["learner_id", "module_id", "block_id"] {
             assert!(
-                pk_cols.contains(&required.to_string()),
+                pk_cols.iter().any(|n| n.as_str() == required),
                 "lab_progress PK missing: {}",
                 required
             );
         }
+
+        // metadata_json TEXT NOT NULL DEFAULT '{}' column exists
+        // (per RESEARCH § Open Question #8 — last AI-judge verdict)
+        assert!(
+            lab_cols.iter().any(|(_, n)| n == "metadata_json"),
+            "lab_progress.metadata_json column must exist after v006"
+        );
 
         // Both indexes exist
         for idx in ["idx_lab_progress_module", "idx_lab_progress_block"] {
