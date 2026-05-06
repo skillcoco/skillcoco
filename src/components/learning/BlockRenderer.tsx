@@ -5,6 +5,7 @@ import { TextBlock } from "./TextBlock";
 import { CalloutBlock } from "./CalloutBlock";
 import { QuizBlock } from "./QuizBlock";
 import { FlashCardsBlock } from "./FlashCardsBlock";
+import { LabBlock } from "@/components/labs/LabBlock";
 import { useLearningStore } from "@/stores/useLearningStore";
 
 interface BlockRendererProps {
@@ -83,6 +84,8 @@ export function BlockRenderer({
           moduleId={moduleId}
         />
       );
+    case "lab":
+      return <LabBlock block={block} trackId={trackId} />;
     default:
       return (
         <div data-testid="unsupported-block">
