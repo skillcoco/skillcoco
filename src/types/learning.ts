@@ -168,7 +168,7 @@ export interface CompleteExercisesResult {
 
 // ── Phase 3: Block Taxonomy (BLOCK-01) ──
 
-export type BlockType = "section" | "text" | "callout" | "quiz" | "flash_cards";
+export type BlockType = "section" | "text" | "callout" | "quiz" | "flash_cards" | "lab";
 export type BlockStatus = "pending" | "generating" | "ready" | "failed";
 
 /** Database row for module_blocks — crosses Tauri IPC boundary with camelCase keys. */
@@ -285,4 +285,97 @@ export interface RateFlashCardRequest {
   cardId: string;
   moduleId: string;
   quality: number; // 1-5; >= 4 = "good/easy"
+}
+
+// ── Phase 03.1: Lab block taxonomy (LAB-01..LAB-10) ──
+//
+// Lab blocks embed an interactive PTY-backed terminal alongside step-by-step
+// instructions. The TS surface here mirrors the Rust IPC contract from
+// 03.1-RESEARCH.md § "Phase Requirements → Test Map" — every field crosses
+// the Tauri boundary in camelCase per FIX-02 lesson.
+//
+// These types are consumed by the Wave 0 failing tests in this phase; the
+// real implementations land in 03.1-06 (frontend) and 03.1-04..03.1-05
+// (Rust IPC). Component stubs in src/components/labs/ render placeholders
+// only — no real PTY, no real Tauri event, no real Zustand IPC yet.
+
+/** Runtime selector exposed in Settings → Labs section (LAB-03). */
+export type LabRuntimeChoice = "docker" | "hostShell" | "autoDetect";
+
+/**
+ * Discriminated union of step evaluation strategies (LAB-06).
+ * Each `kind` selects which optional fields are meaningful — the Rust
+ * evaluator validates field combinations per kind on parse.
+ */
+export interface StepCheck {
+  kind: "command_regex" | "exit_code" | "file_state" | "ai_judge";
+  /** command_regex: stdout/stderr regex pattern. */
+  pattern?: string;
+  /** command_regex: when true, also match against stderr. */
+  matchStderr?: boolean;
+  /** exit_code: required exit status (defaults to 0 if unset). */
+  expected?: number;
+  /** file_state: path relative to /workspace. */
+  path?: string;
+  /** file_state: substrings the file body must contain. */
+  contains?: string[];
+  /** file_state: fixture path the file must equal byte-for-byte. */
+  equalsFixture?: string;
+  /** ai_judge: natural-language criterion for the LLM grader. */
+  criteria?: string;
+  /** ai_judge: confidence threshold (0-1). */
+  threshold?: number;
+}
+
+export interface LabStep {
+  id: string;
+  title: string;
+  prompt: string;
+  check: StepCheck;
+  /** Three-tier progressive hints: gentle nudge → partial → full solution. */
+  hints: string[];
+}
+
+export interface LabSpec {
+  slug: string;
+  title: string;
+  estimatedMinutes?: number;
+  /** Hard requirement — when true, host-shell mode shows override notice. */
+  requiresDocker: boolean;
+  /** image XOR dockerfile — Rust-side spec parser enforces exclusivity. */
+  image?: string;
+  dockerfile?: string;
+  /** Files this lab produces — used by surgical Reset (LAB-07). */
+  creates: string[];
+  steps: LabStep[];
+}
+
+/** Source markdown + generation prompt for regen (mirrors QuizPayload pattern). */
+export interface LabBlockParams {
+  source: string;
+  generationPrompt: string;
+}
+
+/** Parsed lab spec stored in `payloadJson` after Rust-side gray_matter parse. */
+export interface LabBlockPayload {
+  spec: LabSpec;
+}
+
+/** Per-learner per-block lab progress row (LAB-08 migration v006). */
+export interface LabProgress {
+  blockId: string;
+  currentStep: number;
+  completedStepIds: string[];
+  lastUpdated: string;
+  /** Linear: completed_steps / total_steps across the module's labs. */
+  practicalMastery: number;
+}
+
+/** Live PTY session handle returned by `lab_session_open`. */
+export interface LabSession {
+  sessionId: string;
+  /** Host-shell fallback notice when Docker is not detected (LAB-03). */
+  warning?: string;
+  /** Resolved runtime — "docker" or "hostShell". */
+  effectiveRuntime: "docker" | "hostShell";
 }

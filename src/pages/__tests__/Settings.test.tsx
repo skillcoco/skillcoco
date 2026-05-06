@@ -121,4 +121,69 @@ describe("Settings", () => {
       expect(screen.getByText(/claude/i)).toBeInTheDocument();
     }
   });
+
+  // ── Phase 03.1 Wave 0 — Labs runtime selector (LAB-03) ──
+  // FAILS today — Settings has no Labs section. Plan 03.1-07 makes these green.
+
+  describe("Labs runtime selector (Phase 03.1 LAB-03)", () => {
+    it("settings_labs_section_exists — renders a Labs section heading", async () => {
+      renderSettings();
+      const heading = await screen.findByRole("heading", { name: /labs/i });
+      expect(heading).toBeInTheDocument();
+    });
+
+    it("settings_labs_runtime_default_autodetect — runtime selector defaults to Auto-detect", async () => {
+      renderSettings();
+      const selector = await screen.findByTestId("labs-runtime-select");
+      // The default value should reflect "autoDetect" (camelCase per LabRuntimeChoice).
+      expect(selector).toHaveAttribute("data-value", "autoDetect");
+    });
+
+    it("settings_labs_runtime_options — three options visible: Docker, Host shell, Auto-detect", async () => {
+      renderSettings();
+      // The selector exposes its options as buttons / option elements.
+      expect(await screen.findByText(/docker/i)).toBeInTheDocument();
+      expect(await screen.findByText(/host shell/i)).toBeInTheDocument();
+      expect(await screen.findByText(/auto-?detect/i)).toBeInTheDocument();
+    });
+
+    it("settings_labs_runtime_persists — selection invokes update_profile with preferences_json", async () => {
+      renderSettings();
+      const selector = await screen.findByTestId("labs-runtime-select");
+      // Simulate the selector change by firing a DOM-level change event.
+      // The component is expected to read the new value and persist via
+      // tauri-commands.updateProfile with a preferences_json payload that
+      // includes labs_runtime.
+      const { updateProfile } = await import("@/lib/tauri-commands");
+      vi.mocked(updateProfile).mockResolvedValue({
+        id: "p1",
+        displayName: "Test User",
+        learningStyle: "practical",
+        experienceLevel: "intermediate",
+        preferencesJson: '{"labs_runtime":"docker"}',
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+      });
+      await userEvent.click(selector);
+      const dockerOption = await screen.findByRole("option", { name: /^docker$/i });
+      await userEvent.click(dockerOption);
+      await waitFor(() => {
+        expect(updateProfile).toHaveBeenCalled();
+        const arg = vi.mocked(updateProfile).mock.calls[0]?.[0] ?? {};
+        // preferencesJson is the camelCase Tauri-bridged field.
+        expect(JSON.stringify(arg)).toMatch(/labs_runtime/);
+      });
+    });
+
+    it("settings_labs_docker_status_indicator — green when docker_available true, gray when false", async () => {
+      // The Settings page is expected to invoke a probe (e.g. docker_available
+      // command) and surface the status. Wave 0 expectation: the indicator
+      // testid is present and reflects the resolved status.
+      renderSettings();
+      const indicator = await screen.findByTestId("labs-docker-status");
+      expect(["docker-available", "docker-unavailable"]).toContain(
+        indicator.getAttribute("data-status"),
+      );
+    });
+  });
 });

@@ -19,6 +19,13 @@ vi.mock("@/stores/useLearningStore", () => ({
   ),
 }));
 
+// Phase 03.1 Wave 0 — mock LabBlock so the dispatch test asserts routing
+// without depending on the real LabBlock implementation (which lands in
+// 03.1-06). FAILS today because BlockRenderer has no `case "lab":` arm.
+vi.mock("@/components/labs/LabBlock", () => ({
+  LabBlock: vi.fn(() => <div data-testid="lab-block-stub" />),
+}));
+
 import { BlockRenderer } from "@/components/learning/BlockRenderer";
 import type { ModuleBlock } from "@/types/learning";
 
@@ -118,5 +125,31 @@ describe("BlockRenderer Phase 3", () => {
       />
     );
     expect(screen.getByTestId("block-retry-card")).toBeInTheDocument();
+  });
+
+  // ── Phase 03.1 Wave 0 — failing scaffolds (LAB-01) ──
+
+  it("block_renderer_routes_lab_block — lab blockType renders LabBlock", () => {
+    // FAILS until 03.1-06 adds `case "lab":` arm. Today the dispatcher falls
+    // through to the unsupported-block fallback.
+    render(
+      <BlockRenderer
+        block={makeBlock({ blockType: "lab" })}
+        moduleId="mod-1"
+      />
+    );
+    expect(screen.getByTestId("lab-block-stub")).toBeInTheDocument();
+  });
+
+  it("block_renderer_lab_skeleton_for_non_ready — lab block in pending state renders skeleton", () => {
+    // PASSES already — non-ready dispatch is type-agnostic. Locks the
+    // expectation that lab blocks reuse the skeleton flow during generation.
+    render(
+      <BlockRenderer
+        block={makeBlock({ blockType: "lab", status: "generating" })}
+        moduleId="mod-1"
+      />
+    );
+    expect(screen.getByText(/generating/i)).toBeInTheDocument();
   });
 });
