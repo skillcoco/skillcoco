@@ -1194,14 +1194,18 @@ pub async fn regenerate_module(
     // Run PagePlanner FIRST — if it fails, existing blocks are untouched
     let outline = run_page_planner(&auth, &title, &objectives, &level).await?;
 
-    // Delete existing blocks + insert new skeleton in a transaction (brief lock)
+    // Delete existing blocks, then insert new skeleton (brief lock).
+    // No outer transaction here — `insert_skeleton_blocks` owns its own
+    // transaction, and nesting via `unchecked_transaction()` raises
+    // "cannot start a transaction within a transaction". `delete_blocks_by_module`
+    // is a single DELETE statement so SQLite auto-commits it. PagePlanner ran
+    // first above; the atomicity guarantee that matters (don't wipe blocks
+    // until we know we have an outline to replace them with) is already
+    // satisfied at this point.
     let skeleton = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        let tx = db.conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        delete_blocks_by_module(&tx, &req.module_id).map_err(|e| e.to_string())?;
-        let blocks = insert_skeleton_blocks(&tx, &req.module_id, &outline)?;
-        tx.commit().map_err(|e| e.to_string())?;
-        blocks
+        delete_blocks_by_module(&db.conn, &req.module_id).map_err(|e| e.to_string())?;
+        insert_skeleton_blocks(&db.conn, &req.module_id, &outline)?
     };
 
     // Generate in parallel using real auth (best-effort; individual failures tolerated)
