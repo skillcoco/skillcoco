@@ -152,10 +152,7 @@ pub async fn lab_reset(
 ) -> Result<LabResetResult, String> {
     // 1. Look up session metadata.
     let (block_id, learner_id, module_id, workspace) = {
-        let map = state
-            .lab_sessions
-            .lock()
-            .map_err(|e| format!("lab_sessions lock: {}", e))?;
+        let map = state.lab_sessions.lock().await;
         let entry = map
             .get(&request.session_id)
             .ok_or_else(|| format!("session not found: {}", request.session_id))?;

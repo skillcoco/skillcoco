@@ -542,6 +542,42 @@ pub async fn get_lesson_completions(
     Ok(rows)
 }
 
+// ── LAB-09: Module completion gating (Phase 03.1) ──
+
+/// LAB-09 — Composite gate predicate combining conceptual and practical
+/// mastery. Existing BLOCK-02 unlock logic (`apply_mastery_update`) gates
+/// completion on `mastery_level >= 0.7` (the conceptual side). When a
+/// module's spec declares `practical_required: true`, completion ALSO
+/// requires `practical_mastery >= 0.7`.
+///
+/// Default behavior (practical_required = false) is unchanged from
+/// BLOCK-02: only conceptual mastery is checked.
+pub fn module_completion_satisfied(
+    conceptual_mastery: f64,
+    practical_mastery: f64,
+    practical_required: bool,
+) -> bool {
+    let conceptual_ok = conceptual_mastery >= MASTERY_THRESHOLD;
+    let practical_ok = !practical_required || practical_mastery >= MASTERY_THRESHOLD;
+    conceptual_ok && practical_ok
+}
+
+/// LAB-09 — Parse `practical_required` from a module's metadata JSON.
+/// Modules table currently uses `content_json` (and `metadata_json` is
+/// reserved for the future); this helper accepts either column's
+/// content. Returns `false` (unchanged behavior) when:
+/// - the JSON is empty / `{}` / unparseable
+/// - the `practical_required` field is absent or non-boolean.
+pub fn read_practical_required(module_metadata_json: &str) -> bool {
+    if module_metadata_json.trim().is_empty() {
+        return false;
+    }
+    serde_json::from_str::<serde_json::Value>(module_metadata_json)
+        .ok()
+        .and_then(|v| v.get("practical_required").and_then(|x| x.as_bool()))
+        .unwrap_or(false)
+}
+
 // ── LOOP-01: BKT Mastery Update Helper ──
 
 /// Outcome of a single mastery update step.
@@ -2562,26 +2598,14 @@ mod phase3_tests {
 
     // ── LAB-09 — practical_required gating tests (Phase 03.1) ──
     //
-    // 03.1-05 implements:
-    //   pub fn module_completion_satisfied(
-    //       conceptual_mastery: f64,
-    //       practical_mastery: f64,
-    //       practical_required: bool,
-    //   ) -> bool
-    //
-    // Wave 0 stubs the function below as `false` so all three tests fail.
-    // Wave 1 (03.1-05) wires the real comparison against MASTERY_THRESHOLD
-    // (0.7) for both dimensions; the tests then go green.
+    // Implementation lives in `super::module_completion_satisfied` (next
+    // to `apply_mastery_update`). The predicate composes conceptual and
+    // practical mastery against `MASTERY_THRESHOLD` (0.7). Default behavior
+    // (`practical_required = false`) is unchanged from BLOCK-02: only the
+    // conceptual side gates completion.
 
-    fn module_completion_satisfied(
-        _conceptual_mastery: f64,
-        _practical_mastery: f64,
-        _practical_required: bool,
-    ) -> bool {
-        // Wave 0 stub — panic so all three tests fail RED. Wave 1 (03.1-05)
-        // replaces with the real gating against MASTERY_THRESHOLD (0.7).
-        panic!("module_completion_satisfied: implemented in 03.1-05");
-    }
+    use super::module_completion_satisfied;
+    use super::read_practical_required;
 
     /// LAB-09 — when practical_required=false (default), unlock depends
     /// only on conceptual mastery. practical_mastery=0 must NOT block.
@@ -2614,5 +2638,25 @@ mod phase3_tests {
             !satisfied,
             "practical_required=true + practical<0.7 must block completion"
         );
+    }
+
+    /// LAB-09 — when conceptual mastery itself is below threshold,
+    /// completion is blocked regardless of practical_required.
+    #[test]
+    fn conceptual_below_threshold_blocks() {
+        assert!(!module_completion_satisfied(0.69, 0.99, false));
+        assert!(!module_completion_satisfied(0.69, 0.99, true));
+    }
+
+    /// LAB-09 — `read_practical_required` parses `{"practical_required":
+    /// true}` correctly and defaults to false on unparseable / missing input.
+    #[test]
+    fn read_practical_required_parses_module_metadata() {
+        assert!(read_practical_required(r#"{"practical_required": true}"#));
+        assert!(!read_practical_required(r#"{"practical_required": false}"#));
+        assert!(!read_practical_required(r#"{"other": 1}"#));
+        assert!(!read_practical_required("{}"));
+        assert!(!read_practical_required(""));
+        assert!(!read_practical_required("not json"));
     }
 }

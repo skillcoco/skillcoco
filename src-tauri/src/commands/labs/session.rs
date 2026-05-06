@@ -96,10 +96,7 @@ pub async fn lab_session_close(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let entry = {
-        let mut map = state
-            .lab_sessions
-            .lock()
-            .map_err(|e| format!("lab_sessions lock poisoned: {}", e))?;
+        let mut map = state.lab_sessions.lock().await;
         map.remove(&request.session_id)
     };
     match entry {
@@ -113,23 +110,17 @@ pub async fn lab_session_close(
 }
 
 /// LAB-02 — forward stdin bytes to the live PTY/exec.
+///
+/// Acquires the registry lock briefly, performs the write through the
+/// session reference, and drops the lock before awaiting. Sessions stay
+/// in the registry; the lock guard is `!Send` so we can't hold it across
+/// the await point.
 #[tauri::command]
 pub async fn lab_pty_write(
     request: LabPtyWriteRequest,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let map = state
-        .lab_sessions
-        .lock()
-        .map_err(|e| format!("lab_sessions lock poisoned: {}", e))?;
-    let entry = map
-        .get(&request.session_id)
-        .ok_or_else(|| format!("session not found: {}", request.session_id))?;
-    entry
-        .session
-        .write(&request.data)
-        .await
-        .map_err(|e| format!("session.write failed: {}", e))
+    with_session_write(&state, &request.session_id, &request.data).await
 }
 
 /// LAB-02 — propagate xterm cols/rows to the PTY/exec winsize.
@@ -138,16 +129,40 @@ pub async fn lab_pty_resize(
     request: LabPtyResizeRequest,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let map = state
-        .lab_sessions
-        .lock()
-        .map_err(|e| format!("lab_sessions lock poisoned: {}", e))?;
+    with_session_resize(&state, &request.session_id, request.cols, request.rows).await
+}
+
+/// Shared helper: locks the registry, awaits `write` while holding the
+/// (Send-safe) tokio MutexGuard.
+async fn with_session_write(
+    state: &State<'_, AppState>,
+    session_id: &str,
+    data: &[u8],
+) -> Result<(), String> {
+    let map = state.lab_sessions.lock().await;
     let entry = map
-        .get(&request.session_id)
-        .ok_or_else(|| format!("session not found: {}", request.session_id))?;
+        .get(session_id)
+        .ok_or_else(|| format!("session not found: {}", session_id))?;
     entry
         .session
-        .resize(request.cols, request.rows)
+        .write(data)
+        .await
+        .map_err(|e| format!("session.write failed: {}", e))
+}
+
+async fn with_session_resize(
+    state: &State<'_, AppState>,
+    session_id: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let map = state.lab_sessions.lock().await;
+    let entry = map
+        .get(session_id)
+        .ok_or_else(|| format!("session not found: {}", session_id))?;
+    entry
+        .session
+        .resize(cols, rows)
         .await
         .map_err(|e| format!("session.resize failed: {}", e))
 }
@@ -229,10 +244,7 @@ where
 
     // 6. Insert into the AppState registry with sidecar metadata.
     {
-        let mut map = state
-            .lab_sessions
-            .lock()
-            .map_err(|e| format!("lab_sessions lock poisoned: {}", e))?;
+        let mut map = state.lab_sessions.lock().await;
         let entry = LabSessionEntry {
             session: to_send_box(session),
             block_id: request.block_id.clone(),
@@ -350,7 +362,7 @@ mod tests {
         let db = crate::db::Database { conn };
         Arc::new(AppState {
             db: Arc::new(Mutex::new(db)),
-            lab_sessions: Arc::new(Mutex::new(HashMap::new())),
+            lab_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         })
     }
 
@@ -460,7 +472,7 @@ mod tests {
         };
 
         {
-            let mut map = state.lab_sessions.lock().unwrap();
+            let mut map = state.lab_sessions.lock().await;
             let entry = LabSessionEntry {
                 session: to_send_box(session),
                 block_id: request.block_id.clone(),
@@ -509,7 +521,7 @@ mod tests {
         .await
         .expect("open must succeed");
 
-        let map = state.lab_sessions.lock().unwrap();
+        let map = state.lab_sessions.lock().await;
         assert!(
             map.contains_key(&result.session_id),
             "session must be inserted into registry"
@@ -541,7 +553,7 @@ mod tests {
         let state = test_app_state();
         let session_id = "test-close-1".to_string();
         {
-            let mut map = state.lab_sessions.lock().unwrap();
+            let mut map = state.lab_sessions.lock().await;
             map.insert(
                 session_id.clone(),
                 entry_with_mock(&session_id, MockLabSession::new(&session_id)),
@@ -550,13 +562,13 @@ mod tests {
 
         // Replicate the close handler body.
         let removed = {
-            let mut map = state.lab_sessions.lock().unwrap();
+            let mut map = state.lab_sessions.lock().await;
             map.remove(&session_id)
         };
         let removed = removed.expect("session must be present");
         removed.session.close().await.expect("close must succeed");
 
-        let map = state.lab_sessions.lock().unwrap();
+        let map = state.lab_sessions.lock().await;
         assert!(!map.contains_key(&session_id), "registry must be empty after close");
     }
 
@@ -568,12 +580,12 @@ mod tests {
         let mock = MockLabSession::new(&session_id);
         let writes_handle = mock.writes_arc();
         {
-            let mut map = state.lab_sessions.lock().unwrap();
+            let mut map = state.lab_sessions.lock().await;
             map.insert(session_id.clone(), entry_with_mock(&session_id, mock));
         }
 
         {
-            let map = state.lab_sessions.lock().unwrap();
+            let map = state.lab_sessions.lock().await;
             let entry = map.get(&session_id).unwrap();
             entry
                 .session
@@ -596,12 +608,12 @@ mod tests {
         let mock = MockLabSession::new(&session_id);
         let resizes_handle = mock.resizes_arc();
         {
-            let mut map = state.lab_sessions.lock().unwrap();
+            let mut map = state.lab_sessions.lock().await;
             map.insert(session_id.clone(), entry_with_mock(&session_id, mock));
         }
 
         {
-            let map = state.lab_sessions.lock().unwrap();
+            let map = state.lab_sessions.lock().await;
             let entry = map.get(&session_id).unwrap();
             entry.session.resize(120, 40).await.expect("resize must succeed");
         }

@@ -21,10 +21,7 @@ pub async fn lab_check_step(
 ) -> Result<LabCheckStepResult, String> {
     // 1. Look up the session sidecar metadata.
     let (block_id, learner_id, module_id, workspace, ai_budget) = {
-        let map = state
-            .lab_sessions
-            .lock()
-            .map_err(|e| format!("lab_sessions lock: {}", e))?;
+        let map = state.lab_sessions.lock().await;
         let entry = map
             .get(&request.session_id)
             .ok_or_else(|| format!("session not found: {}", request.session_id))?;
@@ -94,10 +91,7 @@ pub async fn lab_show_hint(
 ) -> Result<LabShowHintResult, String> {
     // Resolve block_id from the session.
     let block_id = {
-        let map = state
-            .lab_sessions
-            .lock()
-            .map_err(|e| format!("lab_sessions lock: {}", e))?;
+        let map = state.lab_sessions.lock().await;
         let entry = map
             .get(&request.session_id)
             .ok_or_else(|| format!("session not found: {}", request.session_id))?;

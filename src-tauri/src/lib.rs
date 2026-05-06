@@ -37,7 +37,11 @@ pub struct AppState {
     /// Populated by `commands::labs::lab_session_open` and drained by
     /// `lab_session_close` / PTY exit. Each entry carries sidecar metadata
     /// so per-session IPC handlers don't need a fresh DB lookup.
-    pub lab_sessions: Arc<Mutex<HashMap<String, LabSessionEntry>>>,
+    ///
+    /// Uses `tokio::sync::Mutex` (not `std::sync::Mutex`) so the lock guard
+    /// is `Send` and can be held across `await` points inside async IPC
+    /// handlers (`lab_pty_write` / `lab_pty_resize` / `lab_check_step`).
+    pub lab_sessions: Arc<tokio::sync::Mutex<HashMap<String, LabSessionEntry>>>,
 }
 
 pub fn run() {
@@ -57,7 +61,7 @@ pub fn run() {
             let database = Database::new(&db_path).expect("Failed to initialize database");
             app.manage(AppState {
                 db: Arc::new(Mutex::new(database)),
-                lab_sessions: Arc::new(Mutex::new(HashMap::new())),
+                lab_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             });
 
             // Auth credential store
@@ -73,6 +77,23 @@ pub fn run() {
             )
             .expect("Failed to initialize vector store");
             app.manage(vector_state);
+
+            // Phase 03.1 — materialize the OSC 133 init script once at app
+            // startup so Docker mode can bind-mount it into containers and
+            // host shell mode can `--init-file` source it. Idempotent: only
+            // writes when missing.
+            let init_script_path = app_dir.join("labs").join("init.sh");
+            if let Some(parent) = init_script_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .expect("Failed to create labs/ dir under app data dir");
+            }
+            if !init_script_path.exists() {
+                std::fs::write(
+                    &init_script_path,
+                    commands::labs::OSC_133_INIT_SCRIPT,
+                )
+                .expect("Failed to write OSC 133 init script");
+            }
 
             log::info!("LearnForge initialized with DB at {:?}", db_path);
             Ok(())
@@ -123,6 +144,16 @@ pub fn run() {
             // Lesson completion (Phase 3 — Wave 3, 03-05)
             commands::learning::mark_lesson_complete,
             commands::learning::get_lesson_completions,
+            // Lab commands (Phase 03.1 — Wave 2b, 03.1-05)
+            commands::labs::session::lab_session_open,
+            commands::labs::session::lab_session_close,
+            commands::labs::session::lab_pty_write,
+            commands::labs::session::lab_pty_resize,
+            commands::labs::eval::lab_check_step,
+            commands::labs::eval::lab_show_hint,
+            commands::labs::state::lab_reset,
+            commands::labs::state::lab_get_progress,
+            commands::labs::session::lab_runtime_detect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
