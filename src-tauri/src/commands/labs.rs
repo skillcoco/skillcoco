@@ -437,10 +437,11 @@ mod tests {
         // Round-trip: parse params, extract labMd, parse via parse_lab_md.
         let parsed: serde_json::Value = serde_json::from_str(&params).unwrap();
         let raw = parsed["labMd"].as_str().unwrap();
-        let spec = crate::labs::spec::parse_lab_md(raw)
-            .expect("parse_lab_md must succeed once 03.1-02 lands");
+        let (spec, body) = crate::labs::spec::parse_lab_md(raw)
+            .expect("parse_lab_md must succeed once 03.1-03 lands");
         assert_eq!(spec.slug, "pod-create-and-inspect");
         assert_eq!(spec.steps.len(), 4);
+        assert!(!body.trim().is_empty(), "body must round-trip for paramsJson");
     }
 
     /// LAB-07 — surgical reset removes only the files listed in
