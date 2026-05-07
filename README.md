@@ -29,6 +29,27 @@ LearnForge is an **open-source adaptive learning platform** for engineering team
 
 ---
 
+## Preview
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/01-dashboard.png">
+        <img src="docs/screenshots/01-dashboard.png" alt="Dashboard — Smart Session, mastery stats, track cards" />
+      </a>
+      <p align="center"><sub><strong>Dashboard</strong> — Smart Session recommends the next action (review due cards, continue a track). Stats are real BKT mastery and SR review queue, not video-completion theater.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/02-lesson.png">
+        <img src="docs/screenshots/02-lesson.png" alt="Lesson view — content, lessons sub-list, AI tutor sidebar" />
+      </a>
+      <p align="center"><sub><strong>Lesson view</strong> — AI-generated content shaped by learner state, with the AI Tutor always one click away. The tutor receives the active section as primary context, so answers are grounded in what's on screen.</sub></p>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## The adaptive mastery loop
 
 ```
