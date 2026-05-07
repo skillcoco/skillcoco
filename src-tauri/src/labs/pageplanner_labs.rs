@@ -114,25 +114,53 @@ fn slug_to_title(slug: &str) -> String {
 /// budget per RESEARCH § risk row 1167.
 pub fn build_labs_prompt_rule() -> &'static str {
     r#"
-- labs: 0-2 hands-on lab specs PER MODULE. Emit a lab ONLY when:
-    * the module is about a CLI tool, runtime, framework, or hands-on system
-      (Kubernetes, Docker, Terraform, Linux, kubectl, npm, cargo, Rust ownership,
-      Go goroutines, Python virtualenv, etc.)
-    * the learning objectives include verbs like "create", "deploy", "configure",
-      "debug", "inspect", "run"
-  Emit ZERO labs for pure-theory modules ("history of …", "principles of …",
-  "comparing X vs Y"). When in doubt, emit zero — the cost of a missing lab is
-  small; the cost of a useless lab is high.
+- labs: 1-2 hands-on lab specs PER MODULE BY DEFAULT. Hands-on practice
+  closes the read → understand → DO loop and is the entire point of this
+  course type. Emit AT LEAST ONE lab unless the module is genuinely
+  pure-theory (e.g. "history of distributed systems", "comparing CAP vs
+  PACELC", "ethics of AI"). Architecture, design, configuration, and
+  workflow modules ALL benefit from labs — do not be fooled by abstract
+  words like "architecture", "patterns", "design", "fundamentals", or
+  "introduction" appearing in the module title.
+
+  Emit a lab whenever ANY of the following is true:
+    * the module mentions a runtime, CLI tool, framework, library,
+      protocol, or system that the learner can actually run on a laptop
+      (Kubernetes, Docker, Ansible, Terraform, Linux, kubectl, helm,
+      kustomize, ansible-playbook, npm, cargo, go, python, pip, pytest,
+      git, curl, jq, sed, awk, ssh, vim, systemd, postgres, redis,
+      nginx, traefik, kafka, kind, k3d, minikube, ...)
+    * the learning objectives include verbs like "create", "deploy",
+      "configure", "debug", "inspect", "run", "build", "write", "test",
+      "manage", "automate", "orchestrate", "provision", "monitor",
+      "secure", "trace", "profile", "operate", "scale", "rollback",
+      "migrate", "validate", "lint", "execute"
+    * the module title or objectives reference an artifact a learner
+      produces (a Playbook, a Pod, a Deployment, a state file, a
+      module, a script, a YAML manifest, a Dockerfile, ...)
+
+  Emit ZERO labs ONLY for genuinely conceptual modules — and even then
+  prefer a small inspection-style lab ("inspect existing state",
+  "read-only walkthrough") to no lab at all. **Default position: emit
+  at least one lab.** A learner remembers what they typed; they
+  forget what they read.
 
 - For each lab:
     * slug: kebab-case, 3-6 words.
-    * title: 4-8 words, action-verb first ("Create and inspect a Pod").
-    * rationale: ONE sentence.
-    * image: prefer a public registry tag (kindest/node, alpine, rust:slim,
-      python:3.12, golang:1.22). Use `dockerfile` only when no public image fits.
-    * dockerfile (if used): minimal, 3-8 lines, no entrypoint (we run a shell).
-    * requires_docker: true ONLY for cluster/system labs (kindest/node, etc.);
-      false for `python:3.12` / `node:20` / `alpine` style.
+    * title: 4-8 words, action-verb first ("Create and inspect a Pod",
+      "Write your first Ansible Playbook", "Deploy multi-tier app
+      with Helm").
+    * rationale: ONE sentence — what the learner WILL DO and why.
+    * image: prefer a public registry tag (kindest/node, alpine,
+      rust:slim, python:3.12, golang:1.22, hashicorp/terraform,
+      ansible/ansible-runner, ubuntu:22.04). Use `dockerfile` only when
+      no public image fits the lab's tooling.
+    * dockerfile (if used): minimal, 3-8 lines, no entrypoint (we run
+      a shell).
+    * requires_docker: true ONLY for cluster/system labs (kindest/node,
+      docker-in-docker, ...); false for `python:3.12` / `node:20` /
+      `alpine` / `ubuntu` / `hashicorp/terraform` style images that run
+      fine in the host shell when Docker is absent.
     * estimated_minutes: 5-15.
     * step_count_target: 4-8.
 "#

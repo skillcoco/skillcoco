@@ -1245,6 +1245,31 @@ pub async fn regenerate_module(
                 let c = BlockAIClient::new(&auth);
                 generate_flash_cards_with_client(&c, block, &title).await
             }
+            "lab" => {
+                // Mirrors the parallel-path lab arm in generate_blocks_in_parallel_with_client.
+                // Without this arm, regenerate_module would fail every lab block with
+                // "unknown block type" — the bug observed when learners click Regenerate.
+                let c = Arc::clone(&client_arc);
+                crate::labs::pageplanner_labs::generate_lab_block_payload(
+                    &block.params_json,
+                    &title,
+                    move |p: String| {
+                        let c = Arc::clone(&c);
+                        Box::pin(async move {
+                            c.request(crate::ai::service::AIServiceRequest {
+                                system_prompt: p,
+                                messages: vec![crate::ai::service::ServiceMessage {
+                                    role: "user".to_string(),
+                                    content: "Return ONLY the LAB.md content.".to_string(),
+                                }],
+                                max_tokens: Some(3000),
+                                temperature: Some(0.4),
+                                response_format: None,
+                            }, 2).await
+                        })
+                    },
+                ).await
+            }
             _ => Err("unknown block type".to_string()),
         };
 
@@ -1258,8 +1283,6 @@ pub async fn regenerate_module(
             }
         }
     }
-
-    let _ = client_arc;
 
     // Return final state
     let db = state.db.lock().map_err(|e| e.to_string())?;
