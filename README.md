@@ -23,7 +23,7 @@ git clone https://github.com/agentixgarage/learnforge && cd learnforge && pnpm i
 
 ---
 
-LearnForge is an **open-source adaptive learning platform** for engineering teams. It combines **Bayesian Knowledge Tracing**, **SM-2 spaced repetition**, **AI-generated content shaped by learner state**, and **hands-on terminal labs** in a single mastery loop. Modules don't unlock by time-in-seat — they unlock when the learner *demonstrates* understanding. Free desktop app today (MIT). Cohort-grade web platform for L&D in 2027.
+LearnForge is an **open-source adaptive learning platform** for engineering teams. It combines **Bayesian Knowledge Tracing**, **SM-2 spaced repetition**, **AI-generated content shaped by learner state**, and **hands-on terminal labs** in a single mastery loop. Modules don't unlock by time-in-seat — they unlock when the learner *demonstrates* understanding. Free desktop app today (MIT). Cohort-grade web platform for L&D in a few months.
 
 > If your organization spends six figures a year on L&D and cannot answer *"how many of our engineers can actually do X today?"* — we built this for you.
 
@@ -116,7 +116,7 @@ Topic packs are **structure**, not video. AI generates content per learner again
 
 **Free desktop (MIT — this repo):** full adaptive engine, hands-on labs, BYOK or Ollama, all algorithms auditable, data stays local.
 
-**LearnForge Cloud (commercial — 2027):** multi-tenant web · cohorts · manager heatmaps · multi-modal video + labs · SSO/SAML · SCORM/xAPI · Credly badges · ROI analytics · white-label. Same `learnforge-core` crate. Algorithms remain open; the moat is enterprise surface.
+**LearnForge Cloud (commercial — late 2026):** multi-tenant web · cohorts · manager heatmaps · multi-modal video + labs · SSO/SAML · SCORM/xAPI · Credly badges · ROI analytics · white-label. Same `learnforge-core` crate. Algorithms remain open; the moat is enterprise surface.
 
 → **L&D leaders at GCCs and software orgs:** [open an issue tagged `pilot-interest`](https://github.com/agentixgarage/learnforge/issues/new) to be a design partner.
 
@@ -161,7 +161,7 @@ Phase-level detail: [`.planning/ROADMAP.md`](./.planning/ROADMAP.md). Per-requir
 
 ## Built by
 
-**Gourav Shah** — Founder, [School of DevOps](https://schoolofdevops.com) and [Agentix Garage](https://agentixgarage.com). 17+ years in DevOps · 270K+ Udemy students · trained engineers at Adobe, Cisco, Visa, Walmart Labs, IBM, Expedia, DreamWorks, EMC², RBS, Accenture, Nasdaq, Volkswagen, NetApp.
+**[Gourav Shah](https://www.linkedin.com/in/gouravshah/)** — Founder, [School of DevOps](https://schoolofdevops.com) and [Agentix Garage](https://agentixgarage.com). 17+ years in DevOps · 270K+ Udemy students · trained engineers at Adobe, Cisco, Visa, Walmart Labs, IBM, Expedia, DreamWorks, EMC², RBS, Accenture, Nasdaq, Volkswagen, NetApp.
 
 **Vivian Aranha** — Data & AI Specialist at IBM, CEO of School of AI · MIT Sloan · GWU · 1M+ Udemy enrollments · 8+ years in AI/ML.
 
