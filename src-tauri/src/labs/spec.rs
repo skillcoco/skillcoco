@@ -34,6 +34,10 @@ pub struct LabSpec {
 pub struct LabStep {
     pub id: String,
     pub title: String,
+    /// Markdown body for the step — what the learner reads in the
+    /// instructions panel. Required: without prose, the lab reduces to
+    /// "guess what to type" (LabInstructions renders this via Markdown).
+    pub prompt: String,
     pub check: StepCheck,
     pub hints: Vec<String>,
 }
@@ -86,6 +90,8 @@ struct LabSpecRaw {
 struct LabStepRaw {
     id: String,
     title: String,
+    #[serde(default)]
+    prompt: String,
     check: StepCheck,
     #[serde(default)]
     hints: Vec<String>,
@@ -113,6 +119,13 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
             return Err(LabError::Spec(format!("duplicate step id: {:?}", s.id)));
         }
         validate_step_check(&s.check)?;
+        if s.prompt.trim().is_empty() {
+            return Err(LabError::Spec(format!(
+                "step {:?} is missing `prompt:` (the markdown body that tells \
+                 the learner what to do — without it the lab is just titles)",
+                s.id
+            )));
+        }
     }
     validate_creates(&raw.creates)?;
 
@@ -129,6 +142,7 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
             .map(|s| LabStep {
                 id: s.id,
                 title: s.title,
+                prompt: s.prompt,
                 check: s.check,
                 hints: s.hints,
             })
@@ -150,6 +164,13 @@ pub fn validate_spec(spec: &LabSpec) -> Result<(), LabError> {
             return Err(LabError::Spec(format!("duplicate step id: {:?}", s.id)));
         }
         validate_step_check(&s.check)?;
+        if s.prompt.trim().is_empty() {
+            return Err(LabError::Spec(format!(
+                "step {:?} is missing `prompt:` (the markdown body that tells \
+                 the learner what to do)",
+                s.id
+            )));
+        }
     }
     validate_creates(&spec.creates)
 }
@@ -359,6 +380,7 @@ mod tests {
             steps: vec![LabStep {
                 id: "s1".to_string(),
                 title: "s1".to_string(),
+                prompt: "do the thing".to_string(),
                 check: StepCheck::AiJudge {
                     criteria: "ok".to_string(),
                     threshold: 0.7,

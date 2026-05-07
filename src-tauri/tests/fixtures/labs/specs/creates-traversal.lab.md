@@ -9,6 +9,9 @@ creates:
 steps:
   - id: noop
     title: Will never reach here
+    prompt: |
+      This step exists only so the traversal validator runs. Real labs
+      explain what to do here.
     check:
       kind: exit_code
       expected: 0

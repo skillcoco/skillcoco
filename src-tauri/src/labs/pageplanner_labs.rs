@@ -222,6 +222,12 @@ creates:
 steps:
   - id: step-1
     title: Action-verb first ("Create the Pod manifest")
+    prompt: |
+      Two to four sentences telling the learner WHAT to do, WHY it matters,
+      and WHAT they should observe. Reference exact filenames, commands, and
+      expected output. Use Markdown — backticks for code, **bold** for
+      emphasis. NO TODO placeholders. The learner reads this and types
+      commands; they cannot guess what you mean.
     check:
       kind: command_regex          # OR exit_code, file_state, ai_judge
       pattern: "Running"           # required for command_regex
@@ -234,19 +240,19 @@ steps:
       - "Full solution — the complete command they should run"
   # ...repeat for each step
 ---
-## Step 1: <step.title>
 
-One short paragraph telling the learner what to do, why, and what they should
-observe. Be specific to {module_title}. Reference the actual files / commands
-they will run.
+# {lab_title}
 
-## Step 2: <step.title>
-
-...
+One short paragraph introducing the lab as a whole — what the learner will
+build, what they will know by the end. (Optional — top-level intro only,
+NOT per-step prose. Per-step prose lives in each step's `prompt:` field.)
 ```
 
 Rules:
   - {step_count_target} steps, ordered foundational → advanced.
+  - EVERY step MUST have a non-empty `prompt:` field (markdown body, 2-4
+    sentences). Without it the learner sees only step titles and has nothing
+    to follow. The parser REJECTS specs with empty prompts.
   - Each step.check uses EXACTLY ONE of: command_regex | exit_code |
     file_state | ai_judge.
   - PREFER deterministic checks (command_regex, exit_code, file_state).
@@ -256,12 +262,12 @@ Rules:
     Workspace-relative paths only (no absolute paths, no `..`).
   - `image:` {image_or_dockerfile_decision}.
   - `requiresDocker: {requires_docker}` — copy this exact value.
-  - Step prompts must be specific to {module_title} — no generic
+  - Step prompts and titles must be specific to {module_title} — no generic
     placeholders like "TODO" or "your file here".
 
 Your entire response MUST start with `---\n` and contain a closing `---\n`
-before the first `## Step` heading. No JSON. No preamble. No code fences
-around the document. Output ONLY the LAB.md.
+before the markdown body. No JSON. No preamble. No code fences around the
+document. Output ONLY the LAB.md.
 "#,
         module_title = module_title,
         lab_title = lab.title,

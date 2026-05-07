@@ -9,6 +9,12 @@ creates:
 steps:
   - id: write-manifest
     title: Write a Pod manifest
+    prompt: |
+      Create a `manifests/` directory and place a Pod manifest at
+      `manifests/pod.yaml`. The Pod should be named `web`, run a single
+      container using the `nginx:alpine` image, and expose port 80. The
+      minimum Kubernetes Pod manifest requires `apiVersion`, `kind`,
+      `metadata`, and `spec` — make sure all four are present.
     check:
       kind: file_state
       path: manifests/pod.yaml
@@ -19,6 +25,10 @@ steps:
       - "Try: mkdir -p manifests && cat > manifests/pod.yaml <<EOF ... EOF"
   - id: apply-manifest
     title: Apply the manifest
+    prompt: |
+      Apply the manifest you just wrote so Kubernetes creates the Pod in the
+      default namespace. Use `kubectl apply -f manifests/pod.yaml`. Successful
+      output looks like `pod/web created`.
     check:
       kind: command_regex
       pattern: "pod/web (created|configured)"
@@ -28,6 +38,10 @@ steps:
       - "If kubectl errors, check that the kind cluster is up."
   - id: verify-running
     title: Verify the Pod is running
+    prompt: |
+      List Pods in the default namespace and confirm the `web` Pod's `STATUS`
+      is `Running`. Run `kubectl get pods` and wait until STATUS=Running
+      before moving on.
     check:
       kind: exit_code
       expected: 0
@@ -37,6 +51,9 @@ steps:
       - "Wait for STATUS=Running before continuing."
   - id: capture-output
     title: Capture the run output for review
+    prompt: |
+      Save the output of `kubectl get pods` into `notes/run-output.txt` so you
+      can refer back to it later. The file must contain the word `Running`.
     check:
       kind: file_state
       path: notes/run-output.txt
@@ -49,25 +66,5 @@ steps:
 
 # Create and inspect a Pod
 
-In this lab you will write a Pod manifest, apply it to your kind cluster, and confirm
-the Pod is running. Each step has 3 progressive hints if you get stuck.
-
-## Step 1 — Write a Pod manifest
-
-Create `manifests/pod.yaml` with a single-container Pod. Use `nginx:alpine` as the
-image and name the Pod `web`.
-
-## Step 2 — Apply the manifest
-
-Apply the manifest with `kubectl apply -f manifests/pod.yaml`. The expected output
-includes `pod/web created` (or `configured` on a re-apply).
-
-## Step 3 — Verify the Pod is running
-
-Run `kubectl get pods` and confirm the Pod's STATUS is `Running`. The exit code
-must be 0.
-
-## Step 4 — Capture the run output
-
-Save the kubectl output to `notes/run-output.txt` so you have a record of what
-the cluster looked like when the Pod came up.
+In this lab you will write a Pod manifest, apply it to your kind cluster, and
+confirm the Pod is running. Each step has 3 progressive hints if you get stuck.

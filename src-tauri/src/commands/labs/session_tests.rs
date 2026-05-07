@@ -378,6 +378,8 @@ creates: []
 steps:
   - id: s1
     title: Run a command
+    prompt: |
+      Print hello to confirm the shell is alive.
     check:
       kind: command_regex
       pattern: \"hello\"

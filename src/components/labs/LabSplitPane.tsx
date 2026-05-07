@@ -1,9 +1,11 @@
 // Phase 03.1 plan 03.1-06 — reusable horizontal split-pane.
 //
-// 60/40 default split, draggable separator, glassmorphism aesthetic via
-// the existing `var(--glass-bg)` / `var(--glass-border)` tokens. No
-// third-party split-pane dependency — pure CSS flex + a pointerdown
-// listener on the separator. Stays under 200 lines per the plan.
+// 40/60 default split (instructions left, terminal right — terminal needs
+// the bigger half so commands and output are readable). Draggable
+// separator, glassmorphism aesthetic via the existing `var(--glass-bg)`
+// / `var(--glass-border)` tokens. No third-party split-pane dependency —
+// pure CSS flex + a pointerdown listener on the separator. Stays under
+// 200 lines per the plan.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -14,14 +16,15 @@ const MAX_PERCENT = 80;
 export interface LabSplitPaneProps {
   left: ReactNode;
   right: ReactNode;
-  /** Initial left-pane percentage (clamped 30..80). Defaults to 60. */
+  /** Initial left-pane percentage (clamped 30..80). Defaults to 40 — the
+   *  terminal needs the bigger half so commands and output are readable. */
   defaultLeftPercent?: number;
 }
 
 export function LabSplitPane({
   left,
   right,
-  defaultLeftPercent = 60,
+  defaultLeftPercent = 40,
 }: LabSplitPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
