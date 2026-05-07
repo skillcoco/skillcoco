@@ -159,6 +159,20 @@ export function ModuleView() {
     [blocks],
   );
 
+  // Lab "fullscreen" mode: when the learner is on the Practice tab AND a lab
+  // exists, hide the CourseSidebar and render ONE lab at a time at the full
+  // available width/height. The instructions panel + terminal need real
+  // estate; squeezing them into the right ~50% of the screen makes the
+  // terminal unusable.
+  const inLabMode = tab === "practice" && labBlocks.length > 0;
+  const [activeLabIndex, setActiveLabIndex] = useState(0);
+  // Clamp activeLabIndex if labBlocks shrinks (e.g. after regen).
+  useEffect(() => {
+    if (activeLabIndex >= labBlocks.length && labBlocks.length > 0) {
+      setActiveLabIndex(0);
+    }
+  }, [activeLabIndex, labBlocks.length]);
+
   // Active lesson resolution: prefer currentLessonId from store; fall back to
   // the first section block. Index is computed against the section list so
   // Prev/Next can hop with bounds checks.
@@ -279,8 +293,10 @@ export function ModuleView() {
 
   return (
     <div className="-m-6 flex h-[calc(100vh-3rem)] overflow-hidden">
-      {/* Course (LMS) sidebar — modules list, click to navigate */}
-      {currentTrack && (
+      {/* Course (LMS) sidebar — modules list, click to navigate.
+          Hidden in lab fullscreen mode so the lab can use the full width
+          for instructions + terminal. */}
+      {currentTrack && !inLabMode && (
         <CourseSidebar
           track={currentTrack}
           modules={pathModules}
@@ -289,12 +305,24 @@ export function ModuleView() {
         />
       )}
 
-      {/* Main scrollable content area */}
+      {/* Main scrollable content area. In lab mode we drop the max-width
+          constraint and switch to a flex-column layout so the active lab can
+          fill the full available width and height. */}
       <div
         ref={scrollRef}
-        className={cn("flex-1 overflow-y-auto", tutorOpen && "lg:mr-96")}
+        className={cn(
+          "flex-1",
+          inLabMode ? "overflow-hidden" : "overflow-y-auto",
+          tutorOpen && "lg:mr-96",
+        )}
       >
-        <div className="mx-auto max-w-4xl space-y-6 p-6">
+        <div
+          className={cn(
+            inLabMode
+              ? "flex h-full flex-col gap-4 p-4"
+              : "mx-auto max-w-4xl space-y-6 p-6",
+          )}
+        >
 
           {/* Header */}
           <div className="flex items-center gap-3">
@@ -539,18 +567,67 @@ export function ModuleView() {
                 arm; the polling effect above already pulls progress as
                 blocks transition from pending → ready. */}
           {tab === "practice" && (
-            <div data-testid="practice-tab" className="space-y-4">
+            <div
+              data-testid="practice-tab"
+              className={cn(
+                "flex flex-col gap-3",
+                inLabMode ? "min-h-0 flex-1" : "",
+              )}
+            >
               {labBlocks.length > 0 ? (
-                <div className="space-y-4">
-                  {labBlocks.map((lab) => (
+                <>
+                  {/* Lab picker — shown only when 2+ labs exist in this module.
+                      One lab at a time gets the full content height; flipping
+                      between them is a click. */}
+                  {labBlocks.length > 1 && (
+                    <div
+                      role="tablist"
+                      aria-label="Labs in this module"
+                      className="flex flex-wrap gap-2"
+                    >
+                      {labBlocks.map((lab, i) => {
+                        const params = (() => {
+                          try {
+                            return JSON.parse(lab.paramsJson) as {
+                              outline?: { title?: string };
+                            };
+                          } catch {
+                            return {} as { outline?: { title?: string } };
+                          }
+                        })();
+                        const labTitle = params.outline?.title || `Lab ${i + 1}`;
+                        const isActive = i === activeLabIndex;
+                        return (
+                          <button
+                            key={lab.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={isActive}
+                            onClick={() => setActiveLabIndex(i)}
+                            className={cn(
+                              "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+                              isActive
+                                ? "border-primary bg-primary/10 text-foreground"
+                                : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+                            )}
+                          >
+                            Lab {i + 1}: {labTitle}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* Single lab, full content height. Renders via BlockRenderer
+                      so skeleton/failed states still work uniformly. */}
+                  <div className="min-h-0 flex-1">
                     <BlockRenderer
-                      key={lab.id}
-                      block={lab}
+                      key={labBlocks[activeLabIndex]?.id}
+                      block={labBlocks[activeLabIndex]!}
                       moduleId={moduleId!}
                       trackId={trackId}
                     />
-                  ))}
-                </div>
+                  </div>
+                </>
               ) : (
                 <>
                   <div className="glass rounded-lg border border-border px-4 py-3 text-sm text-foreground/80">

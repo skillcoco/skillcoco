@@ -284,7 +284,7 @@ export function LabBlock({ block, learnerId, trackId }: LabBlockProps) {
       data-testid="lab-block"
       data-glass-surface="true"
       data-theme={theme}
-      className="flex h-[36rem] flex-col gap-2 overflow-hidden rounded-lg p-2 glass"
+      className="flex h-full min-h-[36rem] flex-col gap-2 overflow-hidden rounded-lg p-2 glass"
     >
       {warning ? (
         <div
