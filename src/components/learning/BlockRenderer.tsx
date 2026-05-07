@@ -48,9 +48,25 @@ export function BlockRenderer({
     block.status === "generating" ||
     block.status === "failed"
   ) {
+    // Surface the real generator error when one was captured by Rust into
+    // metadata_json.lastError (see update_block_failed_with_error in
+    // commands/blocks.rs). Falls back to undefined → BlockSkeleton's generic
+    // "no error detail captured" hint.
+    let errorMessage: string | undefined;
+    if (block.status === "failed" && block.metadataJson) {
+      try {
+        const meta = JSON.parse(block.metadataJson) as { lastError?: unknown };
+        if (typeof meta.lastError === "string" && meta.lastError.length > 0) {
+          errorMessage = meta.lastError;
+        }
+      } catch {
+        // metadata_json malformed; fall back to generic message
+      }
+    }
     return (
       <BlockSkeleton
         status={block.status}
+        errorMessage={errorMessage}
         onRetry={
           block.status === "failed"
             ? () => regenerateLesson(block.id)

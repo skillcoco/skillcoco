@@ -104,6 +104,30 @@ pub fn update_block_status(
     .map_err(|e| e.to_string())
 }
 
+/// Flip a block to `failed` AND write the actual generator error to
+/// `metadata_json.lastError` so the UI can surface it. Without this
+/// path, the BlockSkeleton's hardcoded "AI provider may be rate-limited"
+/// message lies to learners about what actually happened.
+pub fn update_block_failed_with_error(
+    conn: &rusqlite::Connection,
+    block_id: &str,
+    error_msg: &str,
+) -> Result<(), String> {
+    log::warn!("block {} generation failed: {}", block_id, error_msg);
+    // Use json_set to merge lastError into metadata_json without
+    // clobbering existing keys (concept_id, last_ai_judge, etc.).
+    conn.execute(
+        "UPDATE module_blocks
+            SET status = 'failed',
+                metadata_json = json_set(metadata_json, '$.lastError', ?1),
+                updated_at = datetime('now')
+            WHERE id = ?2",
+        rusqlite::params![error_msg, block_id],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
 // ── Core helpers ──
 
 /// Wrap a legacy modules.content markdown blob as a single section block.
@@ -763,8 +787,8 @@ where
                         update_block_payload(&db_guard.conn, &block.id, BlockStatus::Ready, payload)
                             .map_err(|e| e.to_string())?;
                     }
-                    Err(_) => {
-                        update_block_status(&db_guard.conn, &block.id, "failed")?;
+                    Err(err) => {
+                        update_block_failed_with_error(&db_guard.conn, &block.id, err)?;
                     }
                 }
             }
@@ -1179,9 +1203,10 @@ pub async fn regenerate_lesson(
                 update_block_payload(&db.conn, &req.block_id, BlockStatus::Ready, payload)
                     .map_err(|e| e.to_string())?;
             }
-            Err(_) => {
+            Err(err) => {
                 // KEEP old payload on failure — only flip status to failed
-                update_block_status(&db.conn, &req.block_id, "failed")?;
+                // and record the actual generator error in metadata_json.
+                update_block_failed_with_error(&db.conn, &req.block_id, err)?;
             }
         }
     }
@@ -1306,8 +1331,8 @@ pub async fn regenerate_module(
             Ok(payload) => {
                 let _ = update_block_payload(&db.conn, &block.id, BlockStatus::Ready, payload);
             }
-            Err(_) => {
-                let _ = update_block_status(&db.conn, &block.id, "failed");
+            Err(err) => {
+                let _ = update_block_failed_with_error(&db.conn, &block.id, err);
             }
         }
     }

@@ -3,27 +3,42 @@ import type { BlockStatus } from "@/types/learning";
 interface BlockSkeletonProps {
   status: BlockStatus;
   onRetry?: () => void;
+  /** Actual generator error from Rust (metadata_json.lastError). */
+  errorMessage?: string;
 }
 
 /**
  * Skeleton state for a block that is pending, generating, or failed.
  *
  * - pending / generating: skeleton paragraphs + "Generating..." chip
- * - failed: "Couldn't generate" inline card with Retry button
+ * - failed: "Couldn't generate" inline card with Retry button. Shows the
+ *   actual generator error when one is captured in metadata_json.lastError;
+ *   falls back to a generic message otherwise.
  *
  * Glassmorphism styling (glass/glass-strong) per Phase 3 CONTEXT.md.
- * No emojis — icons use text or Lucide (none used here to keep deps minimal).
  */
-export function BlockSkeleton({ status, onRetry }: BlockSkeletonProps) {
+export function BlockSkeleton({ status, onRetry, errorMessage }: BlockSkeletonProps) {
   if (status === "failed") {
     return (
       <div
         className="glass rounded-lg p-6 my-4 border-l-4 border-red-400"
         data-testid="block-retry-card"
       >
-        <p className="text-sm text-foreground/80 mb-3">
-          Couldn't generate this lesson. The AI provider may be rate-limited.
+        <p className="text-sm font-medium text-foreground/90 mb-2">
+          Couldn't generate this block.
         </p>
+        {errorMessage ? (
+          <p
+            className="text-xs text-foreground/70 mb-3 font-mono whitespace-pre-wrap break-words"
+            data-testid="block-error-detail"
+          >
+            {errorMessage}
+          </p>
+        ) : (
+          <p className="text-xs text-foreground/60 mb-3">
+            No error detail captured. Check the dev-server console for `block ... generation failed:` logs.
+          </p>
+        )}
         {onRetry && (
           <button
             type="button"
