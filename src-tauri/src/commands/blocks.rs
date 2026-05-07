@@ -1140,6 +1140,34 @@ pub async fn regenerate_lesson(
         }
         "quiz" => generate_quiz_with_client(&client, &block, &module_title).await,
         "flash_cards" => generate_flash_cards_with_client(&client, &block, &module_title).await,
+        "lab" => {
+            // Per-block retry path for lab blocks. Without this arm the Retry
+            // button on a failed lab BlockSkeleton would fail with
+            // "regenerate not supported for block type: lab".
+            let client_arc = Arc::new(ProductionAIClient {
+                auth: Arc::new(auth.inner().clone()),
+            });
+            let c = Arc::clone(&client_arc);
+            crate::labs::pageplanner_labs::generate_lab_block_payload(
+                &block.params_json,
+                &module_title,
+                move |p: String| {
+                    let c = Arc::clone(&c);
+                    Box::pin(async move {
+                        c.request(crate::ai::service::AIServiceRequest {
+                            system_prompt: p,
+                            messages: vec![crate::ai::service::ServiceMessage {
+                                role: "user".to_string(),
+                                content: "Return ONLY the LAB.md content.".to_string(),
+                            }],
+                            max_tokens: Some(3000),
+                            temperature: Some(0.4),
+                            response_format: None,
+                        }, 2).await
+                    })
+                },
+            ).await
+        }
         _ => Err(format!("regenerate not supported for block type: {}", block.block_type)),
     };
 
