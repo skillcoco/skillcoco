@@ -89,6 +89,57 @@ Every line of the BKT update, SM-2 scheduler, and DAG path engine is in this rep
 
 ---
 
+## What's actually novel inside
+
+A catalog of the things you will not find combined in any other learning platform. Each entry maps to running code, a planned phase, or a shipping algorithm.
+
+### Adaptive learning model
+
+- **Dual-algorithm adaptive loop (BKT × SM-2).** BKT exists in Carnegie Mellon's intelligent tutoring systems. SM-2 exists in Anki. The integrated loop — where BKT mastery thresholds *trigger* SR card auto-generation, and SR review performance feeds back into long-term mastery confidence — is novel. Mastery moves; cards get scheduled; cards reinforce mastery; the loop closes.
+- **Two mastery dimensions tracked separately.** Every module exposes `mastery_level` (conceptual, fed by quiz + flashcards via BKT) and `practical_mastery` (linear, fed by lab steps completed). The module spec declares whether either, both, or just-signal-track gates progression. *"I know it"* and *"I can do it"* become defensible, separable claims.
+- **DAG-based adaptive paths, not linear sequences.** Skill trees with prerequisite edges. Mastery gates branch unlocks. Diamond dependencies (e.g., K8s networking requires Pods AND Services) are first-class — an unlock check verifies *all* prerequisites mastered, not just the linear predecessor.
+- **Block taxonomy with per-block mastery signals.** Module content is a typed sequence of blocks (`section` / `text` / `callout` / `quiz` / `flash_cards` / `lab`). Each block produces an independent mastery signal: quiz correctness updates BKT for linked concepts; flash-card good/easy reinforces; lab step passes feed practical mastery. No single block can fake competence because every block is independently measured. *(DeepTutor-inspired pattern, Apache 2.0 attribution.)*
+- **Skeleton-then-fill content lifecycle.** Block rows insert as `pending`, transition through `generating` to `ready`, with explicit `failed` state and per-block retry. UI renders a skeleton during generation; learner can resume mid-generation. One failed block doesn't break the module.
+
+### AI / LLM integration
+
+- **PagePlanner architecture.** A single LLM call decomposes a module into a structured outline: 8-10 lessons + 5-10 quiz questions + 2-6 flashcard concepts + (when hands-on benefits) lab specs with Dockerfiles. Per-block content generation runs in parallel afterward via a `Semaphore(3)` cap. One prompt to plan, then concurrent generation — fast and resilient.
+- **AI-generated content shaped by real learner state.** Content is generated *at the moment* the learner opens a module, using their actual BKT mastery from prior modules as prompt context. Module 5's explanations are literally different bytes for two learners depending on how Modules 1–4 went. This is generation, not recommendation.
+- **AI-judge step evaluator with budget protection.** When deterministic checks (regex / exit code / file state) cannot express a step's success criterion, the evaluator falls back to an LLM judge that reads the last 100 lines of terminal scrollback + step prompt + check criteria and returns `{ pass, reason }`. Per-session budget of 5 calls + 2-second cooldown protects against learner-spams-Enter cost spikes. No-auth gracefully degrades to a "Manual completion" path; never a hard error.
+- **OAuth-first AI provider integration.** Sign in with an existing Claude Pro / ChatGPT Plus / Gemini Advanced subscription. No API key copy-paste from provider dashboards. Tokens auto-refresh before expiry. Fallback to BYOK and Ollama (local, free, fully-offline). This removes the #1 friction point in deploying AI tooling inside corporate environments where individual API keys are policy violations.
+- **Topic-pack override system.** Topic packs (Kubernetes, Terraform, Rust...) ship a `manifest.yaml` mapping `module_id` → curated lab slugs. When a pack covers a module, its labs replace the AI-generated default. Hand-tuned where it matters; AI-everywhere by default. Best of both authoring strategies in one schema.
+- **AI-generated Dockerfile escape hatch.** For novel topics where no public image exists, PagePlanner emits a Dockerfile string inline alongside the lab spec — the lab is self-describing and version-pinned to the lesson. Reproducible per-module sandboxes without curating a public image registry.
+- **Externalized YAML prompt system *(Phase 2)*.** All AI prompts move from inline Rust strings into versioned `prompts/{en,zh}/<feature>.yaml` files with a singleton `PromptManager` and language fallback chain. Localizable, auditable, swappable per-domain — without recompiling.
+- **Two-file persistent learner memory *(Phase 2)*.** Each (learner, track) gets a `PROFILE.md` (stable identity, slow-changing) plus `SUMMARY.md` (running session journey) auto-rewritten by an LLM with `NO_CHANGE` sentinel and heading validators. Memory is injected into every prompt so path/content/exercise generation is personalized to long-arc learner profile, not just the last quiz score. *(DeepTutor-inspired.)*
+- **Draft → Critique → Revise path generation *(Phase 2)*.** Path generation runs three LLM calls maximum: draft, critique (checks for missing prerequisites, cycles, redundancy, granularity issues), revise. The critique step has a `verdict: revise | keep` schema; the revised path replaces the draft only when the critique demands it. Catches the "AI hallucinated 47 modules in random order" failure mode before it reaches the learner.
+- **Concept Graph alongside DAG *(Phase 2)*.** Beyond the module-DAG, generated paths include a typed concept graph (id / label / weight nodes, `depends_on | extends | related` edges with rationale strings). Cycles removed deterministically; coverage padding ensures every concept maps to ≥1 module. Rendered as a Mermaid `graph TD` for instructor inspection. Explainable AI for why-this-prereq.
+
+### Hands-on practice
+
+- **Embedded PTY-backed terminal with hybrid sandbox.** `portable-pty` (cross-platform: macOS, Linux, Windows ConPTY) + `@xterm/xterm` v5 wired through Tauri events. Docker container per lab when Docker is present (via `bollard`); host-shell fallback when not. Settings runtime selector lets the learner force a mode. Per-lab `requires_docker: true` overrides for K8s-style labs that need a real container.
+- **Inline step evaluation via OSC 133 prompt-boundary detection.** OSC 133 shell integration sequences (`PromptStart`, `CommandStart`, `OutputStart`, `CommandEnd { exit_code }`) drive deterministic command-boundary detection. Heuristic regex fallback for shells without OSC 133 support (busybox, fish, nushell). Manual recheck button as the floor. Three-layer resilience.
+- **Four step-evaluation kinds + AI judge.** `command_regex` (output pattern), `exit_code` (status code matching), `file_state` (exists / contains / equals fixture), `ai_judge` (last resort, budget-guarded). Most labs mix these. Spec authors / PagePlanner pick per-step.
+- **Cumulative-within-module workspace.** `~/.learnforge/labs/<track>/<module>/` is bind-mounted into the lab container at `/workspace`. Lab 2 in module M can see files Lab 1 in module M created. Realistic project-arc feel without forcing cross-track coupling.
+- **Surgical reset.** Lab spec declares `creates: []` files that the lab produces. Reset wipes only those, preserving prior labs' work in the same module. Path-traversal guarded (rejects `..`, absolute paths, anything resolving outside workspace). Spec-driven, not nuclear.
+- **Cross-restart progress resume.** Lab progress (`current_step`, `completed_step_ids`, `practical_mastery_aggregate`, last AI-judge verdict) persists in a dedicated `lab_progress` table. Close the app mid-lab; reopen tomorrow; pick up exactly where the learner left off — including which steps already passed.
+- **3-tier progressive hints.** Each step carries three hint tiers (gentle nudge → partial answer → full solution) authored by spec or generated by AI. Manual reveal — never surprise-popped. Reveal state is component-local; resets on lab close to match the fresh-shell semantic.
+- **All-steps-visible step list.** Learners see the full lab sequence from the start; the evaluator marks them complete in order. Read-ahead allowed — instructors can author "see the goal first" labs.
+- **`LAB.md` authoring format.** DeepTutor-style Markdown body + YAML frontmatter (image XOR Dockerfile, `requires_docker`, `creates: []`, ordered steps, 3-tier hints, optional `platform: linux/amd64` for Apple-Silicon-incompatible images). Parses on ingest into normalized JSON; original markdown preserved in `paramsJson` for regeneration. Human-friendly authoring, machine-friendly runtime.
+
+### Engineering & methodology
+
+- **Embedded intelligence — no cloud required.** RuVector (vector DB + graph DB, both Rust, both embedded) runs in-process. SQLite (WAL mode) handles relational state. BKT and SM-2 are in-process algorithm calls, not network round-trips. The whole intelligence layer fits in a single ~10 MB Tauri binary. Privacy-first, offline-capable, performant, with zero ops surface.
+- **`learnforge-core` extractable Rust crate *(Phase 7)*.** All learning algorithms (BKT, SM-2, DAG path engine, mastery-level rules, badge rules, block taxonomy, concept graph) extract into a standalone Rust crate publishable to crates.io. Same crate powers the desktop app, the corporate web backend, and any third-party integration that wants embedded adaptive logic. Algorithms shared, products differentiated by surface.
+- **Determinism-first testing.** Trait-based mocks (`LabRuntime`, `LabSession`, `DockerProbe`, `AIClientTrait`) plus byte-stream transcripts under `src-tauri/tests/fixtures/labs/transcripts/` mean **100% of unit and integration tests run with zero real Docker daemon, zero real PTY, zero real LLM**. CI is reproducible to the byte. Real-runtime exercise is gated behind `LEARNFORGE_TEST_DOCKER=1` / `LEARNFORGE_TEST_PTY=1` opt-in env flags.
+- **TDD London School discipline.** Every implementation wave is preceded by a failing-test wave (Wave 0). Plans declare RED tests up-front, then production code makes them green one at a time. Across Phase 03.1, this surfaced 5 cross-layer integration gaps that pure unit-test discipline missed — and the same TDD frame caught and closed them.
+- **camelCase IPC contract, type-checked across the boundary.** Every Tauri command struct uses `#[serde(rename_all = "camelCase")]`; every TypeScript interface mirrors that shape. A serde / TS schema mismatch would fail at compile or at test — never at runtime in production. Burned into discipline by an early bug (FIX-02).
+- **Auditable migration framework.** Versioned migrations (`v001` → `v006` today) under `src-tauri/src/db/migrations/`. Idempotent design (each migration safely re-runs). Atomic transaction wrapping. Schema-version table records the latest version. Each migration ships with a self-test that asserts post-conditions.
+- **Open algorithms by license design.** Code is MIT; documentation, algorithm specifications, and learning-science writeups are CC BY 4.0. This combination establishes prior art (preventing future patent claims on combinations of BKT/SM-2/DAG paths/block taxonomy), legitimizes academic citation of the implementation, and prevents the "we open-sourced the wrapper but the math is in our private fork" trap.
+- **Self-rating onboarding, not Socratic interrogation.** A 3-step picker (topic → goals → level) replaced an earlier Socratic-AI assessment chat. Time-to-first-module dropped from minutes to seconds; abandonment fell. Sometimes the best AI integration is the one you remove.
+- **Ruflo-orchestrated execution methodology.** The whole codebase is built using `ruflo` agent orchestration with strict get-shit-done planning (CONTEXT → RESEARCH → PLAN → VERIFY → EXECUTE → ACCEPT). Every phase ships with an auditable trail: context decisions, research findings, plan files, verification reports, summaries. Open development methodology, not just open code.
+
+---
+
 ## Why open source matters here
 
 ### For technical buyers
@@ -250,7 +301,7 @@ pnpm test                                    # Frontend (Vitest)
 LearnForge is built by two engineering educators with **1.27M+ combined enrollments** on Udemy and direct experience training engineers at scale.
 
 ### Gourav Shah — Product, DevOps domain
-Founder, [School of DevOps](https://schoolofdevops.com) and [Agentix Garage](https://agentixgarage.com). 17+ years in DevOps, Cloud, and Platform Engineering. **270,000+ Udemy students** across 15+ courses. Trusted by Nasdaq, Volkswagen, NetApp. Author of *The Dawn of Agentic DevOps*.
+Founder, [School of DevOps](https://schoolofdevops.com) and [Agentix Garage](https://agentixgarage.com). 17+ years in DevOps, Cloud, and Platform Engineering. **270,000+ Udemy students** across 15+ courses. Trained engineers at **Adobe, Cisco, Visa, Walmart Labs, IBM, Expedia, DreamWorks, EMC², RBS, Accenture, Nasdaq, Volkswagen, NetApp** and many more. Author of *The Dawn of Agentic DevOps*.
 
 ### Vivian Aranha — AI, learning science
 Data & AI Specialist at IBM, CEO of School of AI. Executive certification, MIT Sloan. Master's, GWU. **1,000,000+ Udemy enrollments**. 8+ years in AI/ML. Course author: *Mastering Agentic Design Patterns* (Udemy), *AI Engineer Complete Bootcamp* (Maven).
