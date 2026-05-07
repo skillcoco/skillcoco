@@ -195,30 +195,78 @@ pub fn build_lab_content_prompt(module_title: &str, lab: &LabOutlineItem) -> Str
                 .to_string()
         }
     };
+    let step_count = lab.step_count_target.max(4);
+    let slug = if lab.slug.is_empty() { "my-lab" } else { lab.slug.as_str() };
     format!(
         r#"You are an expert hands-on instructor writing a step-by-step lab for the module
 "{module_title}". The lab is "{lab_title}". The learner will type commands in
 an integrated terminal; the system evaluates each step automatically.
 
-Write a lab spec as YAML frontmatter + Markdown step bodies that conforms to
-LearnForge's LAB.md schema:
+CRITICAL OUTPUT FORMAT: a LAB.md document = YAML frontmatter delimited by
+exactly three dashes on their own lines, followed by Markdown step bodies.
+Your response MUST start with `---` on the first line and contain a closing
+`---` line before any markdown. Do NOT wrap the response in code fences,
+JSON, or any preamble.
 
-  - 4-{step_count_target} steps, ordered foundational → advanced
-  - Each step.check uses ONE of: command_regex | exit_code | file_state | ai_judge
+Required schema (all fields camelCase except where noted):
+
+```
+---
+slug: {slug}
+title: {lab_title}
+image: <see image rule below>     # OR `dockerfile: |\n  FROM ...` — exactly one
+requiresDocker: {requires_docker}
+creates:
+  - path/to/file/learner-creates.ext
+  - another/file.ext
+steps:
+  - id: step-1
+    title: Action-verb first ("Create the Pod manifest")
+    check:
+      kind: command_regex          # OR exit_code, file_state, ai_judge
+      pattern: "Running"           # required for command_regex
+      # exit_code requires:  expected: 0
+      # file_state requires: path: my-pod.yaml   AND optional: contains: "kind: Pod"
+      # ai_judge requires:   criteria: "must explain why ..." (>=16 chars)
+    hints:
+      - "Gentle nudge — point them in the right direction"
+      - "Partial answer — almost the full command"
+      - "Full solution — the complete command they should run"
+  # ...repeat for each step
+---
+## Step 1: <step.title>
+
+One short paragraph telling the learner what to do, why, and what they should
+observe. Be specific to {module_title}. Reference the actual files / commands
+they will run.
+
+## Step 2: <step.title>
+
+...
+```
+
+Rules:
+  - {step_count_target} steps, ordered foundational → advanced.
+  - Each step.check uses EXACTLY ONE of: command_regex | exit_code |
+    file_state | ai_judge.
   - PREFER deterministic checks (command_regex, exit_code, file_state).
-    Use ai_judge ONLY when the step is open-ended (e.g. "explain output").
-  - Every step has EXACTLY 3 hints: gentle nudge, partial answer, full solution.
-  - Step prompts must be specific to {module_title} — no generic placeholders.
-  - creates: list every file the steps tell the learner to create.
-  - image: {image_or_dockerfile_decision}
-  - requires_docker: {requires_docker}
+    Use ai_judge ONLY for genuinely open-ended steps ("explain why X").
+  - EVERY step has EXACTLY 3 hints in `hints:` (gentle, partial, full).
+  - `creates:` lists EVERY file the steps tell the learner to create.
+    Workspace-relative paths only (no absolute paths, no `..`).
+  - `image:` {image_or_dockerfile_decision}.
+  - `requiresDocker: {requires_docker}` — copy this exact value.
+  - Step prompts must be specific to {module_title} — no generic
+    placeholders like "TODO" or "your file here".
 
-Output: ONLY the LAB.md content (frontmatter + markdown). No JSON wrapper, no
-preamble.
+Your entire response MUST start with `---\n` and contain a closing `---\n`
+before the first `## Step` heading. No JSON. No preamble. No code fences
+around the document. Output ONLY the LAB.md.
 "#,
         module_title = module_title,
         lab_title = lab.title,
-        step_count_target = lab.step_count_target.max(4),
+        slug = slug,
+        step_count_target = step_count,
         image_or_dockerfile_decision = image_or_dockerfile_decision,
         requires_docker = lab.requires_docker,
     )
