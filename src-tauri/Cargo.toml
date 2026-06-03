@@ -30,13 +30,13 @@ open = "5"
 dirs = "5"
 
 # AI provider auth + API calls
-zeroclaw = { path = "../../../../agentix/upstream/zeroclaw", default-features = false }
+# zeroclaw = { path = "../../../../agentix/upstream/zeroclaw", default-features = false }
 
 # Vector DB for embeddings
-ruvector-core = { path = "../../../../agentix/upstream/ruvector/crates/ruvector-core", default-features = false, features = ["storage", "hnsw", "simd", "parallel"] }
+# ruvector-core = { path = "../../../../agentix/upstream/ruvector/crates/ruvector-core", default-features = false, features = ["storage", "hnsw", "simd", "parallel"] }
 
 # Graph DB for learning path DAGs
-ruvector-graph = { path = "../../../../agentix/upstream/ruvector/crates/ruvector-graph", default-features = false }
+# ruvector-graph = { path = "../../../../agentix/upstream/ruvector/crates/ruvector-graph", default-features = false }
 portable-pty = "0.9"
 bollard = "0.19"
 gray_matter = "0.2"
