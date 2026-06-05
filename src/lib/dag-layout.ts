@@ -127,7 +127,6 @@ export function layoutDAG(
   }
 
   const depthMap = computeDepths(modules, edges);
-  const moduleMap = new Map(modules.map((m) => [m.id, m]));
 
   // Group modules by depth column
   const columns = new Map<number, PathModule[]>();

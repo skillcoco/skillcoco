@@ -41,7 +41,7 @@ describe("Phase 3 IPC argument-key contract (Rust param name = `req`)", () => {
       moduleId: "mod-1",
       trackId: "trk-1",
       blockId: "blk-q",
-      answers: [{ questionId: "q1", chosenOptionId: "a" }],
+      answers: [{ questionId: "q1", selectedOptionId: "a" }],
     });
     expect(invokeMock).toHaveBeenCalledWith("submit_quiz", {
       req: expect.objectContaining({ moduleId: "mod-1" }),

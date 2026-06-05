@@ -21,7 +21,6 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
-import { assessKnowledge } from "@/lib/tauri-commands";
 
 function renderOnboarding() {
   return render(

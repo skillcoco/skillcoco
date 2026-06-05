@@ -93,7 +93,7 @@ const mockStore = vi.hoisted(() => ({
     estimatedHours: 1,
     createdAt: "2026-01-01",
   },
-  moduleProgress: [],
+  moduleProgress: [] as import("@/types").ModuleProgress[],
   currentLessonId: null as string | null,
   moduleBlocks: new Map<string, import("@/types/learning").ModuleBlock[]>(),
   lessonCompletions: new Map<string, Set<string>>(),

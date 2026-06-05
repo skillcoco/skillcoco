@@ -64,6 +64,7 @@ vi.mock("@/stores/useLearningStore", async () => {
   };
 });
 
+// @ts-expect-error vi.mock injects __resetStore into the module
 import { __resetStore } from "@/stores/useLearningStore";
 
 const mockProfile: LearnerProfile = {
@@ -205,7 +206,7 @@ describe("Dashboard", () => {
 
     // The Reviews Due StatsCard should show "3"
     await waitFor(() => {
-      const reviewsDueCard = screen.getByText("Reviews Due").closest(".glass, [class*='rounded']")?.parentElement;
+      screen.getByText("Reviews Due").closest(".glass, [class*='rounded']")?.parentElement;
       // The value "3" appears in the stats row
       expect(screen.getAllByText("3").length).toBeGreaterThan(0);
     });
