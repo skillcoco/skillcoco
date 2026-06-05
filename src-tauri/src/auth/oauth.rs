@@ -2,10 +2,7 @@ use crate::auth::{AuthMethod, AuthState, ProviderCredential};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tauri::State;
-use zeroclaw::auth::oauth_common::generate_pkce_state;
-use zeroclaw::auth::{gemini_oauth, openai_oauth, AuthService};
 
 // ── OAuthFlowState ──
 
@@ -154,125 +151,20 @@ pub async fn start_oauth_login(
     }
 }
 
-async fn start_openai_oauth(auth: AuthState, flow: OAuthFlowState) -> Result<(), String> {
-    let pkce = generate_pkce_state();
-    let url = openai_oauth::build_authorize_url(&pkce);
-
-    open::that(&url).map_err(|e| format!("Failed to open browser: {}", e))?;
-
-    tauri::async_runtime::spawn(async move {
-        let code_result =
-            openai_oauth::receive_loopback_code(&pkce.state, Duration::from_secs(120)).await;
-
-        match code_result {
-            Ok(code) => {
-                let client = reqwest::Client::new();
-                match openai_oauth::exchange_code_for_tokens(&client, &code, &pkce).await {
-                    Ok(token_set) => {
-                        // Store in zeroclaw's AuthService so openai-codex provider can use it
-                        // (with automatic token refresh support)
-                        let zeroclaw_auth = AuthService::new(&default_zeroclaw_dir(), false);
-                        if let Err(e) = zeroclaw_auth
-                            .store_openai_tokens("default", token_set.clone(), None, true)
-                            .await
-                        {
-                            flow.set_error("openai", &map_oauth_error(&format!("Failed to store tokens: {}", e)));
-                            return;
-                        }
-
-                        // Also store in our credential store for UI status tracking
-                        let token = token_set.access_token.clone();
-                        let mut store = auth.store.lock().unwrap();
-                        store.credentials.insert(
-                            "openai".to_string(),
-                            ProviderCredential {
-                                provider: "openai".to_string(),
-                                method: AuthMethod::OAuth,
-                                api_key: None,
-                                oauth_token: Some(token),
-                                display_name: Some("ChatGPT (Subscription)".to_string()),
-                                model: Some("gpt-4o".to_string()),
-                                base_url: None,
-                            },
-                        );
-                        if store.active_provider.is_none() {
-                            store.active_provider = Some("openai".to_string());
-                        }
-                        drop(store);
-                        let _ = auth.persist();
-
-                        flow.set_authenticated("openai");
-                    }
-                    Err(e) => {
-                        flow.set_error("openai", &map_oauth_error(&e.to_string()));
-                    }
-                }
-            }
-            Err(e) => {
-                flow.set_error("openai", &map_oauth_error(&e.to_string()));
-            }
-        }
-    });
-
-    Ok(())
+async fn start_openai_oauth(_auth: AuthState, flow: OAuthFlowState) -> Result<(), String> {
+    // zeroclaw OAuth dependency removed in open-core split (Phase 3.2 / commit 49b0fb1).
+    // OpenAI OAuth via zeroclaw is not available in OSS builds.
+    // Use API key authentication instead (Settings → API Key).
+    flow.set_error("openai", "OpenAI OAuth is not supported in this build. Use API key authentication instead.");
+    Err("OpenAI OAuth is not supported in OSS builds. Use API key authentication.".to_string())
 }
 
-fn default_zeroclaw_dir() -> std::path::PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".zeroclaw")
-}
-
-async fn start_gemini_oauth(auth: AuthState, flow: OAuthFlowState) -> Result<(), String> {
-    let pkce = generate_pkce_state();
-    let url = gemini_oauth::build_authorize_url(&pkce)
-        .map_err(|e| format!("Gemini OAuth requires GEMINI_OAUTH_CLIENT_ID and GEMINI_OAUTH_CLIENT_SECRET environment variables: {}", e))?;
-
-    open::that(&url).map_err(|e| format!("Failed to open browser: {}", e))?;
-
-    tauri::async_runtime::spawn(async move {
-        let code_result =
-            gemini_oauth::receive_loopback_code(&pkce.state, Duration::from_secs(120)).await;
-
-        match code_result {
-            Ok(code) => {
-                let client = reqwest::Client::new();
-                match gemini_oauth::exchange_code_for_tokens(&client, &code, &pkce).await {
-                    Ok(token_set) => {
-                        let token = token_set.access_token.clone();
-                        let mut store = auth.store.lock().unwrap();
-                        store.credentials.insert(
-                            "gemini".to_string(),
-                            ProviderCredential {
-                                provider: "gemini".to_string(),
-                                method: AuthMethod::OAuth,
-                                api_key: None,
-                                oauth_token: Some(token),
-                                display_name: Some("Gemini (OAuth)".to_string()),
-                                model: Some("gemini-2.0-flash".to_string()),
-                                base_url: None,
-                            },
-                        );
-                        if store.active_provider.is_none() {
-                            store.active_provider = Some("gemini".to_string());
-                        }
-                        drop(store);
-                        let _ = auth.persist();
-
-                        flow.set_authenticated("gemini");
-                    }
-                    Err(e) => {
-                        flow.set_error("gemini", &map_oauth_error(&e.to_string()));
-                    }
-                }
-            }
-            Err(e) => {
-                flow.set_error("gemini", &map_oauth_error(&e.to_string()));
-            }
-        }
-    });
-
-    Ok(())
+async fn start_gemini_oauth(_auth: AuthState, flow: OAuthFlowState) -> Result<(), String> {
+    // zeroclaw OAuth dependency removed in open-core split (Phase 3.2 / commit 49b0fb1).
+    // Gemini OAuth via zeroclaw is not available in OSS builds.
+    // Use API key authentication instead (Settings → API Key).
+    flow.set_error("gemini", "Gemini OAuth is not supported in this build. Use API key authentication instead.");
+    Err("Gemini OAuth is not supported in OSS builds. Use API key authentication.".to_string())
 }
 
 /// Save a Claude setup-token (sk-ant-oat01-*) from `claude setup-token`.
