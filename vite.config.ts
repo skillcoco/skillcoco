@@ -9,6 +9,9 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@pro": process.env.LEARNFORGE_PRO === "1"
+        ? path.resolve(__dirname, "./pro/src/features")
+        : path.resolve(__dirname, "./src/features/_pro_placeholder"),
     },
   },
   clearScreen: false,
