@@ -4,6 +4,7 @@ pub mod commands;
 pub mod db;
 pub mod labs;
 pub mod learning;
+pub mod licensing;
 mod vector;
 
 use auth::AuthState;
@@ -44,9 +45,65 @@ pub struct AppState {
     pub lab_sessions: Arc<tokio::sync::Mutex<HashMap<String, LabSessionEntry>>>,
 }
 
-pub fn run() {
-    env_logger::init();
+/// Contract that Pro overlays satisfy to inject additional Tauri commands.
+/// OSS provides `NoopPlugin` as the default (no-op); the OSS `run()`
+/// function uses NoopPlugin so the trait surface is exercised in the
+/// open-core build. Plan 05's Studio `main.rs` defines `StudioPlugin`
+/// implementing this trait and appends Pro commands via the same path.
+/// Mirrors the `LabRuntime` trait shape (`labs::mod`) but is sync — no
+/// `Pin<Box<Future>>` needed.
+///
+/// Tauri 2.x's `invoke_handler` can be called exactly ONCE per builder
+/// (RESEARCH.md Pitfall 1). `register_commands` MUST NOT call
+/// `.invoke_handler` on the builder it receives — that call is the
+/// caller's responsibility (`run()` in OSS, `main()` in Studio).
+/// register_commands is for setup/plugin/state additions only.
+pub trait LearnForgePlugin: Send + Sync {
+    /// Stable identifier for the plugin (logging, diagnostics).
+    fn plugin_name(&self) -> &'static str;
 
+    /// Extend the builder with plugin-specific setup or state (plugins,
+    /// .manage(), .setup hooks). MUST NOT call `.invoke_handler`. The
+    /// caller calls `.invoke_handler` exactly once after this method
+    /// returns, passing the full (OSS + plugin-contributed) command
+    /// list via `tauri::generate_handler![…]`.
+    fn register_commands(
+        &self,
+        builder: tauri::Builder<tauri::Wry>,
+    ) -> tauri::Builder<tauri::Wry>;
+}
+
+/// No-op default implementation. Used by OSS `run()` so the trait
+/// surface is exercised in pure-OSS builds; Plan 05 swaps it for
+/// `StudioPlugin` in the Studio binary. Mirrors `vector::VectorState`
+/// stub shape.
+pub struct NoopPlugin;
+
+impl LearnForgePlugin for NoopPlugin {
+    fn plugin_name(&self) -> &'static str {
+        "noop"
+    }
+
+    fn register_commands(
+        &self,
+        builder: tauri::Builder<tauri::Wry>,
+    ) -> tauri::Builder<tauri::Wry> {
+        // Identity: returns the builder unchanged. No setup hooks,
+        // no .manage(), no plugins beyond what build_app() already
+        // attached. The single .invoke_handler() call happens in the
+        // caller (run() for OSS, main() for Studio).
+        builder
+    }
+}
+
+/// Build the Tauri app — plugins + setup ONLY. NO invoke_handler. NO .run().
+///
+/// Pro's `main.rs` calls this and then attaches its own `invoke_handler`
+/// via `StudioPlugin::register_commands`; OSS does the same below via
+/// `NoopPlugin`. The Tauri 2.x `invoke_handler`-can-be-called-only-once
+/// constraint (RESEARCH.md Pitfall 1) lives in the caller (`run()` for
+/// OSS, `main()` for Studio) — never here.
+pub fn build_app() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
@@ -98,6 +155,18 @@ pub fn run() {
             log::info!("LearnForge initialized with DB at {:?}", db_path);
             Ok(())
         })
+}
+
+pub fn run() {
+    env_logger::init();
+    // OSS exercises the open-core seam via NoopPlugin so the trait
+    // surface is tested in every OSS build. Plan 05's Studio main.rs
+    // does the same with StudioPlugin (which contributes Pro
+    // commands). The single .invoke_handler call below is the only
+    // one Tauri 2.x allows per builder (RESEARCH.md Pitfall 1).
+    let plugin = NoopPlugin;
+    plugin
+        .register_commands(build_app())
         .invoke_handler(tauri::generate_handler![
             // Track commands
             commands::tracks::list_tracks,
@@ -157,4 +226,32 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod build_app_tests {
+    use super::*;
+
+    #[test]
+    fn build_app_returns_builder() {
+        // Compiling this call proves build_app() exists with the right signature.
+        let _b: tauri::Builder<tauri::Wry> = build_app();
+    }
+
+    #[test]
+    fn plugin_trait_minimal_contract() {
+        let p = NoopPlugin;
+        assert_eq!(p.plugin_name(), "noop");
+        // register_commands borrows &self and returns a builder; we
+        // construct one via build_app() to feed in.
+        let _b: tauri::Builder<tauri::Wry> = p.register_commands(build_app());
+    }
+
+    #[test]
+    fn noop_plugin_is_object_safe() {
+        // Object-safety check — must be possible to store plugins as Box<dyn>.
+        let plugins: Vec<Box<dyn LearnForgePlugin>> = vec![Box::new(NoopPlugin)];
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].plugin_name(), "noop");
+    }
 }
