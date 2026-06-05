@@ -1,5 +1,5 @@
 mod ai;
-mod auth;
+pub mod auth;
 pub mod commands;
 pub mod db;
 pub mod labs;

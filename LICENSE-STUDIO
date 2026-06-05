@@ -1,0 +1,97 @@
+LearnForge Studio Software License Agreement
+============================================
+
+Copyright (c) 2026 LearnForge Studio (Gourav Shah, Vivian Aranha).
+All rights reserved.
+
+This file ("LICENSE-STUDIO") describes the proprietary license that
+governs use of the LearnForge Studio software, defined below.
+
+1. Definitions
+
+"Software" means the LearnForge Studio executable, source files,
+documentation, and associated materials located in this repository
+under the `pro/` directory, the `LICENSE-STUDIO` file, the
+`docs/studio-*` files, and the `build.config.ts` file (collectively,
+the "Proprietary Components"), together with any updates, patches,
+or successor versions licensed to you by LearnForge Studio.
+
+The Software does NOT include the open-source LearnForge components
+licensed under the MIT License (see `LICENSE` at the repository
+root), even when those components are bundled with the Software in
+a single binary distribution. The MIT-licensed components remain
+governed by their MIT License.
+
+"Licensee" means the natural person or legal entity that has been
+issued a valid, current license key for the Software by LearnForge
+Studio.
+
+2. Grant of License
+
+Subject to (a) Licensee's payment of all applicable fees, (b)
+Licensee's compliance with this Agreement, and (c) Licensee
+possessing a valid, current license key, LearnForge Studio grants
+Licensee a non-exclusive, non-transferable, non-sublicensable,
+revocable license to install and use the Software on the number of
+seats specified in Licensee's commercial agreement with LearnForge
+Studio.
+
+3. Restrictions
+
+Licensee may NOT:
+
+(a) Copy, modify, distribute, sublicense, sell, lease, lend, or
+    otherwise transfer the Software or any portion of it to any
+    third party.
+(b) Reverse engineer, decompile, disassemble, or otherwise attempt
+    to derive the source code of the Software, except to the extent
+    such restriction is prohibited by applicable law.
+(c) Remove, alter, or obscure any copyright, trademark, or other
+    proprietary notices on or in the Software.
+(d) Use the Software to build a product or service that competes
+    with LearnForge Studio.
+(e) Use the Software outside the seat count licensed to Licensee.
+
+4. License Key
+
+Access to the Software requires a valid license key issued by
+LearnForge Studio. License keys are validated at application
+startup using cryptographic signature verification (see
+`pro/src-tauri-pro/licensing/`). Tampering with the license
+validation process is a violation of this Agreement and may
+constitute a violation of applicable computer-fraud and
+intellectual-property laws.
+
+5. Term and Termination
+
+This license is effective until terminated. The license terminates
+automatically and without notice if Licensee fails to comply with
+any term of this Agreement. Upon termination, Licensee must cease
+all use of the Software and destroy all copies in Licensee's
+possession.
+
+6. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+NONINFRINGEMENT. IN NO EVENT SHALL LEARNFORGE STUDIO OR THE
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+7. Governing Law
+
+This Agreement is governed by the laws of the jurisdiction in which
+LearnForge Studio is incorporated, without regard to its conflict
+of law provisions.
+
+8. Contact
+
+For licensing inquiries, contact: hello@learnforge.dev
+
+---
+
+By installing or using LearnForge Studio, Licensee agrees to be
+bound by the terms of this Agreement.
