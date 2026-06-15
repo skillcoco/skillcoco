@@ -18,6 +18,12 @@ import type {
   ProviderAuthStatus,
   LoginRequest,
 } from "@/types/ai";
+import type {
+  TopicPack,
+  SetTopicPackEnabledRequest,
+  GetTopicPackModulesRequest,
+  PackModulesResult,
+} from "@/types/topic-packs";
 
 // ── Learner Profile ──
 
@@ -63,6 +69,50 @@ export async function getModuleProgress(trackId: string): Promise<ModuleProgress
 
 export async function updateModuleProgress(progress: Partial<ModuleProgress>): Promise<void> {
   return invoke("update_module_progress", { progress });
+}
+
+// ── Topic Packs (Phase 5) ──
+//
+// All wrappers use the `{ request }` envelope per Q9 lock — the Rust
+// handlers in `src-tauri/src/topic_packs/commands.rs` declare their
+// payload parameter as `request: T`, so Tauri matches the top-level JS
+// key `"request"` to deserialize. Wrappers WITHOUT arguments invoke with
+// no second arg (matches the no-payload Rust signatures).
+
+/// List only the packs the user has explicitly enabled. Wave 4 Onboarding
+/// picker filters via this.
+export async function listTopicPacks(): Promise<TopicPack[]> {
+  return invoke("list_topic_packs");
+}
+
+/// List EVERY loaded pack (enabled + disabled + error sentinels). Wave 3
+/// Settings UI uses this to surface every pack — including failures — to
+/// the learner.
+export async function listTopicPacksAdmin(): Promise<TopicPack[]> {
+  return invoke("list_topic_packs_admin");
+}
+
+/// Toggle a single pack's `enabled` flag. Updates both the in-memory
+/// registry and the SQLite row atomically (T-05-08: rejects unknown ids
+/// before SQL touches the DB).
+export async function setTopicPackEnabled(
+  request: SetTopicPackEnabledRequest,
+): Promise<void> {
+  return invoke("set_topic_pack_enabled", { request });
+}
+
+/// Re-scan `~/.learnforge/skills/` — Q6 skills-only (bundled packs are
+/// compile-time frozen). Wave 3 Settings "Reload" button calls this.
+export async function reloadSkills(): Promise<void> {
+  return invoke("reload_skills");
+}
+
+/// Fetch a single pack's modules + edges array — feeds Wave 4's
+/// track-creation flow. Errors with "Unknown pack id: …" on unknown ids.
+export async function getTopicPackModules(
+  request: GetTopicPackModulesRequest,
+): Promise<PackModulesResult> {
+  return invoke("get_topic_pack_modules", { request });
 }
 
 // ── Auth ──
