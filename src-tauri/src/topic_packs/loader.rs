@@ -11,11 +11,10 @@
 //! that name the wave/plan turning them GREEN.
 
 use include_dir::{include_dir, Dir};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use super::error::PackError;
-use super::model::LoadedPack;
+use super::registry::PackRegistry;
 
 /// Compile-time-embedded `topic-packs/` directory.
 ///
@@ -24,12 +23,6 @@ use super::model::LoadedPack;
 /// no per-pack code edit needed.
 pub static BUNDLED_PACKS: Dir<'_> =
     include_dir!("$CARGO_MANIFEST_DIR/../topic-packs");
-
-/// In-memory registry of loaded packs keyed by `pack.id`.
-#[derive(Debug, Default)]
-pub struct PackRegistry {
-    pub packs: BTreeMap<String, LoadedPack>,
-}
 
 /// Resolve the user-skills directory (`~/.learnforge/skills/`).
 ///

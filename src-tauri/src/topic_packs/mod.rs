@@ -34,7 +34,10 @@ pub mod commands;
 pub mod error;
 pub mod loader;
 pub mod model;
+pub mod persistence;
+pub mod registry;
 pub mod schema;
 
 pub use error::PackError;
 pub use model::{LoadedPack, Pack, PackEdge, PackModule, PackSource, ValidationStatus};
+pub use registry::PackRegistry;
