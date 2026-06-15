@@ -84,6 +84,11 @@ pub struct GeneratePathRequest {
     pub assessment_level: String,
     pub assessment_gaps: Vec<String>,
     pub assessment_strengths: Vec<String>,
+    /// Phase 5 Q3 lock — when `Some`, the AI generation is short-circuited and
+    /// the path is built directly from the named pack's modules + edges. When
+    /// `None`, the existing AI generation path runs unchanged (back-compat).
+    #[serde(default)]
+    pub pack_id: Option<String>,
 }
 
 #[tauri::command]
@@ -92,6 +97,19 @@ pub async fn generate_learning_path(
     state: State<'_, AppState>,
     request: GeneratePathRequest,
 ) -> Result<serde_json::Value, String> {
+    // Phase 5 Q3 — pack_id short-circuit: build the path directly from the
+    // named pack's modules + edges (no AI call) and persist. D-11 immutability
+    // is preserved by using the same `learning_paths.modules_json` snapshot
+    // column the AI path writes to.
+    if let Some(pack_id) = request.pack_id.clone() {
+        let registry = state
+            .topic_packs
+            .lock()
+            .map_err(|e| format!("topic_packs lock poisoned: {}", e))?;
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        return generate_path_from_pack_impl(&db.conn, &registry, &request, &pack_id);
+    }
+
     let topic = &request.topic;
     let system_prompt = format!(
         "You are a curriculum designer. Create a learning path for {topic} ({domain}). \
@@ -244,6 +262,138 @@ pub async fn generate_learning_path(
         "trackId": request.track_id,
         "modules": path_data["modules"],
         "edges": path_data["edges"],
+    }))
+}
+
+// ── Pack-sourced path generation (Phase 5 Q3) ──
+
+/// Build a learning path directly from a Topic Pack's modules + edges and
+/// persist it, bypassing AI generation entirely. Module ids are namespaced
+/// as `{pack_id}__{module_id}` because the `modules` table uses a global
+/// `TEXT PRIMARY KEY` (schema.rs:44) — without namespacing, two packs that
+/// both declare a module with id="intro" would collide across the DB
+/// (T-05-18 mitigation).
+///
+/// Returns the same `serde_json::Value` shape the AI path returns so the
+/// frontend can consume both flows uniformly.
+///
+/// Errors:
+/// - `"Topic pack not found: <id>"` — pack id missing from the registry
+/// - `"Topic pack is disabled: <id>"` — pack present but `enabled == false`
+/// - DAG validation / SQLite errors — surface verbatim
+pub fn generate_path_from_pack_impl(
+    conn: &rusqlite::Connection,
+    registry: &crate::topic_packs::PackRegistry,
+    request: &GeneratePathRequest,
+    pack_id: &str,
+) -> Result<serde_json::Value, String> {
+    let loaded = registry
+        .get(pack_id)
+        .ok_or_else(|| format!("Topic pack not found: {}", pack_id))?;
+    if !loaded.enabled {
+        return Err(format!("Topic pack is disabled: {}", pack_id));
+    }
+
+    // Snapshot modules with namespacing.
+    let ns = |id: &str| format!("{}__{}", pack_id, id);
+    let modules_arr: Vec<serde_json::Value> = loaded
+        .pack
+        .modules
+        .iter()
+        .map(|m| {
+            json!({
+                "id": ns(&m.id),
+                "title": m.title,
+                "description": m.description,
+                "difficulty": m.difficulty.unwrap_or(1),
+                "estimated_minutes": m.estimated_minutes.unwrap_or(30),
+                "objectives": m.objectives,
+            })
+        })
+        .collect();
+    let edges_arr: Vec<serde_json::Value> = loaded
+        .pack
+        .edges
+        .iter()
+        .map(|e| json!({ "from": ns(&e.from), "to": ns(&e.to) }))
+        .collect();
+
+    // Belt-and-suspenders: validate the pack-authored DAG before persisting
+    // (T-05-20 mitigation — packs SHOULD be DAGs by authoring convention,
+    // but we never trust on-disk authoring blindly).
+    {
+        use crate::learning::path::{PathEdge, PathNode};
+        let nodes: Vec<PathNode> = modules_arr
+            .iter()
+            .map(|m| PathNode {
+                id: m["id"].as_str().unwrap_or("").to_string(),
+                title: m["title"].as_str().unwrap_or("").to_string(),
+                description: m["description"].as_str().unwrap_or("").to_string(),
+                module_type: "lesson".to_string(),
+                difficulty: m["difficulty"].as_i64().unwrap_or(1) as i32,
+                estimated_minutes: m["estimated_minutes"].as_i64().unwrap_or(30) as i32,
+                objectives: vec![],
+                prerequisites: vec![],
+            })
+            .collect();
+        let path_edges: Vec<PathEdge> = edges_arr
+            .iter()
+            .filter_map(|e| {
+                Some(PathEdge {
+                    from: e["from"].as_str()?.to_string(),
+                    to: e["to"].as_str()?.to_string(),
+                    edge_type: "prerequisite".to_string(),
+                })
+            })
+            .collect();
+        crate::learning::path::validate_dag(&nodes, &path_edges)
+            .map_err(|e| format!("Topic pack has invalid DAG: {}", e))?;
+    }
+
+    let path_id = uuid::Uuid::new_v4().to_string();
+    let modules_json =
+        serde_json::to_string(&modules_arr).unwrap_or_else(|_| "[]".to_string());
+    let edges_json = serde_json::to_string(&edges_arr).unwrap_or_else(|_| "[]".to_string());
+    let generated_by_model = format!("topic-pack:{}", pack_id);
+
+    conn.execute(
+        "INSERT INTO learning_paths (id, track_id, modules_json, edges_json, version, generated_by_model) VALUES (?1, ?2, ?3, ?4, 1, ?5)",
+        rusqlite::params![path_id, request.track_id, modules_json, edges_json, generated_by_model],
+    )
+    .map_err(|e| e.to_string())?;
+
+    for (i, module) in modules_arr.iter().enumerate() {
+        let module_id = module["id"].as_str().unwrap_or("").to_string();
+
+        conn.execute(
+            "INSERT INTO modules (id, path_id, title, description, difficulty, estimated_minutes, objectives_json, ordering) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                module_id,
+                path_id,
+                module["title"].as_str().unwrap_or("Untitled"),
+                module["description"].as_str().unwrap_or(""),
+                module["difficulty"].as_i64().unwrap_or(1),
+                module["estimated_minutes"].as_i64().unwrap_or(30),
+                serde_json::to_string(&module["objectives"]).unwrap_or_default(),
+                i as i32,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let status = if i == 0 { "available" } else { "locked" };
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, status) \
+             VALUES (?1, ?2, (SELECT id FROM learner_profiles LIMIT 1), ?3)",
+            rusqlite::params![uuid::Uuid::new_v4().to_string(), module_id, status],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(json!({
+        "id": path_id,
+        "trackId": request.track_id,
+        "modules": modules_arr,
+        "edges": edges_arr,
     }))
 }
 
@@ -1188,6 +1338,307 @@ mod tests {
         assert!(
             quiz_excerpt.is_none(),
             "non-section block (quiz) must return None from load_section_excerpt"
+        );
+    }
+
+    // ── Phase 5 Q3 — pack_id short-circuit tests ──
+
+    use crate::topic_packs::model::{
+        LoadedPack as TpLoadedPack, Pack as TpPack, PackEdge as TpPackEdge,
+        PackModule as TpPackModule, PackSource as TpPackSource,
+        ValidationStatus as TpValidationStatus,
+    };
+    use crate::topic_packs::registry::PackRegistry as TpPackRegistry;
+
+    fn make_pack_fixture(id: &str, enabled: bool) -> TpLoadedPack {
+        TpLoadedPack {
+            pack: TpPack {
+                id: id.to_string(),
+                title: format!("{} Pack", id),
+                description: format!("desc for {}", id),
+                domain_module: "devops".to_string(),
+                estimated_hours: Some(8),
+                pack_version: "1.0".to_string(),
+                requires_docker: false,
+                modules: vec![
+                    TpPackModule {
+                        id: "intro".to_string(),
+                        title: "Intro to the topic".to_string(),
+                        description: "starter module".to_string(),
+                        difficulty: Some(2),
+                        estimated_minutes: Some(30),
+                        objectives: vec!["learn basics".to_string()],
+                        exercise_types: vec!["conceptual_qa".to_string()],
+                    },
+                    TpPackModule {
+                        id: "advanced".to_string(),
+                        title: "Advanced patterns".to_string(),
+                        description: "deeper module".to_string(),
+                        difficulty: Some(6),
+                        estimated_minutes: Some(60),
+                        objectives: vec!["master patterns".to_string()],
+                        exercise_types: vec!["code_challenge".to_string()],
+                    },
+                    TpPackModule {
+                        id: "mastery".to_string(),
+                        title: "Mastery checkpoint".to_string(),
+                        description: "graduation".to_string(),
+                        difficulty: Some(9),
+                        estimated_minutes: Some(45),
+                        objectives: vec!["demonstrate mastery".to_string()],
+                        exercise_types: vec![],
+                    },
+                ],
+                edges: vec![
+                    TpPackEdge {
+                        from: "intro".to_string(),
+                        to: "advanced".to_string(),
+                    },
+                    TpPackEdge {
+                        from: "advanced".to_string(),
+                        to: "mastery".to_string(),
+                    },
+                ],
+            },
+            source: TpPackSource::Bundled,
+            enabled,
+            validation_status: TpValidationStatus::Ok,
+            validation_messages: vec![],
+            last_loaded_at: "2026-06-15T00:00:00Z".to_string(),
+        }
+    }
+
+    fn registry_with_packs(packs: Vec<TpLoadedPack>) -> TpPackRegistry {
+        let mut r = TpPackRegistry::default();
+        for p in packs {
+            r.packs.insert(p.pack.id.clone(), p);
+        }
+        r
+    }
+
+    fn db_with_track(conn: &rusqlite::Connection, track_id: &str) {
+        conn.execute(
+            "INSERT OR IGNORE INTO learner_profiles (id) VALUES ('lp-pack-test')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module) VALUES (?1, 'lp-pack-test', 'TestTopic', 'devops')",
+            [track_id],
+        )
+        .unwrap();
+    }
+
+    fn make_request(track_id: &str, pack_id: Option<&str>) -> GeneratePathRequest {
+        GeneratePathRequest {
+            track_id: track_id.to_string(),
+            topic: "TestTopic".to_string(),
+            domain: "devops".to_string(),
+            goal: "learn things".to_string(),
+            assessment_level: "beginner".to_string(),
+            assessment_gaps: vec![],
+            assessment_strengths: vec![],
+            pack_id: pack_id.map(String::from),
+        }
+    }
+
+    /// generate_path_from_pack_uses_pack_modules: registry has a bundled pack
+    /// with 3 modules; call helper with pack_id; assert modules_json
+    /// deserializes to 3 modules with the exact ids/titles from the pack
+    /// (with `{pack_id}__` namespacing applied — T-05-18 mitigation).
+    #[test]
+    fn generate_path_from_pack_uses_pack_modules() {
+        let conn = fresh_conn_with_schema();
+        db_with_track(&conn, "trk-pack-1");
+        let reg = registry_with_packs(vec![make_pack_fixture("agentic-devops", true)]);
+        let request = make_request("trk-pack-1", Some("agentic-devops"));
+
+        let result = generate_path_from_pack_impl(&conn, &reg, &request, "agentic-devops")
+            .expect("pack short-circuit must succeed for enabled known pack");
+
+        // Returned shape mirrors AI path shape (id, trackId, modules, edges).
+        let modules = result["modules"].as_array().expect("modules array");
+        assert_eq!(modules.len(), 3, "pack has 3 modules");
+        assert_eq!(modules[0]["id"], "agentic-devops__intro");
+        assert_eq!(modules[0]["title"], "Intro to the topic");
+        assert_eq!(modules[1]["id"], "agentic-devops__advanced");
+        assert_eq!(modules[2]["id"], "agentic-devops__mastery");
+
+        // Edges carry the same namespacing.
+        let edges = result["edges"].as_array().expect("edges array");
+        assert_eq!(edges.len(), 2);
+        assert_eq!(edges[0]["from"], "agentic-devops__intro");
+        assert_eq!(edges[0]["to"], "agentic-devops__advanced");
+
+        // SQLite reflects the snapshot.
+        let modules_json: String = conn
+            .query_row(
+                "SELECT modules_json FROM learning_paths WHERE track_id = 'trk-pack-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&modules_json).unwrap();
+        assert_eq!(parsed.as_array().unwrap().len(), 3);
+
+        // modules table got 3 rows, each id namespaced.
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM modules WHERE id LIKE 'agentic-devops__%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3, "modules table should have 3 namespaced rows");
+    }
+
+    /// generate_path_from_pack_writes_generated_by_model: assert
+    /// `generated_by_model` column starts with "topic-pack:".
+    #[test]
+    fn generate_path_from_pack_writes_generated_by_model() {
+        let conn = fresh_conn_with_schema();
+        db_with_track(&conn, "trk-pack-2");
+        let reg = registry_with_packs(vec![make_pack_fixture("ai-engineering", true)]);
+        let request = make_request("trk-pack-2", Some("ai-engineering"));
+
+        generate_path_from_pack_impl(&conn, &reg, &request, "ai-engineering").unwrap();
+
+        let model: String = conn
+            .query_row(
+                "SELECT generated_by_model FROM learning_paths WHERE track_id = 'trk-pack-2'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            model.starts_with("topic-pack:"),
+            "generated_by_model must start with 'topic-pack:'; got: {}",
+            model
+        );
+        assert!(
+            model.contains("ai-engineering"),
+            "generated_by_model must mention pack id; got: {}",
+            model
+        );
+    }
+
+    /// generate_path_from_unknown_pack_errors: registry is empty; assert Err
+    /// "Topic pack not found".
+    #[test]
+    fn generate_path_from_unknown_pack_errors() {
+        let conn = fresh_conn_with_schema();
+        db_with_track(&conn, "trk-pack-3");
+        let reg = registry_with_packs(vec![]);
+        let request = make_request("trk-pack-3", Some("ghost-pack"));
+
+        let err = generate_path_from_pack_impl(&conn, &reg, &request, "ghost-pack")
+            .expect_err("unknown pack must Err");
+        assert!(
+            err.contains("Topic pack not found"),
+            "error must mention 'Topic pack not found'; got: {}",
+            err
+        );
+        assert!(err.contains("ghost-pack"), "error must mention the id; got: {}", err);
+
+        // No rows leaked into learning_paths.
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM learning_paths WHERE track_id = 'trk-pack-3'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0, "no learning_paths row should be inserted on Err");
+    }
+
+    /// generate_path_from_disabled_pack_errors: registry has pack with
+    /// enabled=false; assert Err mentions "disabled" (T-05-19 mitigation).
+    #[test]
+    fn generate_path_from_disabled_pack_errors() {
+        let conn = fresh_conn_with_schema();
+        db_with_track(&conn, "trk-pack-4");
+        let reg = registry_with_packs(vec![make_pack_fixture("kubernetes-fundamentals", false)]);
+        let request = make_request("trk-pack-4", Some("kubernetes-fundamentals"));
+
+        let err =
+            generate_path_from_pack_impl(&conn, &reg, &request, "kubernetes-fundamentals")
+                .expect_err("disabled pack must Err");
+        assert!(
+            err.to_lowercase().contains("disabled"),
+            "error must mention 'disabled'; got: {}",
+            err
+        );
+
+        // No rows leaked.
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM learning_paths WHERE track_id = 'trk-pack-4'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    /// generate_path_from_pack_does_not_call_ai: the helper does not take an
+    /// `AuthState` and does not invoke `ai_request` — this is enforced by the
+    /// type signature (compile-time guarantee). This test additionally proves
+    /// the helper is sync-callable from a non-async context.
+    #[test]
+    fn generate_path_from_pack_does_not_call_ai() {
+        let conn = fresh_conn_with_schema();
+        db_with_track(&conn, "trk-pack-5");
+        let reg = registry_with_packs(vec![make_pack_fixture("rust-from-zero", true)]);
+        let request = make_request("trk-pack-5", Some("rust-from-zero"));
+
+        // Note: This call site is NOT inside `tokio::task::block_on` or any
+        // async runtime. If `generate_path_from_pack_impl` ever started calling
+        // `.await` on `ai_request` it would either fail to compile (not async)
+        // or panic at runtime (no runtime). Calling it here in a sync test
+        // proves the AI code path is statically excluded.
+        let result = generate_path_from_pack_impl(&conn, &reg, &request, "rust-from-zero")
+            .expect("must succeed without AI");
+        assert_eq!(result["modules"].as_array().unwrap().len(), 3);
+    }
+
+    /// Cross-pack namespacing test: two packs both define module id="intro"
+    /// → both can coexist in `modules` table without UNIQUE collision
+    /// (T-05-18 mitigation). Belt-and-suspenders alongside the test above.
+    #[test]
+    fn generate_path_from_two_packs_namespaces_module_ids() {
+        let conn = fresh_conn_with_schema();
+        db_with_track(&conn, "trk-cross-a");
+        db_with_track(&conn, "trk-cross-b");
+        let reg = registry_with_packs(vec![
+            make_pack_fixture("pack-a", true),
+            make_pack_fixture("pack-b", true),
+        ]);
+
+        generate_path_from_pack_impl(
+            &conn,
+            &reg,
+            &make_request("trk-cross-a", Some("pack-a")),
+            "pack-a",
+        )
+        .expect("first pack");
+        generate_path_from_pack_impl(
+            &conn,
+            &reg,
+            &make_request("trk-cross-b", Some("pack-b")),
+            "pack-b",
+        )
+        .expect("second pack with same module-ids (intro/advanced/mastery)");
+
+        let intro_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM modules WHERE id IN ('pack-a__intro', 'pack-b__intro')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            intro_count, 2,
+            "namespacing must let both packs' 'intro' modules coexist"
         );
     }
 }
