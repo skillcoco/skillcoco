@@ -26,6 +26,10 @@ vi.mock("@/lib/tauri-commands", () => ({
   setActiveProvider: vi.fn(),
   // Phase 4 Wave 5 — Daily Challenge opt-out
   setDailyChallengeEnabled: vi.fn(),
+  // Phase 5 Wave 3 — Topic Packs section (mounted between Labs and Learning)
+  listTopicPacksAdmin: vi.fn().mockResolvedValue([]),
+  setTopicPackEnabled: vi.fn(),
+  reloadSkills: vi.fn(),
 }));
 
 import {

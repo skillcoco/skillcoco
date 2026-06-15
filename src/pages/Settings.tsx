@@ -3,6 +3,7 @@ import { useTheme } from "@/hooks/useTheme";
 import * as commands from "@/lib/tauri-commands";
 import type { ProviderAuthStatus, LoginRequest } from "@/types/ai";
 import { SettingsLabsSection } from "@/pages/SettingsLabsSection";
+import { SettingsTopicPacksSection } from "@/pages/SettingsTopicPacksSection";
 import {
   Shield,
   Key,
@@ -761,6 +762,9 @@ export function Settings() {
 
       {/* ── Labs (Phase 03.1 LAB-03) ── */}
       <SettingsLabsSection />
+
+      {/* ── Topic Packs (Phase 5 — D-09) ── */}
+      <SettingsTopicPacksSection />
 
       {/* ── Learning (Phase 4 Wave 5 — daily challenge opt-out, Q8 lock) ── */}
       <section className="space-y-4">
