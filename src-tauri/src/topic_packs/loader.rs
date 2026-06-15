@@ -24,6 +24,7 @@
 
 use include_dir::{include_dir, Dir};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::error::PackError;
@@ -76,11 +77,31 @@ pub fn ensure_skills_dir() -> Option<PathBuf> {
 
 /// Full boot-time load: bundled + skills, bundled-wins-on-collision,
 /// persists each accepted pack to SQLite.
+///
+/// CR-02: accumulates a `bundled_ids` set from EVERY bundled pack attempt
+/// (success OR sentinel-on-failure). The set is stored on the returned
+/// `PackRegistry` so subsequent `reload_skills_into` calls can honor
+/// D-03 against failed-bundled ids that are not present in
+/// `registry.packs`.
 pub fn load_all(conn: &rusqlite::Connection) -> Result<PackRegistry, PackError> {
     let mut registry = PackRegistry::default();
 
     // ── Bundled (compile-time) ──
     for dir in BUNDLED_PACKS.dirs() {
+        // CR-02: capture the directory name as the id-of-record up front,
+        // so we can populate `bundled_ids` even when parse/validate fails.
+        // The pack schema enforces `id == <dir-name>` by convention, so
+        // this matches the eventual `pack.id` on the happy path.
+        let id_guess = dir
+            .path()
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown-bundled-pack")
+            .to_string();
+        if !id_guess.is_empty() && id_guess != "unknown-bundled-pack" {
+            registry.bundled_ids.insert(id_guess.clone());
+        }
+
         let pack_path = dir.path().join("pack.json");
         let Some(file) = BUNDLED_PACKS.get_file(&pack_path) else {
             log::warn!(
@@ -99,6 +120,10 @@ pub fn load_all(conn: &rusqlite::Connection) -> Result<PackRegistry, PackError> 
         match parse_and_validate(text) {
             Ok((pack, soft_warnings)) => {
                 let id = pack.id.clone();
+                // Belt-and-suspenders: if `pack.id` disagrees with the dir
+                // name (would be a schema violation, but defensively),
+                // record the parsed id too. Idempotent on HashSet.
+                registry.bundled_ids.insert(id.clone());
                 let enabled = persistence::read_enabled(conn, &id)
                     .ok()
                     .flatten()
@@ -121,12 +146,6 @@ pub fn load_all(conn: &rusqlite::Connection) -> Result<PackRegistry, PackError> 
             }
             Err(e) => {
                 // Surface sentinel row so Settings UI can see the failure.
-                let id_guess = dir
-                    .path()
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown-bundled-pack")
-                    .to_string();
                 log::error!(
                     "Bundled pack at {:?} failed validation: {} — sentinel row written",
                     dir.path(),
@@ -136,13 +155,17 @@ pub fn load_all(conn: &rusqlite::Connection) -> Result<PackRegistry, PackError> 
                     conn,
                     &sentinel_pack(&id_guess, PackSource::Bundled, &e.to_string()),
                 );
+                // `id_guess` is already in registry.bundled_ids above.
             }
         }
     }
 
     // ── Skills (runtime) ──
     if let Some(skills_root) = ensure_skills_dir() {
-        load_skills(&mut registry, conn, &skills_root);
+        // Clone the bundled_ids snapshot so load_skills can borrow it
+        // immutably while we hand out a `&mut PackRegistry`.
+        let bundled_ids = registry.bundled_ids.clone();
+        load_skills(&mut registry, conn, &skills_root, &bundled_ids);
     }
 
     Ok(registry)
@@ -154,6 +177,9 @@ pub fn load_all(conn: &rusqlite::Connection) -> Result<PackRegistry, PackError> 
 /// Wipes all `source='skill'` rows from SQLite first so a removed-from-
 /// disk skill disappears from the Settings UI. Then re-runs the
 /// skills portion of [`load_all`].
+///
+/// CR-02: re-uses `registry.bundled_ids` captured at boot to enforce
+/// D-03 against failed-bundled ids that never made it into `packs`.
 pub fn reload_skills_into(
     registry: &mut PackRegistry,
     conn: &rusqlite::Connection,
@@ -169,17 +195,25 @@ pub fn reload_skills_into(
     }
 
     if let Some(skills_root) = ensure_skills_dir() {
-        load_skills(registry, conn, &skills_root);
+        // Snapshot bundled_ids so we can hand out `&mut PackRegistry`.
+        let bundled_ids = registry.bundled_ids.clone();
+        load_skills(registry, conn, &skills_root, &bundled_ids);
     }
     Ok(())
 }
 
 /// Walk the skills root, parse + validate every `<id>/pack.json`, merge
 /// with bundled-wins-on-collision, and UPSERT every accepted pack.
+///
+/// CR-02: `bundled_ids` is the authoritative D-03 collision set. It MUST
+/// include every bundled pack attempted at boot — successful loads AND
+/// sentinel-on-failure entries — so a skill cannot shadow a failed
+/// bundled pack that never made it into `registry.packs`.
 fn load_skills(
     registry: &mut PackRegistry,
     conn: &rusqlite::Connection,
     skills_root: &Path,
+    bundled_ids: &HashSet<String>,
 ) {
     // T-05-05: canonicalize the root once so we can verify every candidate
     // file resolves underneath it (rejects `pack.json` symlinks that escape).
@@ -283,8 +317,12 @@ fn load_skills(
         match parse_and_validate(&text) {
             Ok((pack, soft_warnings)) => {
                 let id = pack.id.clone();
-                if registry.packs.contains_key(&id) {
-                    // D-03: bundled wins on collision.
+                // CR-02: D-03 collision check uses `bundled_ids` (which
+                // covers BOTH successful and failed bundled packs).
+                // `registry.packs.contains_key` alone is insufficient
+                // because failed-bundled packs are sentinel-only — they
+                // exist in SQLite + bundled_ids but NOT in `packs`.
+                if bundled_ids.contains(&id) || registry.packs.contains_key(&id) {
                     log::warn!(
                         "Skill pack id {:?} collides with bundled — skill dropped (D-03 bundled wins)",
                         id
@@ -810,6 +848,134 @@ mod tests {
             soft.iter().any(|s| s.contains("/modules/0/difficulty")),
             "soft warnings must name /modules/0/difficulty (got {:?})",
             soft
+        );
+    }
+
+    /// CR-02 regression test: D-03 must hold for FAILED-bundled packs too.
+    ///
+    /// Bug: the original `load_skills` only consulted `registry.packs` to
+    /// detect collisions. A bundled pack whose JSON failed schema validation
+    /// is NOT inserted into the registry (sentinel-only path), so a skill
+    /// with the same id would slip through, AND its `upsert_pack` call
+    /// would flip the existing sentinel row's `source` column from
+    /// `'bundled'` to `'skill'` via `ON CONFLICT(id) DO UPDATE SET source=excluded.source`.
+    ///
+    /// Fix: `load_skills` now takes a `bundled_ids: &HashSet<String>` of
+    /// every bundled id attempted (success OR sentinel), and rejects
+    /// skills whose id is in the set. As belt-and-suspenders,
+    /// `persistence::upsert_pack` no longer downgrades a `source='bundled'`
+    /// row to `'skill'` on conflict.
+    #[test]
+    fn skill_cannot_shadow_failed_bundled_pack() {
+        use std::collections::HashSet;
+
+        let tmp = TempDir::new().unwrap();
+        let conn = fresh_db();
+
+        // Simulate a failed-bundled pack: write the sentinel row directly
+        // into SQLite, the same way the loader's bundled-error branch would.
+        let sentinel = sentinel_pack(
+            "broken-pack",
+            PackSource::Bundled,
+            "schema violation: missing required field `title`",
+        );
+        persistence::upsert_pack(&conn, &sentinel)
+            .expect("seed sentinel bundled row");
+
+        // The same id used by the (well-formed) skill pack we are about to
+        // drop into the tempdir. With the fix, the bundled_ids set is the
+        // authoritative collision check — registry.packs is incidental.
+        let bundled_ids: HashSet<String> =
+            [String::from("broken-pack")].into_iter().collect();
+
+        // Drop a perfectly-valid skill pack claiming the same id.
+        write_skill_pack(
+            tmp.path(),
+            "broken-pack",
+            &valid_pack_json("broken-pack", "Imposter Skill"),
+        );
+
+        let mut registry = PackRegistry::default();
+        load_skills(&mut registry, &conn, tmp.path(), &bundled_ids);
+
+        // Assertion 1: skill is rejected from the in-memory registry.
+        assert!(
+            registry.get("broken-pack").is_none(),
+            "D-03 (failed-bundled variant): skill with id `broken-pack` must \
+             be dropped because a bundled sentinel claimed the id"
+        );
+
+        // Assertion 2: the DB row's source column is STILL `'bundled'`
+        // — the upsert_pack hardening prevents the silent downgrade.
+        let (source, status): (String, String) = conn
+            .query_row(
+                "SELECT source, validation_status FROM topic_packs WHERE id='broken-pack'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("sentinel row must still exist");
+        assert_eq!(
+            source, "bundled",
+            "CR-02: bundled sentinel row must not be flipped to `skill`"
+        );
+        assert_eq!(
+            status, "errors",
+            "CR-02: validation_status must remain `errors` (sentinel preserved)"
+        );
+    }
+
+    /// CR-02 hardening test: even if a skill upsert somehow reaches the
+    /// persistence layer with an id already owned by a bundled row, the
+    /// `source` column must NOT be downgraded from `'bundled'` to `'skill'`.
+    /// This guards every future caller of `upsert_pack`, not just the loader.
+    #[test]
+    fn upsert_pack_does_not_downgrade_bundled_to_skill() {
+        let conn = fresh_db();
+
+        // Seed a bundled sentinel row.
+        let bundled_sentinel = sentinel_pack(
+            "shared-id",
+            PackSource::Bundled,
+            "deliberate seed error",
+        );
+        persistence::upsert_pack(&conn, &bundled_sentinel)
+            .expect("seed bundled sentinel");
+
+        // Construct a well-formed `LoadedPack` with the SAME id but
+        // `source = Skill`. Calling upsert_pack with it must NOT flip the
+        // existing row's `source` column.
+        let skill_clash = LoadedPack {
+            pack: Pack {
+                id: "shared-id".to_string(),
+                title: "Skill Pretender".to_string(),
+                description: "I want to claim the bundled id".to_string(),
+                domain_module: "devops".to_string(),
+                estimated_hours: None,
+                pack_version: "1.0".to_string(),
+                requires_docker: false,
+                modules: vec![],
+                edges: vec![],
+            },
+            source: PackSource::Skill,
+            enabled: true,
+            validation_status: ValidationStatus::Ok,
+            validation_messages: vec![],
+            last_loaded_at: now_rfc3339(),
+        };
+
+        persistence::upsert_pack(&conn, &skill_clash)
+            .expect("upsert must not error — just not downgrade");
+
+        let source: String = conn
+            .query_row(
+                "SELECT source FROM topic_packs WHERE id='shared-id'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("row must still exist");
+        assert_eq!(
+            source, "bundled",
+            "CR-02: upsert_pack must NEVER downgrade source from bundled to skill"
         );
     }
 

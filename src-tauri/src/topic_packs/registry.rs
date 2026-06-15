@@ -9,7 +9,7 @@
 //! lookups (e.g. by domain_module, by source) belong in `loader` or the
 //! IPC handler that needs them.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use super::model::{LoadedPack, PackSource};
 
@@ -19,6 +19,13 @@ pub struct PackRegistry {
     /// iteration order stable across runs — handy for both deterministic
     /// tests and a stable-looking Settings UI.
     pub packs: BTreeMap<String, LoadedPack>,
+
+    /// CR-02: every bundled-pack id attempted at boot, INCLUDING ids whose
+    /// pack.json failed parse/validation (sentinel-only) and therefore
+    /// never made it into `packs`. The skill loader consults this set to
+    /// enforce D-03 (bundled wins on collision) even for failed-bundled.
+    /// Populated by [`super::loader::load_all`].
+    pub bundled_ids: HashSet<String>,
 }
 
 impl PackRegistry {

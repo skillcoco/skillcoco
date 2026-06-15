@@ -31,9 +31,19 @@ fn status_str(s: ValidationStatus) -> &'static str {
 
 /// UPSERT a pack by id. `enabled` is preserved on conflict (D-09).
 ///
-/// On conflict (id already exists), updates `title, source, pack_version,
-/// last_loaded_at, validation_status, validation_messages_json`. The `enabled`
-/// column is left untouched so a user toggle survives subsequent reloads.
+/// On conflict (id already exists), updates `title, pack_version,
+/// last_loaded_at, validation_status, validation_messages_json`. The
+/// `enabled` column is left untouched so a user toggle survives
+/// subsequent reloads.
+///
+/// CR-02 (Phase 5 review): the `source` column is NEVER downgraded from
+/// `'bundled'` to `'skill'` on conflict. If the existing row is
+/// `source='bundled'` (including bundled sentinel-error rows that were
+/// written when a bundled pack failed validation), an incoming skill
+/// upsert preserves the bundled marker. This is belt-and-suspenders
+/// against the loader's `bundled_ids` collision check — even if
+/// `load_skills` somehow reaches this code path with a bundled-colliding
+/// id, the diagnostic integrity of the bundled row is preserved.
 pub fn upsert_pack(conn: &Connection, p: &LoadedPack) -> Result<()> {
     let messages_json = serde_json::to_string(&p.validation_messages)
         .unwrap_or_else(|_| "[]".to_string());
@@ -43,7 +53,7 @@ pub fn upsert_pack(conn: &Connection, p: &LoadedPack) -> Result<()> {
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
          ON CONFLICT(id) DO UPDATE SET \
             title=excluded.title, \
-            source=excluded.source, \
+            source=CASE WHEN topic_packs.source='bundled' THEN 'bundled' ELSE excluded.source END, \
             pack_version=excluded.pack_version, \
             last_loaded_at=excluded.last_loaded_at, \
             validation_status=excluded.validation_status, \
