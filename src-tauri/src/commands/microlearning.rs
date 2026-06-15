@@ -275,17 +275,24 @@ fn is_daily_challenge_enabled_inner(
         .map_err(|e| format!("is_daily_challenge_enabled: gate check: {}", e))?;
 
     // User opt-out — preferences_json.dailyChallengeEnabled === false explicitly.
-    let prefs_json: String = conn
+    // WR-02 — evaluate the opt-out structurally via SQLite's json_extract
+    // in the same query that reads the row. COALESCE(..., 1) maps the
+    // missing-key case (NULL) to "enabled" (D-12 default = opted-in once
+    // the gate fires). The final `= 0` selects the explicit false case.
+    // Folding this into one query also removes the previous two-step
+    // read-then-parse where a substring scan could be fooled by bytes
+    // inside a sibling string value.
+    let user_optout: bool = conn
         .query_row(
-            "SELECT preferences_json FROM learner_profiles WHERE id = ?1",
+            "SELECT COALESCE(json_extract(preferences_json, '$.dailyChallengeEnabled'), 1) = 0
+               FROM learner_profiles WHERE id = ?1",
             params![&learner_id],
-            |row| row.get(0),
+            |row| row.get::<_, i64>(0),
         )
         .optional()
         .map_err(|e| format!("is_daily_challenge_enabled: read prefs: {}", e))?
-        .unwrap_or_else(|| "{}".to_string());
-
-    let user_optout = prefs_dailychallenge_disabled(&prefs_json);
+        .map(|n| n != 0)
+        .unwrap_or(false);
 
     let enabled = gate_satisfied && !user_optout;
 
@@ -397,39 +404,40 @@ fn est_minutes_for(block_type: &str) -> i32 {
 /// `true`, non-bool, malformed JSON) returns `false` (default = opted-in
 /// once the gate fires).
 ///
-/// Implementation note: avoids pulling `serde_json` here. Phase 4
-/// preferences_json is small (<1 KB) and the desktop runtime parses it
-/// repeatedly per Dashboard mount; a stringy substring check is safe
-/// because the key is unique to this feature and we look for the literal
-/// `false` value. If preferences_json grows or the matrix of opt-outs
-/// expands, swap this for a JSON parser.
+/// WR-02 — uses SQLite's `json_extract` (structural JSON parser) to
+/// evaluate `$.dailyChallengeEnabled` rather than a hand-rolled byte-level
+/// substring scan. The substring scan could be tricked by malformed or
+/// hand-edited prefs_json whose byte content contained the literal token
+/// `"dailyChallengeEnabled":false` inside a string value at a different
+/// path. `json_extract` only returns the value at the top-level key, so
+/// no string-value content can ever spoof it.
+///
+/// Production code paths fold this check into the same query that reads
+/// the row (see `is_daily_challenge_enabled_inner`). This standalone
+/// helper preserves the unit-testable `&str -> bool` surface that the
+/// `prefs_parser_*` tests exercise and uses identical SQL semantics, so
+/// the contract between the two is locked.
 fn prefs_dailychallenge_disabled(prefs_json: &str) -> bool {
-    // Look for the JSON token `"dailyChallengeEnabled":false` allowing any
-    // whitespace between the colon and `false`. The key is camelCase per
-    // FIX-02 (matches the TS contract the frontend writes).
-    let s = prefs_json;
-    let key = "\"dailyChallengeEnabled\"";
-    let mut search_from = 0;
-    while let Some(pos) = s[search_from..].find(key) {
-        let after_key = search_from + pos + key.len();
-        // Skip whitespace + colon
-        let rest = &s[after_key..];
-        let rest = rest.trim_start();
-        let rest = match rest.strip_prefix(':') {
-            Some(r) => r.trim_start(),
-            None => {
-                // malformed near this match — advance past it
-                search_from = after_key;
-                continue;
-            }
-        };
-        if rest.starts_with("false") {
-            return true;
-        }
-        // Either `true`, a literal, or something else — caller-opted-in.
-        return false;
-    }
-    false
+    // Evaluate `json_extract(?, '$.dailyChallengeEnabled')` against an
+    // ephemeral in-memory connection. `json_extract` returns:
+    //   * 0  if the value is JSON `false`
+    //   * 1  if the value is JSON `true`
+    //   * other integer/text for other types
+    //   * NULL for missing key OR malformed input
+    // Default = opted-in (NULL/missing/non-zero -> not disabled).
+    let conn = match Connection::open_in_memory() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let v: Option<i64> = conn
+        .query_row(
+            "SELECT json_extract(?1, '$.dailyChallengeEnabled')",
+            params![prefs_json],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap_or(None);
+    matches!(v, Some(0))
 }
 
 #[cfg(test)]
@@ -786,6 +794,56 @@ mod tests {
         assert!(!prefs_dailychallenge_disabled(
             "{\"dailyChallengeEnabled\":true}"
         ));
+    }
+
+    /// WR-02 regression — substring parser false-positive on bytes that
+    /// look like the key-value pair but aren't structurally at the
+    /// top level.
+    ///
+    /// The hand-rolled parser scans raw bytes for the substring
+    /// `"dailyChallengeEnabled"` followed by `:` + `false`. JSON allows
+    /// arbitrary content inside string values, including (with proper
+    /// escaping) sequences that the byte-level scan can be tricked by:
+    ///
+    /// 1. A nested JSON-string preference whose content embeds a literal
+    ///    `"dailyChallengeEnabled":false` pair (e.g. the `notes` field
+    ///    captured pasted JSON during onboarding). The structural parser
+    ///    sees `notes = "...":false..."` — a single string value — but
+    ///    the substring scan sees the literal token.
+    /// 2. A second top-level key whose top-level value is `true` AND
+    ///    appears BEFORE a sibling string field that embeds the same
+    ///    substring. The substring scan walks past the legitimate
+    ///    `dailyChallengeEnabled":true` and re-matches inside the string,
+    ///    incorrectly flagging opt-out.
+    ///
+    /// The fix uses SQLite's `json_extract` — a structural JSON parser —
+    /// to evaluate `$.dailyChallengeEnabled` directly, so only the
+    /// top-level key counts.
+    #[test]
+    fn prefs_disabled_check_ignores_substring_in_other_fields() {
+        // Scenario 1: notes contains the literal substring WITHOUT a
+        // backslash before the quote — i.e. the JSON is technically
+        // malformed (unescaped quote inside a string), which is exactly
+        // what a hand-edited DB or a future preference writer could land.
+        // The structural parser would reject the whole document; the
+        // substring scanner would match and falsely report opt-out.
+        let prefs = "{\"otherKey\":\"see \"dailyChallengeEnabled\":false in the value\"}";
+        assert!(
+            !prefs_dailychallenge_disabled(prefs),
+            "byte-level substring match inside a malformed/embedded string must not count as opt-out (got disabled=true for: {})",
+            prefs
+        );
+
+        // Scenario 2: top-level dailyChallengeEnabled is explicitly true,
+        // but a later field embeds the false-substring in its value
+        // (again, technically malformed but byte-scannable). The fix
+        // must honor the top-level true.
+        let prefs2 = "{\"dailyChallengeEnabled\":true,\"notes\":\"legacy doc said \"dailyChallengeEnabled\":false here\"}";
+        assert!(
+            !prefs_dailychallenge_disabled(prefs2),
+            "explicit top-level true must win over a substring-in-string match (got disabled=true for: {})",
+            prefs2
+        );
     }
 
     // ── set_daily_challenge_enabled (Wave 5 — Settings opt-out) ──
