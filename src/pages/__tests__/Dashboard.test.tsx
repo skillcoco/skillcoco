@@ -64,8 +64,68 @@ vi.mock("@/stores/useLearningStore", async () => {
   };
 });
 
+// Phase 4 Plan 04 — mock the daily-challenge sibling slice. The Dashboard
+// reads three selectors (loadDailyChallenge, isEnabled, globalStreakDays)
+// and fires loadDailyChallenge in the mount useEffect. The TodaysChallengeCard
+// also reads `todaysChallenge` via selector.
+interface DailyChallengeState {
+  isEnabled: boolean;
+  globalStreakDays: number;
+  todaysChallenge:
+    | {
+        blockId: string;
+        blockType: string;
+        moduleId: string;
+        trackId: string;
+        estMinutes: number;
+        status: "pending" | "in_progress" | "done";
+      }
+    | null;
+  loadDailyChallenge: () => Promise<void>;
+}
+
+vi.mock("@/stores/useDailyChallengeStore", async () => {
+  const { create } = await import("zustand");
+
+  function makeInitial(): DailyChallengeState {
+    return {
+      isEnabled: false,
+      globalStreakDays: 0,
+      todaysChallenge: null,
+      loadDailyChallenge: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  let store = create<DailyChallengeState>(() => makeInitial());
+
+  // Wrap the hook so it doubles as a getState/setState-bearing object —
+  // mirrors the real Zustand hook's surface (state.getState(), state.setState()).
+  function useDailyChallengeStore(...args: unknown[]) {
+    if (typeof args[0] === "function") {
+      return store(args[0] as (state: DailyChallengeState) => unknown);
+    }
+    return store();
+  }
+  useDailyChallengeStore.getState = () => store.getState();
+  useDailyChallengeStore.setState = (
+    update: Partial<DailyChallengeState> | ((s: DailyChallengeState) => Partial<DailyChallengeState>),
+  ) => store.setState(update as Parameters<typeof store.setState>[0]);
+
+  return {
+    useDailyChallengeStore,
+    __resetDailyStore: (overrides?: Partial<DailyChallengeState>) => {
+      store.setState(makeInitial(), true);
+      if (overrides) {
+        store.setState(overrides);
+      }
+    },
+  };
+});
+
 // @ts-expect-error vi.mock injects __resetStore into the module
 import { __resetStore } from "@/stores/useLearningStore";
+// @ts-expect-error vi.mock injects __resetDailyStore into the module
+import { __resetDailyStore, useDailyChallengeStore } from "@/stores/useDailyChallengeStore";
 
 const mockProfile: LearnerProfile = {
   id: "profile-1",
@@ -124,6 +184,7 @@ describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __resetStore();
+    __resetDailyStore();
     vi.mocked(getDueCards).mockResolvedValue([]);
   });
 
@@ -212,22 +273,6 @@ describe("Dashboard", () => {
     });
   });
 
-  it("shows best streak from track streakDays (FIX-04)", async () => {
-    const tracks = [
-      makeTrack({ id: "t1", topic: "Kubernetes", streakDays: 5 }),
-      makeTrack({ id: "t2", topic: "Rust", streakDays: 2 }),
-    ];
-    vi.mocked(listTracks).mockResolvedValue(tracks);
-    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
-
-    renderDashboard();
-
-    // Best Streak StatsCard should show "5d" (max across tracks)
-    await waitFor(() => {
-      expect(screen.getByText("5d")).toBeInTheDocument();
-    });
-  });
-
   it("recommends 'Review N due cards' when dueCards >= 1 (smart session)", async () => {
     vi.mocked(listTracks).mockResolvedValue([makeTrack()]);
     vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
@@ -253,5 +298,101 @@ describe("Dashboard", () => {
     });
     // SmartSessionCard should NOT appear with no tracks and no due cards
     expect(screen.queryByText("Smart Session")).not.toBeInTheDocument();
+  });
+
+  // ── Phase 4 Plan 04 — Daily challenge integration ──
+
+  it("calls loadDailyChallenge on mount (Pitfall 6 — 1 IPC gate fan-out)", async () => {
+    vi.mocked(listTracks).mockResolvedValue([]);
+    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
+
+    // Pre-mount: capture the action ref the mock store exposes so we can
+    // assert it was invoked. The store factory above defaults loadDailyChallenge
+    // to a vi.fn(); read it post-render and assert call count.
+    renderDashboard();
+
+    await waitFor(() => {
+      const loadFn = useDailyChallengeStore.getState().loadDailyChallenge as ReturnType<typeof vi.fn>;
+      expect(loadFn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("renders TodaysChallengeCard above SmartSessionCard (RESEARCH section 5)", async () => {
+    vi.mocked(listTracks).mockResolvedValue([makeTrack()]);
+    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
+    vi.mocked(getDueCards).mockResolvedValue([makeSRCard()]);
+
+    // Daily challenge enabled with a pending challenge so the card actually
+    // renders (returns null when isEnabled=false).
+    __resetDailyStore({
+      isEnabled: true,
+      globalStreakDays: 2,
+      loadDailyChallenge: vi.fn().mockResolvedValue(undefined),
+    });
+    // Seed the challenge payload via setState — todaysChallenge is part of
+    // the mock state shape above so no ts-expect-error needed.
+    useDailyChallengeStore.setState({
+      todaysChallenge: {
+        blockId: "blk-1",
+        blockType: "section",
+        moduleId: "mod-1",
+        trackId: "trk-1",
+        estMinutes: 4,
+        status: "pending",
+      },
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText("Smart Session")).toBeInTheDocument();
+    });
+
+    // Both cards rendered; assert DOM order: daily-challenge card comes first.
+    const dailyCard = screen.getByText(/today's challenge/i).closest("[data-testid^='daily-challenge-card']");
+    const smartCard = screen.getByText("Smart Session").closest("div");
+
+    expect(dailyCard).not.toBeNull();
+    expect(smartCard).not.toBeNull();
+    if (dailyCard && smartCard) {
+      // compareDocumentPosition returns DOCUMENT_POSITION_FOLLOWING (4) when
+      // smartCard FOLLOWS dailyCard — exactly what we want.
+      const position = dailyCard.compareDocumentPosition(smartCard);
+      // eslint-disable-next-line no-bitwise
+      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+  });
+
+  it("global streak StatsCard shows '--' when isEnabled=false (D-12 — no streak before gate)", async () => {
+    vi.mocked(listTracks).mockResolvedValue([]);
+    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
+
+    // Default mock store state has isEnabled=false; no override needed.
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText("Best Streak")).toBeInTheDocument();
+    });
+    // The Best Streak card value is "--" and subtitle is "not yet active"
+    expect(screen.getByText("not yet active")).toBeInTheDocument();
+  });
+
+  it("global streak StatsCard shows 'Xd' when isEnabled=true (Phase 4 Plan 04)", async () => {
+    vi.mocked(listTracks).mockResolvedValue([]);
+    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
+
+    __resetDailyStore({
+      isEnabled: true,
+      globalStreakDays: 7,
+      loadDailyChallenge: vi.fn().mockResolvedValue(undefined),
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText("Best Streak")).toBeInTheDocument();
+    });
+    expect(screen.getByText("7d")).toBeInTheDocument();
+    expect(screen.getByText("global streak")).toBeInTheDocument();
   });
 });

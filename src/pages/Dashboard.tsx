@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Target, BarChart3, Flame, BookOpen, Layers } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
+import { useDailyChallengeStore } from "@/stores/useDailyChallengeStore";
 import * as commands from "@/lib/tauri-commands";
 import type { LearnerProfile } from "@/types";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { TrackCard } from "@/components/dashboard/TrackCard";
 import { SmartSessionCard } from "@/components/dashboard/SmartSessionCard";
+import { TodaysChallengeCard } from "@/components/dashboard/TodaysChallengeCard";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -17,11 +19,15 @@ function getGreeting(): string {
 
 export function Dashboard() {
   const { tracks, dueCards, loadTracks, loadDueCards } = useLearningStore();
+  const loadDailyChallenge = useDailyChallengeStore((s) => s.loadDailyChallenge);
+  const dailyChallengeEnabled = useDailyChallengeStore((s) => s.isEnabled);
+  const globalStreakDays = useDailyChallengeStore((s) => s.globalStreakDays);
   const [profile, setProfile] = useState<LearnerProfile | null>(null);
 
   useEffect(() => {
     loadTracks();
     loadDueCards();
+    loadDailyChallenge();
     commands.getOrCreateProfile()
       .then(setProfile)
       .catch((err) => console.error("Failed to load profile:", err));
@@ -54,13 +60,6 @@ export function Dashboard() {
   const totalModulesAll = Object.values(moduleCounts).reduce((s, c) => s + c.total, 0);
   const completedModulesAll = Object.values(moduleCounts).reduce((s, c) => s + c.completed, 0);
 
-  // Best streak: MAX of streakDays across all tracks (FIX-04)
-  const bestStreak = useMemo(() => {
-    const ranked = [...tracks].sort((a, b) => (b.streakDays ?? 0) - (a.streakDays ?? 0));
-    const top = ranked[0];
-    return { days: top?.streakDays ?? 0, trackName: top?.topic ?? "" };
-  }, [tracks]);
-
   const displayName = profile?.displayName || "Learner";
 
   // Summary for subtitle
@@ -91,6 +90,12 @@ export function Dashboard() {
         )}
       </div>
 
+      {/* Today's Challenge Card — Phase 4 Plan 04. Sits ABOVE SmartSessionCard
+          per RESEARCH section 5: the daily challenge is the lower-friction
+          action and the most "daily" surface, so it leads. The card itself
+          handles the D-12 gate (returns null when isEnabled === false). */}
+      <TodaysChallengeCard />
+
       {/* Smart Session Card — show when there are due cards OR an active track */}
       {(dueCards.length > 0 || activeTracks.length > 0) && (
         <SmartSessionCard
@@ -116,10 +121,14 @@ export function Dashboard() {
           icon={<BarChart3 size={18} />}
           accentColor="hsl(var(--info))"
         />
+        {/* Best Streak StatsCard replaced with global-streak version (Phase 4
+            Plan 04, RESEARCH section 5). Honors D-12: shows "--" until the
+            auto-enable gate fires so the streak counter never leaks before
+            the daily challenge surface goes live. */}
         <StatsCard
           label="Best Streak"
-          value={bestStreak.days > 0 ? `${bestStreak.days}d` : "--"}
-          subtitle={bestStreak.trackName || "no data yet"}
+          value={dailyChallengeEnabled ? `${globalStreakDays}d` : "--"}
+          subtitle={dailyChallengeEnabled ? "global streak" : "not yet active"}
           icon={<Flame size={18} />}
           accentColor="hsl(var(--warning))"
         />
