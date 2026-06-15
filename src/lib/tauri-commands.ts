@@ -274,3 +274,53 @@ export async function labRuntimeDetect(
 ): Promise<import("@/types/learning").LabRuntimeDetectResult> {
   return invoke("lab_runtime_detect", { request });
 }
+
+// ── Phase 4 Microlearning (Wave 0 — typed shells, Plan 03 wires Rust handlers) ──
+//
+// The Rust commands these wrap are defined as plain `pub async fn` in
+// `src-tauri/src/commands/microlearning.rs`. Plan 03 will:
+//   1. Add `#[tauri::command]` attributes
+//   2. Register them in `tauri::generate_handler!`
+//   3. Replace the `unimplemented!()` bodies with real logic
+// Until then these wrappers will reject at the IPC layer (handler not found).
+
+export interface DailyChallengePayload {
+  blockId: string;
+  blockType: string;
+  moduleId: string;
+  trackId: string;
+  estMinutes: number;
+  status: "pending" | "in_progress" | "done";
+}
+
+export interface GetDailyChallengeResult {
+  challenge: DailyChallengePayload | null;
+}
+
+export interface CompleteDailyChallengeResult {
+  newStreakDays: number;
+  completedAt: string;
+}
+
+export interface IsDailyChallengeEnabledResult {
+  enabled: boolean;
+  globalStreakDays: number;
+}
+
+export async function getDailyChallenge(): Promise<GetDailyChallengeResult> {
+  return invoke("get_daily_challenge", { request: {} });
+}
+
+export async function startDailyChallenge(challengeDate: string): Promise<void> {
+  return invoke("start_daily_challenge", { request: { challengeDate } });
+}
+
+export async function completeDailyChallenge(
+  challengeDate: string,
+): Promise<CompleteDailyChallengeResult> {
+  return invoke("complete_daily_challenge", { request: { challengeDate } });
+}
+
+export async function isDailyChallengeEnabled(): Promise<IsDailyChallengeEnabledResult> {
+  return invoke("is_daily_challenge_enabled", { request: {} });
+}
