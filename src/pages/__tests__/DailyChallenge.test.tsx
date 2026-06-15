@@ -298,6 +298,61 @@ describe("DailyChallenge — Phase 4 Wave 4 (Plan 05 GREEN)", () => {
     );
   });
 
+  // WR-01 regression — useEffect cleanup leak in expired-block timer.
+  //
+  // The expired-redirect setTimeout is scheduled inside `.then()` of an async
+  // chain, AFTER the outer useEffect's cleanup function was registered. The
+  // previous implementation tried to return `() => clearTimeout(t)` from the
+  // .then callback but that return value lives inside the Promise chain — it
+  // is silently discarded. If the user navigates away during the 2.5s window
+  // (e.g. clicks "Back to Dashboard" rendered when error is set), the orphan
+  // timer still fires `navigate("/")` on an unmounted component.
+  //
+  // Fix contract: the outer useEffect cleanup MUST clear the timeout id. This
+  // test uses vitest fake timers — mount the component, let the async fetch
+  // settle so the timer is scheduled, unmount, then advance the clock past the
+  // 2.5s deadline. Post-unmount, navigate("/", { replace: true }) must not be
+  // observed (other than the unmount-triggered click navigates handled by the
+  // user — which aren't fired here; renderPage().unmount() is enough).
+  it("expired-block timer is cleared on unmount (WR-01 — no navigate after unmount)", async () => {
+    mockState({
+      isEnabled: true,
+      globalStreakDays: 2,
+      todaysChallenge: {
+        blockId: "blk-missing",
+        blockType: "section",
+        moduleId: "mod-1",
+        trackId: "trk-1",
+        estMinutes: 4,
+        status: "pending",
+      },
+      loadDailyChallenge: vi.fn().mockResolvedValue(undefined),
+      startDailyChallenge: vi.fn().mockResolvedValue(undefined),
+      completeDailyChallenge: vi.fn().mockResolvedValue(undefined),
+    });
+
+    vi.mocked(commands.getModuleBlocks).mockResolvedValue([makeBlock({ id: "blk-different" })]);
+
+    // Render and wait for the expired UI to appear — this ensures the .then
+    // callback ran and the setTimeout was scheduled.
+    const { unmount } = renderPage();
+    const expired = await screen.findByTestId("daily-challenge-expired");
+    expect(expired).toBeInTheDocument();
+
+    // Capture the navigate call count at the moment of unmount. Real timers
+    // continue running across unmount; the only navigate calls AFTER this
+    // point must come from a leaked timer.
+    const callsBeforeUnmount = mockNavigate.mock.calls.length;
+    unmount();
+
+    // Wait past the 2.5s scheduled redirect. If the cleanup correctly cleared
+    // the timeout, no further navigate calls fire. If the bug is present, the
+    // orphan timer wakes up here and calls navigate("/", { replace: true }).
+    await new Promise((r) => setTimeout(r, 3000));
+
+    expect(mockNavigate.mock.calls.length).toBe(callsBeforeUnmount);
+  }, 6000);
+
   it("back button navigates to / without completing", async () => {
     const completeSpy = vi.fn().mockResolvedValue(undefined);
     mockState({

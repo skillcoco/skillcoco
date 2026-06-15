@@ -66,6 +66,16 @@ export function DailyChallenge(): JSX.Element | null {
     void startChallenge();
 
     let cancelled = false;
+    // WR-01 — hoist the expired-redirect timer id into the outer effect's
+    // closure so the cleanup function below can clear it. The previous
+    // implementation tried to return `() => clearTimeout(t)` from inside the
+    // `.then()` callback, but that return value lives in the Promise chain
+    // and is silently discarded — the useEffect cleanup is the `return () =>
+    // { ... }` declared below. If the user navigated away during the 2.5s
+    // window, the orphan timer would still fire `navigate("/")` on the
+    // unmounted component.
+    let expiredRedirectTimer: ReturnType<typeof setTimeout> | undefined;
+
     getModuleBlocks(todaysChallenge.moduleId)
       .then((blocks) => {
         if (cancelled) return;
@@ -78,11 +88,11 @@ export function DailyChallenge(): JSX.Element | null {
           setError(
             "This challenge expired — we'll pick a new one. Returning to Dashboard.",
           );
-          const t = setTimeout(() => {
+          expiredRedirectTimer = setTimeout(() => {
+            if (cancelled) return;
             navigate("/", { replace: true });
           }, 2500);
-          // Cleanup if unmounted before the timeout
-          return () => clearTimeout(t);
+          return;
         }
         setBlock(found);
       })
@@ -94,6 +104,9 @@ export function DailyChallenge(): JSX.Element | null {
 
     return () => {
       cancelled = true;
+      if (expiredRedirectTimer !== undefined) {
+        clearTimeout(expiredRedirectTimer);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
