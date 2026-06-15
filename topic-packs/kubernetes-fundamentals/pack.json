@@ -2,6 +2,7 @@
   "id": "kubernetes-fundamentals",
   "title": "Kubernetes Fundamentals",
   "description": "Learn Kubernetes from the ground up. Starting with container basics and cluster architecture, you will progress through pods, deployments, services, networking, storage, and security. By the end, you will be comfortable deploying and managing applications on Kubernetes and troubleshooting common issues.",
+  "pack_version": "1.0",
   "domain_module": "devops",
   "estimated_hours": 40,
   "modules": [

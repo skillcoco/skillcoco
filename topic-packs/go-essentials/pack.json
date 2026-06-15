@@ -2,6 +2,7 @@
   "id": "go-essentials",
   "title": "Go Essentials",
   "description": "A practical introduction to the Go programming language. You will learn Go's type system, functions, structs, interfaces, error handling, and concurrency primitives. The course emphasizes Go's strengths in building HTTP servers, CLI tools, and concurrent programs, culminating in a real-world project.",
+  "pack_version": "1.0",
   "domain_module": "programming",
   "estimated_hours": 35,
   "modules": [

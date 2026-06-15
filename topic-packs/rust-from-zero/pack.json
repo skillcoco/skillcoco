@@ -2,6 +2,7 @@
   "id": "rust-from-zero",
   "title": "Rust from Zero",
   "description": "A comprehensive introduction to the Rust programming language. Starting from installation and basic syntax, you will master ownership, borrowing, lifetimes, traits, generics, error handling, concurrency, and async programming. The course culminates in building a real CLI application that ties all concepts together.",
+  "pack_version": "1.0",
   "domain_module": "programming",
   "estimated_hours": 50,
   "modules": [

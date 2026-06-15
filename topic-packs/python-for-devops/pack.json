@@ -2,6 +2,7 @@
   "id": "python-for-devops",
   "title": "Python for DevOps",
   "description": "A focused, practical course on using Python for DevOps and infrastructure automation. Starting with a quick refresher on Python fundamentals, you will learn file and system operations, process automation, API integration, configuration management, Docker automation, AWS scripting with boto3, and building robust CLI tools. Every module emphasizes real-world automation scenarios.",
+  "pack_version": "1.0",
   "domain_module": "devops",
   "estimated_hours": 30,
   "modules": [
