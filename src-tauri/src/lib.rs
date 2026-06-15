@@ -248,6 +248,12 @@ pub fn run() {
             commands::microlearning::complete_daily_challenge,
             commands::microlearning::is_daily_challenge_enabled,
             commands::microlearning::set_daily_challenge_enabled,
+            // Topic Packs (Phase 5 — Wave 2)
+            topic_packs::commands::list_topic_packs,
+            topic_packs::commands::list_topic_packs_admin,
+            topic_packs::commands::set_topic_pack_enabled,
+            topic_packs::commands::reload_skills,
+            topic_packs::commands::get_topic_pack_modules,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
