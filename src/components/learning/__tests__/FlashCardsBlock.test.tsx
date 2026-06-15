@@ -100,4 +100,60 @@ describe("FlashCardsBlock Phase 3", () => {
     await user.keyboard(" ");
     expect(flipCard).not.toHaveClass("flipped");
   });
+
+  // ── Phase 4 Wave 4 (04-05 Task 1) — optional onComplete prop ──
+
+  it("flashcards_on_complete_fires_after_all_cards_rated — fires onComplete once when every card is rated", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    render(
+      <FlashCardsBlock
+        block={makeFlashBlock(threeCards)}
+        moduleId="mod-1"
+        onComplete={onComplete}
+      />,
+    );
+
+    const cards = screen.getAllByTestId("flash-card");
+    expect(cards).toHaveLength(3);
+
+    // Flip + rate Good on card 1
+    await user.click(cards[0]);
+    await user.click(screen.getAllByTestId("rate-Good")[0]);
+    expect(onComplete).not.toHaveBeenCalled();
+
+    // Flip + rate Good on card 2 (after one rating, rate buttons remain — all cards are visible)
+    await user.click(cards[1]);
+    await user.click(screen.getAllByTestId("rate-Good")[1]);
+    expect(onComplete).not.toHaveBeenCalled();
+
+    // Flip + rate Good on card 3 — now all 3 rated → onComplete fires once.
+    await user.click(cards[2]);
+    await user.click(screen.getAllByTestId("rate-Good")[2]);
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("flashcards_on_complete_does_not_fire_partial — does NOT fire onComplete when only 2 of 3 cards rated", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    render(
+      <FlashCardsBlock
+        block={makeFlashBlock(threeCards)}
+        moduleId="mod-1"
+        onComplete={onComplete}
+      />,
+    );
+
+    const cards = screen.getAllByTestId("flash-card");
+
+    // Rate only 2 of 3 cards
+    await user.click(cards[0]);
+    await user.click(screen.getAllByTestId("rate-Good")[0]);
+
+    await user.click(cards[1]);
+    await user.click(screen.getAllByTestId("rate-Easy")[1]);
+
+    expect(onComplete).not.toHaveBeenCalled();
+  });
 });

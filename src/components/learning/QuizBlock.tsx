@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import type {
   ModuleBlock,
   QuizPayload,
@@ -12,6 +12,13 @@ interface QuizBlockProps {
   block: ModuleBlock;
   moduleId: string;
   trackId?: string;
+  /**
+   * Phase 4 (04-05) — optional block-completion signal. Fires once the
+   * Submit action resolves (regardless of pass/fail per D-08 — daily
+   * challenge completion is engagement-driven). ModuleView callers pass
+   * nothing and the prop has zero behavioral effect.
+   */
+  onComplete?: () => void;
 }
 
 function fisherYates<T>(arr: T[]): T[] {
@@ -23,7 +30,7 @@ function fisherYates<T>(arr: T[]): T[] {
   return a;
 }
 
-export function QuizBlock({ block, moduleId, trackId }: QuizBlockProps) {
+export function QuizBlock({ block, moduleId, trackId, onComplete }: QuizBlockProps) {
   const submitQuizAction = useLearningStore((s) => s.submitQuiz);
   const moduleProgress = useLearningStore((s) => s.moduleProgress);
 
@@ -55,6 +62,16 @@ export function QuizBlock({ block, moduleId, trackId }: QuizBlockProps) {
   const [flags, setFlags] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<SubmitQuizResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Phase 4 (04-05) — guard against double-fire on retake / re-render.
+  // Daily-challenge completion is a one-shot signal per mount.
+  const completionFiredRef = useRef(false);
+
+  const fireCompletionOnce = () => {
+    if (!completionFiredRef.current && onComplete) {
+      completionFiredRef.current = true;
+      onComplete();
+    }
+  };
 
   // Empty quiz guard
   if (questions.length === 0) {
@@ -162,6 +179,8 @@ export function QuizBlock({ block, moduleId, trackId }: QuizBlockProps) {
           answers: answerList,
         });
         setResult(r);
+        // Phase 4 (04-05) — D-08 engagement-driven: fire regardless of r.passed.
+        fireCompletionOnce();
       } else {
         // Fallback: compute review locally (for dev/test without trackId)
         const review = questions.map((q) => {
@@ -186,6 +205,7 @@ export function QuizBlock({ block, moduleId, trackId }: QuizBlockProps) {
           cardsCreated: 0,
           review,
         });
+        fireCompletionOnce();
       }
     } catch {
       // On IPC error: compute review locally so user can see their answers
@@ -211,6 +231,7 @@ export function QuizBlock({ block, moduleId, trackId }: QuizBlockProps) {
         cardsCreated: 0,
         review,
       });
+      fireCompletionOnce();
     } finally {
       setSubmitting(false);
     }

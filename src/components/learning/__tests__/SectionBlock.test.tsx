@@ -104,4 +104,26 @@ describe("SectionBlock Phase 3 scaffolds", () => {
     await user.click(screen.getByRole("button", { name: /mark complete/i }));
     expect(onMarkComplete).toHaveBeenCalledWith("blk-section-1");
   });
+
+  // ── Phase 4 Wave 4 (04-05 Task 1) — optional onComplete prop ──
+
+  it("section_on_complete_fires — onComplete callback fires after mark-complete click", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    const onMarkComplete = vi.fn();
+    const block = makeBlock('{"markdown":"# Lesson\\nContent.","word_count":10}');
+
+    render(
+      <SectionBlock
+        block={block}
+        onMarkComplete={onMarkComplete}
+        onComplete={onComplete}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /mark complete/i }));
+
+    expect(onMarkComplete).toHaveBeenCalledWith("blk-section-1");
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
 });

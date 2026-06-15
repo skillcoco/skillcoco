@@ -346,4 +346,57 @@ describe("QuizBlock Phase 3 scaffolds", () => {
     expect(screen.getByTestId("quiz-empty")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /submit/i })).not.toBeInTheDocument();
   });
+
+  // ── Phase 4 Wave 4 (04-05 Task 1) — optional onComplete prop (D-08 engagement-driven) ──
+
+  it("quiz_on_complete_fires_after_submit_passed — onComplete fires when submit resolves (passed)", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    mockSubmitQuiz.mockResolvedValue(mockPassedResult);
+    render(
+      <QuizBlock
+        block={mockBlock}
+        moduleId="mod-1"
+        trackId="track-1"
+        onComplete={onComplete}
+      />,
+    );
+
+    // Answer all questions correctly
+    await user.click(screen.getByText("The smallest deployable unit"));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    await user.click(screen.getByText("kube-scheduler"));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    await user.click(screen.getByText("A distributed key-value store"));
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    expect(await screen.findByTestId("passed-badge")).toBeInTheDocument();
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("quiz_on_complete_fires_after_submit_failed — onComplete fires regardless of pass/fail (D-08)", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    mockSubmitQuiz.mockResolvedValue(mockFailedResult);
+    render(
+      <QuizBlock
+        block={mockBlock}
+        moduleId="mod-1"
+        trackId="track-1"
+        onComplete={onComplete}
+      />,
+    );
+
+    // Answer all questions wrong but still submit
+    await user.click(screen.getByText("A group of nodes"));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    await user.click(screen.getByText("kubelet"));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    await user.click(screen.getByText("A container runtime"));
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    expect(await screen.findByTestId("failed-badge")).toBeInTheDocument();
+    // D-08: engagement-driven completion — failed quiz still completes daily.
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
 });

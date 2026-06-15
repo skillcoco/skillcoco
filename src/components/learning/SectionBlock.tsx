@@ -10,6 +10,13 @@ interface SectionBlockProps {
   priorCompletedCount?: number;
   /** Optional callback — if provided, called instead of the store action (useful for testing). */
   onMarkComplete?: (blockId: string) => void;
+  /**
+   * Phase 4 (04-05) — optional block-completion signal. When provided, fires
+   * immediately after `handleMarkComplete` runs. Used by the DailyChallenge
+   * view to advance the daily-challenge state; ModuleView callers pass nothing
+   * and the prop has zero behavioral effect.
+   */
+  onComplete?: () => void;
 }
 
 /**
@@ -28,6 +35,7 @@ export function SectionBlock({
   lessonIndex = 0,
   priorCompletedCount = 0,
   onMarkComplete,
+  onComplete,
 }: SectionBlockProps) {
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
@@ -67,6 +75,11 @@ export function SectionBlock({
     } else if (moduleId) {
       markLessonComplete(moduleId, block.id);
     }
+    // Phase 4 (04-05) — daily-challenge completion signal. The underlying
+    // store call above is fire-and-forget (optimistic UI); we fire onComplete
+    // immediately after so the DailyChallenge view can advance state without
+    // waiting for the store action to settle.
+    onComplete?.();
   }
 
   // prose for typographic spacing only; colors handled per-element by

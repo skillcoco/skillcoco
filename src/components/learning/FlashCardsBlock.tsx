@@ -1,16 +1,24 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { ModuleBlock, FlashCardsPayload, FlashCard } from "@/types/learning";
 import { rateFlashCard } from "@/lib/tauri-commands";
 
 interface FlashCardsBlockProps {
   block: ModuleBlock;
   moduleId: string;
+  /**
+   * Phase 4 (04-05) — optional block-completion signal. Fires ONCE when
+   * every card in the block has been rated at least once in this session.
+   * ModuleView callers pass nothing and the prop has zero behavioral effect.
+   */
+  onComplete?: () => void;
 }
 
 interface FlashCardProps {
   card: FlashCard;
   blockId: string;
   moduleId: string;
+  /** Parent-supplied — called after a rating IPC resolves. */
+  onRated?: (cardId: string) => void;
 }
 
 /**
@@ -23,7 +31,7 @@ interface FlashCardProps {
  * CSS classes: flip-card, flip-card-inner, flip-card-front, flip-card-back
  * (defined in src/index.css, no library needed).
  */
-function FlashCardItem({ card, blockId, moduleId }: FlashCardProps) {
+function FlashCardItem({ card, blockId, moduleId, onRated }: FlashCardProps) {
   const [flipped, setFlipped] = useState(false);
 
   function toggle() {
@@ -39,8 +47,14 @@ function FlashCardItem({ card, blockId, moduleId }: FlashCardProps) {
         moduleId,
         quality,
       });
+      // Phase 4 (04-05) — notify parent so it can aggregate
+      // ratedCards for the daily-challenge completion signal.
+      onRated?.(card.id);
     } catch (err) {
       console.error("rateFlashCard failed:", err);
+      // Do NOT notify on failure — a failed IPC means the rating did not
+      // persist server-side; treating it as "rated" would let an unrated
+      // card count toward daily completion.
     }
   }
 
@@ -112,13 +126,41 @@ function FlashCardItem({ card, blockId, moduleId }: FlashCardProps) {
  * CSS flip animation lives in index.css (Phase 3).
  * No emojis; uses glass/glass-strong utility classes.
  */
-export function FlashCardsBlock({ block, moduleId }: FlashCardsBlockProps) {
+export function FlashCardsBlock({ block, moduleId, onComplete }: FlashCardsBlockProps) {
   let payload: FlashCardsPayload;
   try {
     payload = JSON.parse(block.payloadJson) as FlashCardsPayload;
   } catch {
     payload = { cards: [] };
   }
+
+  // Phase 4 (04-05) — track which cards have been rated this session and
+  // fire onComplete once every card has rated at least once.
+  // completionFiredRef guards against double-fire on re-renders (e.g. if
+  // the parent re-renders for unrelated reasons after the threshold lands).
+  const [ratedCards, setRatedCards] = useState<Set<string>>(new Set());
+  const completionFiredRef = useRef(false);
+
+  const handleRated = (cardId: string) => {
+    setRatedCards((prev) => {
+      if (prev.has(cardId)) return prev;
+      const next = new Set(prev);
+      next.add(cardId);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (
+      onComplete &&
+      payload.cards.length > 0 &&
+      ratedCards.size >= payload.cards.length &&
+      !completionFiredRef.current
+    ) {
+      completionFiredRef.current = true;
+      onComplete();
+    }
+  }, [ratedCards, payload.cards.length, onComplete]);
 
   if (!payload.cards || payload.cards.length === 0) {
     return (
@@ -136,6 +178,7 @@ export function FlashCardsBlock({ block, moduleId }: FlashCardsBlockProps) {
           card={card}
           blockId={block.id}
           moduleId={moduleId}
+          onRated={handleRated}
         />
       ))}
     </div>
