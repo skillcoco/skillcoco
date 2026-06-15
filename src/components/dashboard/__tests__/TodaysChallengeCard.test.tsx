@@ -1,22 +1,20 @@
-// Phase 4 Wave 0 — RED scaffold for TodaysChallengeCard.
+// Phase 4 Plan 04 (Wave 3) — GREEN tests for TodaysChallengeCard.
 //
-// Imports `@/components/dashboard/TodaysChallengeCard` which does NOT exist
-// yet. Vitest fails with "Cannot find module" — that IS the RED state and
-// the contract Plan 04 satisfies.
+// Strategy: mock useDailyChallengeStore as a function that runs the supplied
+// selector against an injected state object. This mirrors how the real
+// Zustand hook works (`useDailyChallengeStore((s) => s.isEnabled)` etc.) so
+// the component's selector-style reads work under test.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-// Vitest hoisting rule: inline literals only inside the factory body.
+// Hoisted mock — the factory body only references names that vitest
+// hoists safely (vi.fn(), literals).
 vi.mock("@/stores/useDailyChallengeStore", () => ({
   useDailyChallengeStore: vi.fn(),
 }));
 
-// Wave 0 typed shell lives at `@/components/dashboard/TodaysChallengeCard`.
-// The stub returns null so every screen.getByText / getByRole assertion
-// fails — preserving the assertion-level RED state. Plan 04 replaces the
-// stub with the SmartSessionCard-styled implementation.
 import { TodaysChallengeCard } from "@/components/dashboard/TodaysChallengeCard";
 import { useDailyChallengeStore } from "@/stores/useDailyChallengeStore";
 
@@ -36,7 +34,14 @@ interface ChallengeState {
 }
 
 function mockState(state: ChallengeState) {
-  vi.mocked(useDailyChallengeStore).mockReturnValue(state as unknown as ReturnType<typeof useDailyChallengeStore>);
+  // The component calls useDailyChallengeStore(selector) — emulate the real
+  // hook by running the selector against the injected state object.
+  vi.mocked(useDailyChallengeStore).mockImplementation(
+    ((selector?: (s: ChallengeState) => unknown) => {
+      if (typeof selector === "function") return selector(state);
+      return state;
+    }) as unknown as typeof useDailyChallengeStore,
+  );
 }
 
 function renderCard() {
@@ -47,7 +52,7 @@ function renderCard() {
   );
 }
 
-describe("TodaysChallengeCard — Phase 4 Wave 0 (failing scaffolds)", () => {
+describe("TodaysChallengeCard — Phase 4 Plan 04 (GREEN)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -141,5 +146,24 @@ describe("TodaysChallengeCard — Phase 4 Wave 0 (failing scaffolds)", () => {
     renderCard();
     const link = screen.getByRole("link", { name: /start|resume/i });
     expect(link.getAttribute("href")).toBe("/daily/today");
+  });
+
+  it("done-variant shows streak badge with globalStreakDays from store", () => {
+    mockState({
+      isEnabled: true,
+      globalStreakDays: 5,
+      todaysChallenge: {
+        blockId: "blk-1",
+        blockType: "section",
+        moduleId: "mod-1",
+        trackId: "trk-1",
+        estMinutes: 4,
+        status: "done",
+      },
+    });
+
+    renderCard();
+    // "Streak: 5 days"
+    expect(screen.getByText(/streak.*5/i)).toBeInTheDocument();
   });
 });
