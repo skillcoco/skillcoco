@@ -11,8 +11,14 @@ use serde::{Deserialize, Serialize};
 /// `additionalProperties: true` at the schema level (Q7 lock) means unknown
 /// fields are preserved at parse time without erroring — Wave 1's loader
 /// may choose to surface them as soft warnings.
+///
+/// **No `rename_all` here**: the on-disk schema is snake_case
+/// (`domain_module`, `pack_version`, `estimated_hours`, ...) so the struct
+/// fields match 1:1. The IPC-facing wrapper [`LoadedPack`] applies
+/// `rename_all = "camelCase"` on its OWN fields (`validationStatus`,
+/// `lastLoadedAt`); the nested `pack` blob keeps its snake_case shape
+/// because that's how learners (and the future pack editor) author it.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct Pack {
     pub id: String,
     pub title: String,
@@ -36,8 +42,9 @@ fn default_pack_version() -> String {
     "1.0".to_string()
 }
 
+/// Per-module shape inside a `pack.json`. snake_case to match the on-disk
+/// format (see [`Pack`] doc comment).
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct PackModule {
     pub id: String,
     pub title: String,
@@ -51,8 +58,9 @@ pub struct PackModule {
     pub exercise_types: Vec<String>,
 }
 
+/// Per-edge shape inside a `pack.json`. The fields `from`/`to` already
+/// have no underscores so naming choice is moot.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct PackEdge {
     pub from: String,
     pub to: String,
