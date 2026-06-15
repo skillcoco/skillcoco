@@ -4,6 +4,8 @@ node_modules/
 # Build
 dist/
 src-tauri/target/
+target/
+pro/src-tauri-pro/target/
 
 # Environment
 .env
@@ -21,3 +23,4 @@ Thumbs.db
 
 # Tauri
 src-tauri/gen/
+pro/src-tauri-pro/gen/
