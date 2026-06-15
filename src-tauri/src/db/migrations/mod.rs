@@ -32,6 +32,7 @@ pub mod v003_streak_columns;
 pub mod v004_module_blocks;
 pub mod v005_lesson_completions;
 pub mod v006_lab_progress;
+pub mod v007_microlearning;
 
 /// A single schema migration.
 pub struct Migration {
@@ -73,6 +74,11 @@ fn registered_migrations() -> Vec<Migration> {
             version: v006_lab_progress::VERSION,
             name: v006_lab_progress::NAME,
             up: v006_lab_progress::up,
+        },
+        Migration {
+            version: v007_microlearning::VERSION,
+            name: v007_microlearning::NAME,
+            up: v007_microlearning::up,
         },
     ]
 }
@@ -163,7 +169,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 6, "After all migrations, version must be 6 (v1..v3 existing + v4 module_blocks + v5 lesson_completions + v6 lab_progress)");
+        assert_eq!(version, 7, "After all migrations, version must be 7 (v1..v3 existing + v4 module_blocks + v5 lesson_completions + v6 lab_progress + v7 microlearning)");
     }
 
     #[test]
@@ -180,7 +186,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 6, "Idempotent: exactly six rows in schema_migrations (v1..v3 + v4 module_blocks + v5 lesson_completions + v6 lab_progress)");
+        assert_eq!(count, 7, "Idempotent: exactly seven rows in schema_migrations (v1..v3 + v4 module_blocks + v5 lesson_completions + v6 lab_progress + v7 microlearning)");
     }
 
     #[test]
@@ -204,9 +210,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3 (streak_columns), v4, v5, v6.
-        // Max is now 6.
-        assert_eq!(version, 6, "current_version returns MAX(version) = 6 after v3..v6 applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3 (streak_columns), v4, v5, v6, v7.
+        // Max is now 7.
+        assert_eq!(version, 7, "current_version returns MAX(version) = 7 after v3..v7 applied");
     }
 
     #[test]
