@@ -6,6 +6,9 @@ dist/
 src-tauri/target/
 target/
 pro/src-tauri-pro/target/
+# Next.js artifacts accidentally produced by tool wrappers (project is Vite, not Next)
+.next/
+next-env.d.ts
 
 # Environment
 .env

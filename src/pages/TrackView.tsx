@@ -16,6 +16,7 @@ import { useLearningStore } from "@/stores/useLearningStore";
 import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
 import type { PathModule, ModuleStatus } from "@/types";
 import { cn, formatDuration } from "@/lib/utils";
+import { listTopicPacksAdmin } from "@/lib/tauri-commands";
 
 // ── Track color helper (matches TrackCard pattern) ──
 
@@ -313,6 +314,44 @@ export function TrackView() {
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Phase 5 Plan 05 (Wave 4) — R1 / T-05-17 mitigation: when this track was
+  // generated from a Topic Pack AND the pack's source is "skill" (i.e.
+  // user-authored), surface a "From skill: <id>" attribution badge so
+  // learners can tell at a glance that the content originated outside the
+  // bundled curriculum. Bundled packs DO NOT get a badge — bundled is the
+  // default expectation. AI-generated tracks DO NOT get a badge — no pack.
+  //
+  // packId is parsed from `generated_by_model` which the backend sets to
+  // `topic-pack:<id>` in `generate_path_from_pack_impl` (Task 1).
+  const packId = useMemo(() => {
+    const model = currentPath?.generatedByModel ?? "";
+    return model.startsWith("topic-pack:") ? model.slice("topic-pack:".length) : null;
+  }, [currentPath?.generatedByModel]);
+
+  const [packSource, setPackSource] = useState<"bundled" | "skill" | null>(null);
+
+  useEffect(() => {
+    // Only hit IPC when a pack id is actually present. AI-generated tracks
+    // are the dominant case — we don't want a needless IPC for them.
+    if (!packId) {
+      setPackSource(null);
+      return;
+    }
+    let cancelled = false;
+    listTopicPacksAdmin()
+      .then((packs) => {
+        if (cancelled) return;
+        const match = packs.find((p) => p.pack.id === packId);
+        setPackSource(match?.source ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setPackSource(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [packId]);
+
   useEffect(() => {
     if (trackId) selectTrack(trackId);
   }, [trackId]);
@@ -408,6 +447,16 @@ export function TrackView() {
             <p className="mt-0.5 text-sm text-muted-foreground">
               {currentTrack.goal}
             </p>
+            {/* Phase 5 R1 — skill-sourced track attribution. Renders only when
+                the path was generated from a user-authored skill pack. */}
+            {packId && packSource === "skill" && (
+              <p
+                data-testid="pack-attribution"
+                className="mt-1 text-xs text-amber-600"
+              >
+                From skill: <code className="font-mono">{packId}</code>
+              </p>
+            )}
           </div>
           <div className="text-right">
             <div className="text-2xl font-bold text-foreground">
