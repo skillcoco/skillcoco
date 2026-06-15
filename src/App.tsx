@@ -6,6 +6,7 @@ import { ModuleView } from "@/pages/ModuleView";
 import { ReviewSession } from "@/pages/ReviewSession";
 import { Settings } from "@/pages/Settings";
 import { Onboarding } from "@/pages/Onboarding";
+import { DailyChallenge } from "@/pages/DailyChallenge";
 import { useTheme } from "@/hooks/useTheme";
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/track/:trackId/module/:moduleId" element={<ModuleView />} />
         <Route path="/review" element={<ReviewSession />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/daily/today" element={<DailyChallenge />} />
       </Route>
       <Route path="/onboarding" element={<Onboarding />} />
     </Routes>
