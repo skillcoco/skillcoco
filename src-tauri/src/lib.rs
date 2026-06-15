@@ -44,6 +44,14 @@ pub struct AppState {
     /// is `Send` and can be held across `await` points inside async IPC
     /// handlers (`lab_pty_write` / `lab_pty_resize` / `lab_check_step`).
     pub lab_sessions: Arc<tokio::sync::Mutex<HashMap<String, LabSessionEntry>>>,
+    /// Phase 5 (Topic Packs) — in-memory registry of bundled + skill packs,
+    /// populated by `topic_packs::loader::load_all` inside `build_app`'s
+    /// setup hook AFTER `Database::new` (so the v008 table exists) and
+    /// BEFORE `.invoke_handler` binds (Pitfall 7: pack loading is small-N
+    /// file I/O and IPC handlers must see a populated registry on first
+    /// call). Uses `std::sync::Mutex` because pack-reads in IPC handlers
+    /// don't await.
+    pub topic_packs: Arc<Mutex<topic_packs::PackRegistry>>,
 }
 
 /// Contract that Pro overlays satisfy to inject additional Tauri commands.
@@ -117,9 +125,19 @@ pub fn build_app() -> tauri::Builder<tauri::Wry> {
             // Database
             let db_path = app_dir.join("learnforge.db");
             let database = Database::new(&db_path).expect("Failed to initialize database");
+
+            // Phase 5 — load topic packs (bundled + skills) AFTER migrations
+            // have run inside Database::new, BEFORE .invoke_handler binds
+            // (Pitfall 7 from RESEARCH.md). Synchronous on purpose — pack
+            // files are small (~10ms total); spawning would create a window
+            // where IPC handlers see an empty registry.
+            let topic_packs_registry = topic_packs::loader::load_all(&database.conn)
+                .expect("Failed to load topic packs at startup — see logs");
+
             app.manage(AppState {
                 db: Arc::new(Mutex::new(database)),
                 lab_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+                topic_packs: Arc::new(Mutex::new(topic_packs_registry)),
             });
 
             // Auth credential store
@@ -272,5 +290,27 @@ mod build_app_tests {
     fn run_compiles_with_microlearning() {
         // No assertions — just ensures the test binary linked, which means
         // `tauri::generate_handler!` accepted all four microlearning entries.
+    }
+
+    /// Phase 5 (Plan 05-02 Task 3) — compile-time gate proving `AppState`
+    /// has the `topic_packs` field with the expected type. Pattern-matches
+    /// on every field so a future deletion or rename breaks this test.
+    #[test]
+    fn appstate_has_topic_packs_field() {
+        fn _type_check(s: AppState) {
+            // Destructure-bind every field — if any field is added/removed
+            // without updating this test, the compiler complains, which is
+            // what we want from a structural smoke test.
+            let AppState {
+                db: _,
+                lab_sessions: _,
+                topic_packs,
+            } = s;
+            // Confirm the type is `Arc<Mutex<PackRegistry>>`.
+            let _typed: Arc<Mutex<topic_packs::PackRegistry>> = topic_packs;
+        }
+        // Don't actually call `_type_check` — constructing an `AppState`
+        // requires a real Database. Compile-only gating is sufficient.
+        let _: fn(AppState) = _type_check;
     }
 }

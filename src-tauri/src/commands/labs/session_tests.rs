@@ -22,6 +22,10 @@ fn test_app_state() -> Arc<AppState> {
     Arc::new(AppState {
         db: Arc::new(Mutex::new(db)),
         lab_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        // Phase 5 — empty registry; lab tests never touch topic_packs.
+        topic_packs: Arc::new(Mutex::new(
+            crate::topic_packs::PackRegistry::default(),
+        )),
     })
 }
 
