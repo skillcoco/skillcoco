@@ -13,7 +13,7 @@
 // `04-RESEARCH.md` Pattern 3.
 
 import { create } from "zustand";
-import type { DailyChallengePayload } from "@/lib/tauri-commands";
+import type { DailyChallengePayload } from "@/types/learning";
 
 interface DailyChallengeState {
   isEnabled: boolean;

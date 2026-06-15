@@ -484,3 +484,39 @@ export interface LabRuntimeDetectResult {
   effectiveRuntime: "docker" | "hostShell";
   setting: LabRuntimeChoice;
 }
+
+// ── Phase 4 Microlearning types ──
+//
+// IPC result shapes for the four daily-challenge commands. All requests
+// are empty (`{}`) — challenge_date and learner_id are derived server-side
+// (Pitfall 7 + T-04-07 + T-04-09 mitigation), so the TS layer never models
+// a request body. Wrappers in `@/lib/tauri-commands` invoke with the
+// `{ request: {} }` envelope per Q9 + Phase 03.1-06 precedent.
+
+export interface DailyChallengePayload {
+  blockId: string;
+  blockType: string;
+  moduleId: string;
+  trackId: string;
+  estMinutes: number;
+  /** Engagement-state machine — NOT the BlockStatus enum (R1). */
+  status: "pending" | "in_progress" | "done";
+}
+
+export interface GetDailyChallengeResult {
+  /** `null` when the learner has no candidate today (empty 0.3-0.7 BKT zone). */
+  challenge: DailyChallengePayload | null;
+}
+
+export interface CompleteDailyChallengeResult {
+  newStreakDays: number;
+  /** SQLite UTC `YYYY-MM-DD HH:MM:SS`. */
+  completedAt: string;
+}
+
+export interface IsDailyChallengeEnabledResult {
+  /** True when D-12 auto-enable gate fires AND user has not opted out. */
+  enabled: boolean;
+  /** Returned alongside `enabled` so Dashboard mount needs only 2 IPCs (Pitfall 6). */
+  globalStreakDays: number;
+}

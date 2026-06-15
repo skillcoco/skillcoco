@@ -275,52 +275,37 @@ export async function labRuntimeDetect(
   return invoke("lab_runtime_detect", { request });
 }
 
-// ── Phase 4 Microlearning (Wave 0 — typed shells, Plan 03 wires Rust handlers) ──
+// ── Phase 4 Microlearning IPC wrappers ──
 //
-// The Rust commands these wrap are defined as plain `pub async fn` in
-// `src-tauri/src/commands/microlearning.rs`. Plan 03 will:
-//   1. Add `#[tauri::command]` attributes
-//   2. Register them in `tauri::generate_handler!`
-//   3. Replace the `unimplemented!()` bodies with real logic
-// Until then these wrappers will reject at the IPC layer (handler not found).
+// All four wrappers use the `{ request }` envelope per FIX-02 + Phase
+// 03.1-06 precedent (Q9 lock). Request payloads are empty objects in v1:
+// challenge_date is derived server-side via SQL `date('now')` (Pitfall 7)
+// and learner_id is resolved server-side from learner_profiles (T-04-09).
+// The request envelope still exists so the contract can grow without
+// breaking the IPC signature.
+//
+// Types live in @/types/learning (DailyChallengePayload,
+// GetDailyChallengeResult, CompleteDailyChallengeResult,
+// IsDailyChallengeEnabledResult).
 
-export interface DailyChallengePayload {
-  blockId: string;
-  blockType: string;
-  moduleId: string;
-  trackId: string;
-  estMinutes: number;
-  status: "pending" | "in_progress" | "done";
-}
-
-export interface GetDailyChallengeResult {
-  challenge: DailyChallengePayload | null;
-}
-
-export interface CompleteDailyChallengeResult {
-  newStreakDays: number;
-  completedAt: string;
-}
-
-export interface IsDailyChallengeEnabledResult {
-  enabled: boolean;
-  globalStreakDays: number;
-}
-
-export async function getDailyChallenge(): Promise<GetDailyChallengeResult> {
+export async function getDailyChallenge(): Promise<
+  import("@/types/learning").GetDailyChallengeResult
+> {
   return invoke("get_daily_challenge", { request: {} });
 }
 
-export async function startDailyChallenge(challengeDate: string): Promise<void> {
-  return invoke("start_daily_challenge", { request: { challengeDate } });
+export async function startDailyChallenge(): Promise<void> {
+  return invoke("start_daily_challenge", { request: {} });
 }
 
-export async function completeDailyChallenge(
-  challengeDate: string,
-): Promise<CompleteDailyChallengeResult> {
-  return invoke("complete_daily_challenge", { request: { challengeDate } });
+export async function completeDailyChallenge(): Promise<
+  import("@/types/learning").CompleteDailyChallengeResult
+> {
+  return invoke("complete_daily_challenge", { request: {} });
 }
 
-export async function isDailyChallengeEnabled(): Promise<IsDailyChallengeEnabledResult> {
+export async function isDailyChallengeEnabled(): Promise<
+  import("@/types/learning").IsDailyChallengeEnabledResult
+> {
   return invoke("is_daily_challenge_enabled", { request: {} });
 }
