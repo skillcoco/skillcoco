@@ -223,6 +223,11 @@ pub fn run() {
             commands::labs::state::lab_reset,
             commands::labs::state::lab_get_progress,
             commands::labs::session::lab_runtime_detect,
+            // Microlearning (Phase 4 — daily challenge IPCs)
+            commands::microlearning::get_daily_challenge,
+            commands::microlearning::start_daily_challenge,
+            commands::microlearning::complete_daily_challenge,
+            commands::microlearning::is_daily_challenge_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -253,5 +258,17 @@ mod build_app_tests {
         let plugins: Vec<Box<dyn LearnForgePlugin>> = vec![Box::new(NoopPlugin)];
         assert_eq!(plugins.len(), 1);
         assert_eq!(plugins[0].plugin_name(), "noop");
+    }
+
+    /// Compile-gate for the Phase 4 microlearning IPC entries. The test body
+    /// is empty on purpose — the value is in the four `commands::microlearning::*`
+    /// references inside `tauri::generate_handler!`. If any handler signature
+    /// drifts (e.g., loses `tauri::State`, returns the wrong Result), the
+    /// macro expansion fails and the crate refuses to compile. This test
+    /// makes that compile-time check explicit at the file-test level.
+    #[test]
+    fn run_compiles_with_microlearning() {
+        // No assertions — just ensures the test binary linked, which means
+        // `tauri::generate_handler!` accepted all four microlearning entries.
     }
 }
