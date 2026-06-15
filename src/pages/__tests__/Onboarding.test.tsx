@@ -161,3 +161,33 @@ describe("Onboarding", () => {
     expect(generateBtn).not.toBeDisabled();
   });
 });
+
+/**
+ * Plan 05-01 Wave 0 — RED scaffolds for the Topic Packs + My Skills picker
+ * (D-08). Wave 4 (Plan 05-05) MUST turn these GREEN by:
+ *
+ *   - Replacing the free-text topic step with a two-section picker
+ *     ("Topic Packs" + "My Skills") sourced from `list_topic_packs` IPC.
+ *   - Keeping a collapsible "Or describe your own" fallback at the bottom.
+ *   - Threading the selected `packId` into `createTrack` and
+ *     `generateLearningPath` so PagePlanner receives pack-curated modules.
+ */
+describe("Onboarding pack picker (Wave 0 RED scaffold)", () => {
+  it("step 2 shows Topic Packs and My Skills sections", () => {
+    expect.fail(
+      "Wave 4 (Plan 05-05) must add the two-section pack picker to Onboarding step 2 — see plan 05-05",
+    );
+  });
+
+  it("collapsible 'Or describe your own' fallback exists at bottom", () => {
+    expect.fail(
+      "Wave 4 (Plan 05-05) must keep the free-text fallback as a collapsible at the bottom of the picker — see plan 05-05",
+    );
+  });
+
+  it("picking a pack flows packId into createTrack/generateLearningPath", () => {
+    expect.fail(
+      "Wave 4 (Plan 05-05) must thread packId through createTrack and generateLearningPath — see plan 05-05",
+    );
+  });
+});

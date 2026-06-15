@@ -33,6 +33,7 @@ pub mod v004_module_blocks;
 pub mod v005_lesson_completions;
 pub mod v006_lab_progress;
 pub mod v007_microlearning;
+pub mod v008_topic_packs;
 
 /// A single schema migration.
 pub struct Migration {
@@ -79,6 +80,11 @@ fn registered_migrations() -> Vec<Migration> {
             version: v007_microlearning::VERSION,
             name: v007_microlearning::NAME,
             up: v007_microlearning::up,
+        },
+        Migration {
+            version: v008_topic_packs::VERSION,
+            name: v008_topic_packs::NAME,
+            up: v008_topic_packs::up,
         },
     ]
 }
@@ -169,7 +175,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 7, "After all migrations, version must be 7 (v1..v3 existing + v4 module_blocks + v5 lesson_completions + v6 lab_progress + v7 microlearning)");
+        assert_eq!(version, 8, "After all migrations, version must be 8 (v1..v3 existing + v4 module_blocks + v5 lesson_completions + v6 lab_progress + v7 microlearning + v8 topic_packs)");
     }
 
     #[test]
@@ -186,7 +192,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 7, "Idempotent: exactly seven rows in schema_migrations (v1..v3 + v4 module_blocks + v5 lesson_completions + v6 lab_progress + v7 microlearning)");
+        assert_eq!(count, 8, "Idempotent: exactly eight rows in schema_migrations (v1..v3 + v4 module_blocks + v5 lesson_completions + v6 lab_progress + v7 microlearning + v8 topic_packs)");
     }
 
     #[test]
@@ -210,9 +216,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3 (streak_columns), v4, v5, v6, v7.
-        // Max is now 7.
-        assert_eq!(version, 7, "current_version returns MAX(version) = 7 after v3..v7 applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3 (streak_columns), v4, v5, v6, v7, v8.
+        // Max is now 8.
+        assert_eq!(version, 8, "current_version returns MAX(version) = 8 after v3..v8 applied");
     }
 
     #[test]

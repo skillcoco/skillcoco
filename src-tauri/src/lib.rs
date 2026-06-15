@@ -5,6 +5,7 @@ pub mod db;
 pub mod labs;
 pub mod learning;
 pub mod licensing;
+pub mod topic_packs;
 mod vector;
 
 use auth::AuthState;

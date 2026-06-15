@@ -1,0 +1,147 @@
+{
+  "id": "agentic-devops",
+  "title": "Agentic DevOps",
+  "description": "Operate modern infrastructure with AI agents in the loop. You will progress through Infrastructure as Code (Terraform/Pulumi), declarative GitOps, AI coding assistants in CI/CD pipelines, copilot-assisted code review, policy-as-code with agent verification, observability for AI-augmented systems, agentic incident response, and prompt engineering for ops runbooks. By the end you will be able to design, ship, and operate platforms where humans and AI agents share the on-call rotation.",
+  "domain_module": "devops",
+  "estimated_hours": 35,
+  "pack_version": "1.0",
+  "modules": [
+    {
+      "id": "ad-iac-foundations",
+      "title": "Infrastructure as Code Foundations",
+      "description": "Provision cloud resources declaratively with Terraform and Pulumi. State management, modules, and the plan/apply lifecycle.",
+      "difficulty": 2,
+      "estimated_minutes": 45,
+      "objectives": [
+        "Explain why declarative provisioning beats imperative scripts",
+        "Author a Terraform module that creates a VPC, subnets, and a managed Postgres",
+        "Compare Terraform and Pulumi state and plan workflows",
+        "Detect and resolve a state drift scenario"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "ad-gitops-flux-argo",
+      "title": "Declarative GitOps with Argo CD and Flux",
+      "description": "Adopt Git as the single source of truth for cluster state. Set up Argo CD or Flux to reconcile a Kubernetes namespace continuously.",
+      "difficulty": 2,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Define GitOps and contrast push vs pull deployment models",
+        "Bootstrap an Argo CD or Flux instance against a Git repository",
+        "Promote a change from staging to production via a pull request",
+        "Diagnose a sync failure using the Argo CD or Flux CLI"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "ad-ai-agents-in-ci",
+      "title": "AI Coding Agents in CI Pipelines",
+      "description": "Embed coding agents into pull-request workflows. Generation, review, and self-healing checks that run before merge.",
+      "difficulty": 3,
+      "estimated_minutes": 50,
+      "objectives": [
+        "Identify safe boundaries for autonomous agent actions in CI",
+        "Wire a coding agent into a GitHub Actions or GitLab CI job",
+        "Cap agent token budgets and enforce cost ceilings per PR",
+        "Roll back an agent-authored commit and capture the failure mode"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "ad-copilot-code-review",
+      "title": "Copilot-Assisted Code Review",
+      "description": "Use AI copilots to triage diffs, surface security smells, and propose refactors. Trust calibration and human-in-the-loop gates.",
+      "difficulty": 2,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Configure a copilot review bot against a sample repository",
+        "Calibrate which copilot suggestions require human approval",
+        "Catch a hallucinated API call in a generated review comment",
+        "Measure review throughput before and after copilot adoption"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "ad-policy-as-code",
+      "title": "Policy as Code with AI Verification",
+      "description": "Encode security and compliance policies in OPA/Rego or Sentinel and have agents verify drift, exceptions, and exemptions.",
+      "difficulty": 3,
+      "estimated_minutes": 45,
+      "objectives": [
+        "Write an OPA Rego rule that blocks privileged pods",
+        "Run a policy check as a Conftest step in CI",
+        "Use an agent to propose a policy exception with justification",
+        "Audit policy exemptions and produce a compliance report"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "ad-observability-ai-systems",
+      "title": "Observability for AI-Augmented Systems",
+      "description": "Trace agent invocations end-to-end. Metrics, structured logs, and SLOs that account for non-deterministic LLM steps.",
+      "difficulty": 3,
+      "estimated_minutes": 45,
+      "objectives": [
+        "Instrument an agent workflow with OpenTelemetry spans",
+        "Design SLOs that include p95 LLM latency and token-cost ceilings",
+        "Detect a degraded prompt path from a tail-latency alert",
+        "Correlate an agent retry storm with a downstream rate limit"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "ad-agentic-incident-response",
+      "title": "Agentic Incident Response",
+      "description": "Agents as first responders: page triage, runbook execution, and human-handoff patterns when confidence drops.",
+      "difficulty": 4,
+      "estimated_minutes": 50,
+      "objectives": [
+        "Define confidence thresholds for autonomous remediation actions",
+        "Author a runbook that an agent can execute step-by-step",
+        "Capture an audit log of every agent action during an incident",
+        "Conduct a blameless postmortem covering both human and agent decisions"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "ad-prompt-eng-for-ops",
+      "title": "Prompt Engineering for Ops Runbooks",
+      "description": "Write resilient prompts for operational tasks. Delimiters, refusal patterns, and red-team checks against prompt injection.",
+      "difficulty": 3,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Structure an ops prompt with explicit role, scope, and refusal rules",
+        "Add few-shot examples that cover both success and refusal paths",
+        "Run a red-team check against an ops prompt and patch the vulnerability",
+        "Version and review ops prompts as code"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "ad-capstone-platform",
+      "title": "Capstone: Ship an Agent-Operated Platform",
+      "description": "Bring it together: IaC + GitOps + AI agents in CI + policy + observability + agentic incident response on a multi-tier sample app.",
+      "difficulty": 4,
+      "estimated_minutes": 60,
+      "objectives": [
+        "Provision a Kubernetes cluster with Terraform and bootstrap GitOps",
+        "Add an AI coding agent to the deployment pipeline with cost caps",
+        "Wire policy-as-code and observability with SLOs",
+        "Run an incident drill where an agent triages and escalates"
+      ],
+      "exercise_types": ["code_challenge"]
+    }
+  ],
+  "edges": [
+    { "from": "ad-iac-foundations", "to": "ad-gitops-flux-argo" },
+    { "from": "ad-gitops-flux-argo", "to": "ad-ai-agents-in-ci" },
+    { "from": "ad-ai-agents-in-ci", "to": "ad-copilot-code-review" },
+    { "from": "ad-ai-agents-in-ci", "to": "ad-policy-as-code" },
+    { "from": "ad-policy-as-code", "to": "ad-observability-ai-systems" },
+    { "from": "ad-observability-ai-systems", "to": "ad-agentic-incident-response" },
+    { "from": "ad-copilot-code-review", "to": "ad-prompt-eng-for-ops" },
+    { "from": "ad-agentic-incident-response", "to": "ad-capstone-platform" },
+    { "from": "ad-prompt-eng-for-ops", "to": "ad-capstone-platform" }
+  ]
+}

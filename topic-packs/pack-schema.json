@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://learnforge.dev/schemas/pack-schema-v1.json",
+  "title": "LearnForge Topic Pack",
+  "description": "Schema for LearnForge topic packs (D-02, Draft 2020-12). Pack-level additionalProperties is true (Q7 lock) to keep evolving fields non-breaking. Per-module strings carry maxLength caps as R1 prompt-injection mitigation.",
+  "type": "object",
+  "required": ["id", "title", "description", "domain_module", "modules"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{2,63}$",
+      "description": "Kebab-case identifier; matches directory name."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "domain_module": {
+      "type": "string",
+      "enum": ["programming", "devops", "cloud", "concepts", "data"]
+    },
+    "estimated_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "pack_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "default": "1.0",
+      "description": "Author-controlled semantic version. D-01 extension; optional, defaults to '1.0'."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["bundled", "skill"],
+      "description": "Derived at load time (NOT authored). Listed for schema completeness."
+    },
+    "requires_docker": {
+      "type": "boolean",
+      "default": false,
+      "description": "Informational only (Q5 lock). Per-lab `requires_docker` is the authoritative runtime gate."
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/Module" }
+    },
+    "edges": {
+      "type": "array",
+      "default": [],
+      "items": { "$ref": "#/$defs/Edge" }
+    }
+  },
+  "$defs": {
+    "Module": {
+      "type": "object",
+      "required": ["id", "title", "description", "objectives"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "difficulty": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "estimated_minutes": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 240
+        },
+        "objectives": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          },
+          "description": "R1 mitigation: maxItems: 12 + per-item maxLength: 280 caps prompt-injection payload size when objectives flow into PagePlanner."
+        },
+        "exercise_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["conceptual_qa", "code_challenge", "fill_in_blank"]
+          }
+        }
+      }
+    },
+    "Edge": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+        }
+      }
+    }
+  }
+}

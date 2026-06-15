@@ -1,0 +1,148 @@
+{
+  "id": "ai-engineering",
+  "title": "AI Engineering",
+  "description": "Build production-grade applications on top of foundation models. You will progress through prompt engineering fundamentals, embeddings and vector stores, retrieval-augmented generation, evaluations and golden sets, fine-tuning basics, safety and alignment fundamentals, deployment and cost engineering, and agentic patterns. By the end you will be able to ship an LLM-backed feature with confidence in its correctness, cost, and safety profile.",
+  "domain_module": "data",
+  "estimated_hours": 36,
+  "pack_version": "1.0",
+  "modules": [
+    {
+      "id": "aie-prompt-fundamentals",
+      "title": "Prompt Engineering Fundamentals",
+      "description": "Structure prompts for clarity, controllability, and resilience. Roles, delimiters, few-shot examples, and chain-of-thought guidance.",
+      "difficulty": 1,
+      "estimated_minutes": 35,
+      "objectives": [
+        "Explain the difference between zero-shot, few-shot, and chain-of-thought prompts",
+        "Author a prompt with explicit role, scope, and refusal rules",
+        "Identify a vague prompt and rewrite it for testability",
+        "Compare outputs from two prompt variants on the same input"
+      ],
+      "exercise_types": ["conceptual_qa", "fill_in_blank"]
+    },
+    {
+      "id": "aie-embeddings",
+      "title": "Embeddings and Vector Stores",
+      "description": "Turn text into vectors and search by semantic similarity. Cosine vs dot-product, chunking strategy, and index choice.",
+      "difficulty": 2,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Explain how embedding models map text into a vector space",
+        "Embed a small corpus and query it with cosine similarity",
+        "Choose a chunk size and overlap appropriate for a given document type",
+        "Compare HNSW, IVF, and flat indexes on recall and latency"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "aie-rag-architecture",
+      "title": "Retrieval-Augmented Generation",
+      "description": "Stitch retrieval and generation into a single pipeline. Query rewriting, top-k tuning, and answer grounding.",
+      "difficulty": 2,
+      "estimated_minutes": 45,
+      "objectives": [
+        "Diagram a RAG pipeline from query through retrieval through generation",
+        "Implement query rewriting that improves retrieval recall",
+        "Detect and reduce hallucinated citations in a RAG answer",
+        "Tune top-k and reranker thresholds on a known evaluation set"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "aie-evals-golden-sets",
+      "title": "Evaluations and Golden Sets",
+      "description": "Quantify LLM behavior with deterministic and LLM-as-judge evals. Build a golden set and a regression harness.",
+      "difficulty": 3,
+      "estimated_minutes": 45,
+      "objectives": [
+        "Define golden-set design criteria for an LLM feature",
+        "Compare deterministic eval rubrics with LLM-as-judge rubrics",
+        "Catch a model-regression with a CI-runnable eval suite",
+        "Estimate variance and confidence intervals on small eval sets"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "aie-fine-tuning-basics",
+      "title": "Fine-Tuning Basics",
+      "description": "When to fine-tune versus when to prompt or retrieve. Supervised fine-tuning, LoRA adapters, and data curation.",
+      "difficulty": 3,
+      "estimated_minutes": 45,
+      "objectives": [
+        "List signals that justify fine-tuning over prompting or retrieval",
+        "Curate a 200-example supervised dataset with quality gates",
+        "Compare full fine-tuning with LoRA on cost and accuracy",
+        "Detect overfitting on a held-out validation slice"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "aie-safety-alignment",
+      "title": "Safety and Alignment Fundamentals",
+      "description": "Refusal patterns, jailbreak red-teaming, and content-policy enforcement. Establish a safety harness before launch.",
+      "difficulty": 3,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Define a refusal taxonomy for an LLM feature",
+        "Run a red-team prompt-injection battery and triage the results",
+        "Add a content-policy filter on inputs and outputs",
+        "Audit a safety incident and update the harness"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "aie-deployment-cost",
+      "title": "Deployment and Cost Engineering",
+      "description": "Ship LLM workloads with predictable cost and latency. Caching, batching, model routing, and observability.",
+      "difficulty": 3,
+      "estimated_minutes": 40,
+      "objectives": [
+        "Calculate the unit cost of an LLM-backed feature per active user",
+        "Implement a response cache with semantic-key invalidation",
+        "Route easy requests to a cheaper model and hard ones to a stronger model",
+        "Instrument token-cost and latency dashboards with alerts"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "aie-agentic-patterns",
+      "title": "Agentic Patterns",
+      "description": "Tool-use, planning, and reflection. Build a multi-step agent with explicit budgets and traceable reasoning.",
+      "difficulty": 4,
+      "estimated_minutes": 50,
+      "objectives": [
+        "Compare ReAct, plan-then-act, and tree-of-thought agent loops",
+        "Implement a tool-using agent with a token and call budget",
+        "Add a self-reflection step that rejects low-confidence plans",
+        "Trace an agent run end-to-end for postmortem analysis"
+      ],
+      "exercise_types": ["conceptual_qa", "code_challenge"]
+    },
+    {
+      "id": "aie-capstone-llm-feature",
+      "title": "Capstone: Ship an LLM Feature",
+      "description": "Take a real product use case from prompt design through evals to deployment with cost and safety dashboards.",
+      "difficulty": 4,
+      "estimated_minutes": 60,
+      "objectives": [
+        "Pick a use case and write the success criteria and golden set",
+        "Implement RAG, evals, safety filter, and cost ceiling",
+        "Run a pre-launch eval gate that blocks regressions",
+        "Demonstrate the feature working under a hostile prompt battery"
+      ],
+      "exercise_types": ["code_challenge"]
+    }
+  ],
+  "edges": [
+    { "from": "aie-prompt-fundamentals", "to": "aie-embeddings" },
+    { "from": "aie-embeddings", "to": "aie-rag-architecture" },
+    { "from": "aie-rag-architecture", "to": "aie-evals-golden-sets" },
+    { "from": "aie-rag-architecture", "to": "aie-fine-tuning-basics" },
+    { "from": "aie-evals-golden-sets", "to": "aie-safety-alignment" },
+    { "from": "aie-evals-golden-sets", "to": "aie-deployment-cost" },
+    { "from": "aie-fine-tuning-basics", "to": "aie-deployment-cost" },
+    { "from": "aie-safety-alignment", "to": "aie-agentic-patterns" },
+    { "from": "aie-deployment-cost", "to": "aie-agentic-patterns" },
+    { "from": "aie-agentic-patterns", "to": "aie-capstone-llm-feature" }
+  ]
+}
