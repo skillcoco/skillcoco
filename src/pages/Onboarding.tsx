@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Sparkles,
-  ArrowRight,
   ArrowLeft,
+  ArrowRight,
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,25 +12,28 @@ import {
   assessKnowledge,
   generateLearningPath,
 } from "@/lib/tauri-commands";
+import { PackPicker } from "@/components/onboarding/PackPicker";
 
-type OnboardingStep = "topic" | "goals" | "assessment";
-
-const domainModules = [
-  { id: "programming", label: "Programming Language", examples: "Rust, Go, Python, TypeScript" },
-  { id: "devops", label: "DevOps & Infrastructure", examples: "Kubernetes, Docker, Terraform, CI/CD" },
-  { id: "cloud", label: "Cloud Platforms", examples: "AWS, GCP, Azure" },
-  { id: "concepts", label: "Concepts & Theory", examples: "System Design, Algorithms, Networking" },
-  { id: "data", label: "Data & AI/ML", examples: "ML Engineering, Data Pipelines, LLMs" },
-];
+// Phase 5 Plan 05 (Wave 4) — step 1 renamed from "topic" to "pack-picker"
+// per D-08. The free-text fallback now lives inside <PackPicker /> as a
+// collapsible. R5: the static domain-modules list moved into PackPicker
+// (its canonical home now that the picker owns domain selection).
+type OnboardingStep = "pack-picker" | "goals" | "assessment";
 
 type LevelOption = "beginner" | "intermediate" | "advanced";
 
 export function Onboarding() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<OnboardingStep>("topic");
+  const [step, setStep] = useState<OnboardingStep>("pack-picker");
   const [topic, setTopic] = useState("");
   const [selectedDomain, setSelectedDomain] = useState("");
   const [goal, setGoal] = useState("");
+  /**
+   * `null` = free-text path (AI generates the curriculum). A non-null value
+   * means the learner picked a Topic Pack; backend short-circuits AI and
+   * snapshots the pack modules into learning_paths (D-11 immutability).
+   */
+  const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
 
   // Assessment state
   const [selectedLevel, setSelectedLevel] = useState<LevelOption | null>(null);
@@ -84,6 +87,10 @@ export function Onboarding() {
         assessmentLevel: assessment?.level || "beginner",
         assessmentGaps: assessment?.gaps || [],
         assessmentStrengths: assessment?.strengths || [],
+        // Phase 5 Q3 — when learner picked a pack, packId routes the backend
+        // to the short-circuit branch; otherwise undefined preserves the
+        // existing AI-generated path (free-text fallback unchanged).
+        packId: selectedPackId ?? undefined,
       });
 
       navigate(`/track/${track.id}`);
@@ -100,7 +107,7 @@ export function Onboarding() {
           <Sparkles className="mx-auto mb-3 text-primary" size={32} />
           <h1 className="text-2xl font-bold text-foreground">Start a New Learning Track</h1>
           <p className="text-sm text-muted-foreground">
-            {step === "topic" && "Tell us what you want to learn"}
+            {step === "pack-picker" && "Pick a topic pack or describe what you want to learn"}
             {step === "goals" && "Set your learning goals"}
             {step === "assessment" && "Rate your experience level"}
           </p>
@@ -108,14 +115,14 @@ export function Onboarding() {
 
         {/* Progress indicator */}
         <div className="flex items-center justify-center gap-2">
-          {(["topic", "goals", "assessment"] as const).map((s, i) => (
+          {(["pack-picker", "goals", "assessment"] as const).map((s, i) => (
             <div key={s} className="flex items-center gap-2">
               <div
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium",
                   step === s
                     ? "bg-primary text-primary-foreground"
-                    : (["topic", "goals", "assessment"].indexOf(step) > i)
+                    : (["pack-picker", "goals", "assessment"].indexOf(step) > i)
                       ? "bg-primary/20 text-primary"
                       : "bg-muted text-muted-foreground"
                 )}
@@ -126,7 +133,7 @@ export function Onboarding() {
                 <div
                   className={cn(
                     "h-0.5 w-8",
-                    (["topic", "goals", "assessment"].indexOf(step) > i)
+                    (["pack-picker", "goals", "assessment"].indexOf(step) > i)
                       ? "bg-primary/40"
                       : "bg-muted"
                   )}
@@ -149,53 +156,22 @@ export function Onboarding() {
           </div>
         )}
 
-        {/* Step: Topic Selection */}
-        {step === "topic" && (
-          <div className="glass rounded-xl p-6 space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                What do you want to learn?
-              </label>
-              <input
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g., Kubernetes, Rust programming, System Design..."
-                className="w-full rounded-lg border border-input bg-background px-4 py-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                autoFocus
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Domain
-              </label>
-              <div className="grid gap-2">
-                {domainModules.map((dm) => (
-                  <button
-                    key={dm.id}
-                    onClick={() => setSelectedDomain(dm.id)}
-                    className={cn(
-                      "flex flex-col items-start rounded-lg border p-3 text-left transition-colors",
-                      selectedDomain === dm.id
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:border-primary/50"
-                    )}
-                  >
-                    <span className="font-medium text-foreground">{dm.label}</span>
-                    <span className="text-xs text-muted-foreground">{dm.examples}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button
-              onClick={() => setStep("goals")}
-              disabled={!topic || !selectedDomain}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              Continue
-              <ArrowRight size={16} />
-            </button>
-          </div>
+        {/* Step: Pack Picker (D-08 — replaces the free-text topic step) */}
+        {step === "pack-picker" && (
+          <PackPicker
+            onPick={(packId, packTopic, domainModule) => {
+              setTopic(packTopic);
+              setSelectedDomain(domainModule);
+              setSelectedPackId(packId);
+              setStep("goals");
+            }}
+            onCustomTopic={(text, domain) => {
+              setTopic(text);
+              setSelectedDomain(domain);
+              setSelectedPackId(null);
+              setStep("goals");
+            }}
+          />
         )}
 
         {/* Step: Goals */}
@@ -216,7 +192,7 @@ export function Onboarding() {
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setStep("topic")}
+                onClick={() => setStep("pack-picker")}
                 className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm font-medium hover:bg-accent"
               >
                 <ArrowLeft size={16} />

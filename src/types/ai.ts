@@ -64,6 +64,12 @@ export interface GeneratePathRequest {
   assessmentLevel: string;
   assessmentGaps: string[];
   assessmentStrengths: string[];
+  /**
+   * Phase 5 Q3 lock — when provided, the backend short-circuits AI generation
+   * and builds the path directly from the named pack's modules + edges.
+   * Free-text onboarding leaves this undefined for unchanged behavior.
+   */
+  packId?: string;
 }
 
 // ── Content Generation ──

@@ -3,13 +3,27 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { Onboarding } from "@/pages/Onboarding";
+import type { TopicPack } from "@/types/topic-packs";
 
 // Mock tauri commands
 vi.mock("@/lib/tauri-commands", () => ({
   createTrack: vi.fn(),
   assessKnowledge: vi.fn(),
   generateLearningPath: vi.fn(),
+  listTopicPacks: vi.fn(),
 }));
+
+import {
+  createTrack,
+  assessKnowledge,
+  generateLearningPath,
+  listTopicPacks,
+} from "@/lib/tauri-commands";
+
+const createTrackMock = vi.mocked(createTrack);
+const assessKnowledgeMock = vi.mocked(assessKnowledge);
+const generateLearningPathMock = vi.mocked(generateLearningPath);
+const listTopicPacksMock = vi.mocked(listTopicPacks);
 
 // Mock useNavigate
 const mockNavigate = vi.fn();
@@ -21,6 +35,26 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
+function makePack(id: string, source: "bundled" | "skill"): TopicPack {
+  return {
+    pack: {
+      id,
+      title: `${id} title`,
+      description: `description for ${id}`,
+      domain_module: "devops",
+      estimated_hours: 8,
+      pack_version: "1.0",
+      requires_docker: false,
+      modules: [],
+      edges: [],
+    },
+    source,
+    enabled: true,
+    validationStatus: "ok",
+    validationMessages: [],
+    lastLoadedAt: "2026-06-15T00:00:00Z",
+  };
+}
 
 function renderOnboarding() {
   return render(
@@ -33,99 +67,114 @@ function renderOnboarding() {
 describe("Onboarding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Sensible defaults that any test can override before calling render.
+    listTopicPacksMock.mockResolvedValue([]);
+    createTrackMock.mockResolvedValue({
+      id: "trk-xyz",
+      learnerId: "lp-1",
+      topic: "Whatever",
+      domainModule: "devops",
+      status: "onboarding",
+      goal: "",
+      currentModuleId: null,
+      progressPercent: 0,
+      totalTimeSpent: 0,
+      createdAt: "2026-06-15T00:00:00Z",
+      updatedAt: "2026-06-15T00:00:00Z",
+    });
+    assessKnowledgeMock.mockResolvedValue(
+      JSON.stringify({ level: "beginner", gaps: [], strengths: [] }),
+    );
+    generateLearningPathMock.mockResolvedValue({} as never);
   });
 
-  it("renders the topic step on initial load", () => {
+  it("renders the pack-picker step on initial load", async () => {
+    listTopicPacksMock.mockResolvedValue([
+      makePack("kubernetes-fundamentals", "bundled"),
+    ]);
     renderOnboarding();
 
-    expect(screen.getByText("Tell us what you want to learn")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText(/kubernetes/i),
+      screen.getByText(/pick a topic pack or describe what you want to learn/i),
     ).toBeInTheDocument();
-    expect(screen.getByText("Programming Language")).toBeInTheDocument();
-    expect(screen.getByText("DevOps & Infrastructure")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/topic packs/i)).toBeInTheDocument();
+      expect(screen.getByText(/my skills/i)).toBeInTheDocument();
+    });
   });
 
-  it("disables Continue when no topic or domain is selected", () => {
-    renderOnboarding();
-
-    const continueBtn = screen.getByRole("button", { name: /continue/i });
-    expect(continueBtn).toBeDisabled();
-  });
-
-  it("enables Continue after entering a topic and selecting a domain", async () => {
+  it("free-text fallback collapsible navigates to goals step", async () => {
     const user = userEvent.setup();
+    listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    const input = screen.getByPlaceholderText(/kubernetes/i);
-    await user.type(input, "Kubernetes");
+    await waitFor(() => {
+      expect(screen.getByTestId("custom-topic-toggle")).toBeInTheDocument();
+    });
 
-    const domainBtn = screen.getByText("DevOps & Infrastructure");
-    await user.click(domainBtn);
-
-    const continueBtn = screen.getByRole("button", { name: /continue/i });
-    expect(continueBtn).toBeEnabled();
-  });
-
-  it("navigates to goals step when Continue is clicked", async () => {
-    const user = userEvent.setup();
-    renderOnboarding();
-
-    await user.type(screen.getByPlaceholderText(/kubernetes/i), "Rust");
-    await user.click(screen.getByText("Programming Language"));
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(screen.getByTestId("custom-topic-toggle"));
+    await user.type(
+      screen.getByPlaceholderText(/kubernetes/i),
+      "Distributed systems",
+    );
+    await user.click(screen.getByText(/concepts & theory/i));
+    await user.click(screen.getByTestId("custom-topic-submit"));
 
     expect(screen.getByText(/set your learning goals/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/pass the cka/i)).toBeInTheDocument();
   });
 
-  it("navigates back from goals to topic step", async () => {
+  it("navigates back from goals to pack-picker step", async () => {
     const user = userEvent.setup();
+    listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    // Go to goals
+    // Open fallback → submit → goals
+    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
+    await user.click(screen.getByTestId("custom-topic-toggle"));
     await user.type(screen.getByPlaceholderText(/kubernetes/i), "Rust");
-    await user.click(screen.getByText("Programming Language"));
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(screen.getByText(/programming language/i));
+    await user.click(screen.getByTestId("custom-topic-submit"));
 
-    // Go back
+    // Back
     await user.click(screen.getByRole("button", { name: /back/i }));
 
-    expect(screen.getByText("Tell us what you want to learn")).toBeInTheDocument();
+    expect(
+      screen.getByText(/pick a topic pack or describe what you want to learn/i),
+    ).toBeInTheDocument();
   });
 
   it("navigates to level-selection step after setting a goal", async () => {
-    // Quick task 1 replaced Socratic assessment with self-rating level picker.
-    // The goals step button now says "Continue" (not "Start Assessment").
     const user = userEvent.setup();
-
+    listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    // Topic step
+    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
+    await user.click(screen.getByTestId("custom-topic-toggle"));
     await user.type(screen.getByPlaceholderText(/kubernetes/i), "Kubernetes");
-    await user.click(screen.getByText("DevOps & Infrastructure"));
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(screen.getByText(/devops & infrastructure/i));
+    await user.click(screen.getByTestId("custom-topic-submit"));
 
-    // Goals step — button now says "Continue", leads to level-selection ("assessment")
+    // Goals
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn fundamentals");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    // Level selection step
     await waitFor(() => {
       expect(screen.getByText(/rate your experience level/i)).toBeInTheDocument();
     });
   });
 
   it("shows level selection options on the assessment step", async () => {
-    // Quick task 1: level picker shows Beginner / Intermediate / Advanced cards
     const user = userEvent.setup();
-
+    listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    // Navigate to level selection
+    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
+    await user.click(screen.getByTestId("custom-topic-toggle"));
     await user.type(screen.getByPlaceholderText(/kubernetes/i), "Kubernetes");
-    await user.click(screen.getByText("DevOps & Infrastructure"));
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(screen.getByText(/devops & infrastructure/i));
+    await user.click(screen.getByTestId("custom-topic-submit"));
+
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn fundamentals");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -137,15 +186,16 @@ describe("Onboarding", () => {
   });
 
   it("enables Generate Path button after selecting a level", async () => {
-    // Quick task 1: selecting a level card enables the Generate Path button
     const user = userEvent.setup();
-
+    listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    // Navigate to level selection
+    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
+    await user.click(screen.getByTestId("custom-topic-toggle"));
     await user.type(screen.getByPlaceholderText(/kubernetes/i), "Kubernetes");
-    await user.click(screen.getByText("DevOps & Infrastructure"));
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(screen.getByText(/devops & infrastructure/i));
+    await user.click(screen.getByTestId("custom-topic-submit"));
+
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn fundamentals");
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
@@ -153,41 +203,125 @@ describe("Onboarding", () => {
       expect(screen.getByText("Beginner")).toBeInTheDocument();
     });
 
-    // Select Beginner level
     await user.click(screen.getByText("Beginner"));
-
-    // "Create Learning Path" button should now be enabled
     const generateBtn = screen.getByRole("button", { name: /create learning path/i });
     expect(generateBtn).not.toBeDisabled();
   });
 });
 
 /**
- * Plan 05-01 Wave 0 — RED scaffolds for the Topic Packs + My Skills picker
- * (D-08). Wave 4 (Plan 05-05) MUST turn these GREEN by:
- *
- *   - Replacing the free-text topic step with a two-section picker
- *     ("Topic Packs" + "My Skills") sourced from `list_topic_packs` IPC.
- *   - Keeping a collapsible "Or describe your own" fallback at the bottom.
- *   - Threading the selected `packId` into `createTrack` and
- *     `generateLearningPath` so PagePlanner receives pack-curated modules.
+ * Plan 05-05 Wave 4 — Wave 0 RED scaffolds turn GREEN here. Tests verify
+ * the picker structure, the collapsible fallback, and packId flowing
+ * through `generateLearningPath`.
  */
-describe("Onboarding pack picker (Wave 0 RED scaffold)", () => {
-  it("step 2 shows Topic Packs and My Skills sections", () => {
-    expect.fail(
-      "Wave 4 (Plan 05-05) must add the two-section pack picker to Onboarding step 2 — see plan 05-05",
+describe("Onboarding pack picker", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listTopicPacksMock.mockResolvedValue([]);
+    createTrackMock.mockResolvedValue({
+      id: "trk-xyz",
+      learnerId: "lp-1",
+      topic: "x",
+      domainModule: "devops",
+      status: "onboarding",
+      goal: "",
+      currentModuleId: null,
+      progressPercent: 0,
+      totalTimeSpent: 0,
+      createdAt: "2026-06-15T00:00:00Z",
+      updatedAt: "2026-06-15T00:00:00Z",
+    });
+    assessKnowledgeMock.mockResolvedValue(
+      JSON.stringify({ level: "beginner", gaps: [], strengths: [] }),
     );
+    generateLearningPathMock.mockResolvedValue({} as never);
   });
 
-  it("collapsible 'Or describe your own' fallback exists at bottom", () => {
-    expect.fail(
-      "Wave 4 (Plan 05-05) must keep the free-text fallback as a collapsible at the bottom of the picker — see plan 05-05",
-    );
+  it("step 2 shows Topic Packs and My Skills sections", async () => {
+    listTopicPacksMock.mockResolvedValue([
+      makePack("kubernetes-fundamentals", "bundled"),
+      makePack("rust-from-zero", "bundled"),
+      makePack("my-custom-skill", "skill"),
+    ]);
+    renderOnboarding();
+
+    await waitFor(() => {
+      expect(screen.getByText(/topic packs/i)).toBeInTheDocument();
+      expect(screen.getByText(/my skills/i)).toBeInTheDocument();
+      expect(
+        screen.getByTestId("pack-card-kubernetes-fundamentals"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("pack-card-my-custom-skill"),
+      ).toBeInTheDocument();
+    });
   });
 
-  it("picking a pack flows packId into createTrack/generateLearningPath", () => {
-    expect.fail(
-      "Wave 4 (Plan 05-05) must thread packId through createTrack and generateLearningPath — see plan 05-05",
-    );
+  it("collapsible 'Or describe your own' fallback exists at bottom", async () => {
+    listTopicPacksMock.mockResolvedValue([]);
+    renderOnboarding();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("custom-topic-toggle")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/or describe your own/i)).toBeInTheDocument();
+    // Form is collapsed by default — the free-text input is absent.
+    expect(screen.queryByPlaceholderText(/kubernetes/i)).not.toBeInTheDocument();
+  });
+
+  it("picking a pack flows packId into generateLearningPath", async () => {
+    const user = userEvent.setup();
+    listTopicPacksMock.mockResolvedValue([
+      makePack("agentic-devops", "bundled"),
+    ]);
+    renderOnboarding();
+
+    // Pick the pack
+    await waitFor(() => screen.getByTestId("pack-card-agentic-devops"));
+    await user.click(screen.getByTestId("pack-card-agentic-devops"));
+
+    // Goal
+    await user.type(screen.getByPlaceholderText(/pass the cka/i), "Master DevOps");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    // Level
+    await waitFor(() => screen.getByText("Beginner"));
+    await user.click(screen.getByText("Beginner"));
+    await user.click(screen.getByRole("button", { name: /create learning path/i }));
+
+    await waitFor(() => {
+      expect(generateLearningPathMock).toHaveBeenCalledTimes(1);
+    });
+    const call = generateLearningPathMock.mock.calls[0][0];
+    expect(call.packId).toBe("agentic-devops");
+    expect(call.topic).toBe("agentic-devops title");
+    expect(call.domain).toBe("devops");
+  });
+
+  it("free-text path leaves packId undefined in generateLearningPath call", async () => {
+    const user = userEvent.setup();
+    listTopicPacksMock.mockResolvedValue([]);
+    renderOnboarding();
+
+    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
+    await user.click(screen.getByTestId("custom-topic-toggle"));
+    await user.type(screen.getByPlaceholderText(/kubernetes/i), "Distributed systems");
+    await user.click(screen.getByText(/concepts & theory/i));
+    await user.click(screen.getByTestId("custom-topic-submit"));
+
+    await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn the patterns");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    await waitFor(() => screen.getByText("Beginner"));
+    await user.click(screen.getByText("Beginner"));
+    await user.click(screen.getByRole("button", { name: /create learning path/i }));
+
+    await waitFor(() => {
+      expect(generateLearningPathMock).toHaveBeenCalledTimes(1);
+    });
+    const call = generateLearningPathMock.mock.calls[0][0];
+    expect(call.packId).toBeUndefined();
+    expect(call.topic).toBe("Distributed systems");
+    expect(call.domain).toBe("concepts");
   });
 });
