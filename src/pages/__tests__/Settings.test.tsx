@@ -24,6 +24,8 @@ vi.mock("@/lib/tauri-commands", () => ({
   loginProvider: vi.fn(),
   logoutProvider: vi.fn(),
   setActiveProvider: vi.fn(),
+  // Phase 4 Wave 5 — Daily Challenge opt-out
+  setDailyChallengeEnabled: vi.fn(),
 }));
 
 import {
@@ -33,6 +35,7 @@ import {
   getOrCreateProfile,
   labRuntimeDetect,
   getAuthStatus,
+  setDailyChallengeEnabled,
 } from "@/lib/tauri-commands";
 
 // Mock useAppStore to prevent Tauri state dependencies
@@ -202,6 +205,103 @@ describe("Settings", () => {
       expect(["docker-available", "docker-unavailable"]).toContain(
         indicator.getAttribute("data-status"),
       );
+    });
+  });
+
+  // ── Phase 4 Wave 5 — Daily Challenge toggle (D-13 opt-out) ──
+  //
+  // The "Learning" section sits between Labs and Preferences (Q8 lock).
+  // Toggle binds to learner_profiles.preferences_json.dailyChallengeEnabled
+  // via the new setDailyChallengeEnabled IPC. Default behavior when the key
+  // is absent: treated as enabled (matches the Rust gate at
+  // is_daily_challenge_enabled_inner — only an explicit `false` opts out).
+  describe("Daily Challenge toggle", () => {
+    it("toggle renders with default ON when preferences_json key absent", async () => {
+      vi.mocked(getOrCreateProfile).mockResolvedValue({
+        id: "p1",
+        displayName: "Test User",
+        learningStyle: "practical",
+        experienceLevel: "intermediate",
+        preferencesJson: "{}",
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+      });
+      renderSettings();
+      const toggle = await screen.findByTestId("daily-challenge-toggle");
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+    });
+
+    it("toggle renders OFF when preferences_json.dailyChallengeEnabled is false", async () => {
+      vi.mocked(getOrCreateProfile).mockResolvedValue({
+        id: "p1",
+        displayName: "Test User",
+        learningStyle: "practical",
+        experienceLevel: "intermediate",
+        preferencesJson: '{"dailyChallengeEnabled":false}',
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+      });
+      renderSettings();
+      const toggle = await screen.findByTestId("daily-challenge-toggle");
+      await waitFor(() => {
+        expect(toggle).toHaveAttribute("aria-checked", "false");
+      });
+    });
+
+    it("clicking toggle calls setDailyChallengeEnabled IPC with new value", async () => {
+      // Start in OFF state — click should send `true` (the new value).
+      vi.mocked(getOrCreateProfile).mockResolvedValue({
+        id: "p1",
+        displayName: "Test User",
+        learningStyle: "practical",
+        experienceLevel: "intermediate",
+        preferencesJson: '{"dailyChallengeEnabled":false}',
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+      });
+      vi.mocked(setDailyChallengeEnabled).mockResolvedValue(undefined);
+      renderSettings();
+      const toggle = await screen.findByTestId("daily-challenge-toggle");
+      await waitFor(() => {
+        expect(toggle).toHaveAttribute("aria-checked", "false");
+      });
+      await userEvent.click(toggle);
+      await waitFor(() => {
+        expect(setDailyChallengeEnabled).toHaveBeenCalledWith(true);
+      });
+      // Optimistic UI: aria-checked flips to true immediately.
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+    });
+
+    it("IPC failure rolls back local state and surfaces error text", async () => {
+      // Start in ON state — click should attempt `false`; IPC throws; toggle
+      // reverts to ON and an error message appears.
+      vi.mocked(getOrCreateProfile).mockResolvedValue({
+        id: "p1",
+        displayName: "Test User",
+        learningStyle: "practical",
+        experienceLevel: "intermediate",
+        preferencesJson: "{}",
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+      });
+      vi.mocked(setDailyChallengeEnabled).mockRejectedValue(
+        new Error("set_daily_challenge_enabled: db locked"),
+      );
+      renderSettings();
+      const toggle = await screen.findByTestId("daily-challenge-toggle");
+      await waitFor(() => {
+        expect(toggle).toHaveAttribute("aria-checked", "true");
+      });
+      await userEvent.click(toggle);
+      // After the rejection, state rolls back to ON.
+      await waitFor(() => {
+        expect(toggle).toHaveAttribute("aria-checked", "true");
+      });
+      // Error text from the IPC error is rendered.
+      expect(
+        await screen.findByText(/db locked/i),
+      ).toBeInTheDocument();
     });
   });
 });

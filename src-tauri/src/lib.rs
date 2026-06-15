@@ -228,6 +228,7 @@ pub fn run() {
             commands::microlearning::start_daily_challenge,
             commands::microlearning::complete_daily_challenge,
             commands::microlearning::is_daily_challenge_enabled,
+            commands::microlearning::set_daily_challenge_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

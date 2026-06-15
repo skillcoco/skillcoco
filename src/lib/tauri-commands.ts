@@ -309,3 +309,11 @@ export async function isDailyChallengeEnabled(): Promise<
 > {
   return invoke("is_daily_challenge_enabled", { request: {} });
 }
+
+/// Persist the learner's Daily Challenge opt-out preference (D-13 / Wave 5).
+/// Writes `learner_profiles.preferences_json.dailyChallengeEnabled = <bool>`.
+/// The next Dashboard mount picks up the new value via
+/// `is_daily_challenge_enabled`.
+export async function setDailyChallengeEnabled(enabled: boolean): Promise<void> {
+  return invoke("set_daily_challenge_enabled", { request: { enabled } });
+}

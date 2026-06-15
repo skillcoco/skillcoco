@@ -297,6 +297,60 @@ fn is_daily_challenge_enabled_inner(
     })
 }
 
+// ── set_daily_challenge_enabled (Wave 5 — Settings opt-out, D-13) ──
+
+/// Request envelope — the boolean the toggle resolves to. Note the camelCase
+/// serde: the JS wrapper sends `{ enabled: bool }`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetDailyChallengeEnabledRequest {
+    pub enabled: bool,
+}
+
+/// `set_daily_challenge_enabled` IPC handler — writes
+/// `learner_profiles.preferences_json.dailyChallengeEnabled = <bool>` so the
+/// existing `is_daily_challenge_enabled_inner` reader (Wave 2) sees the
+/// updated opt-out state on the next Dashboard mount. The streak is NOT
+/// touched — toggling off and back on preserves `learner_streaks.streak_days`
+/// (T-04-17 / R4 must_have: "Existing streak preserved when re-enabled").
+#[tauri::command]
+pub async fn set_daily_challenge_enabled(
+    request: SetDailyChallengeEnabledRequest,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    set_daily_challenge_enabled_inner(&db.conn, request.enabled)
+}
+
+fn set_daily_challenge_enabled_inner(conn: &Connection, enabled: bool) -> Result<(), String> {
+    let learner_id = resolve_learner_id(conn)?;
+
+    // Use SQLite json_set to upsert the key in place. `json(?1)` wraps the
+    // literal "true"/"false" token so SQLite stores a JSON boolean (not a
+    // string) — that's what `json_extract($.dailyChallengeEnabled)` will
+    // compare against in is_daily_challenge_enabled_inner's reader (and the
+    // stringy parser at line 372 which looks for the literal `false` token).
+    //
+    // The literal is hard-coded to "true"/"false" — never interpolated from
+    // untrusted input — so T-04-16 (prefs_json injection) is mitigated by
+    // construction. The only parameter is learner_id which is server-resolved.
+    let token = if enabled { "true" } else { "false" };
+    conn.execute(
+        "UPDATE learner_profiles
+            SET preferences_json = json_set(
+                    COALESCE(preferences_json, '{}'),
+                    '$.dailyChallengeEnabled',
+                    json(?1)
+                ),
+                updated_at = datetime('now')
+          WHERE id = ?2",
+        params![token, &learner_id],
+    )
+    .map_err(|e| format!("set_daily_challenge_enabled: {}", e))?;
+
+    Ok(())
+}
+
 // ── Internal helpers ──
 
 /// Resolve the single learner_id for the desktop app (T-04-09 mitigation —
@@ -732,5 +786,90 @@ mod tests {
         assert!(!prefs_dailychallenge_disabled(
             "{\"dailyChallengeEnabled\":true}"
         ));
+    }
+
+    // ── set_daily_challenge_enabled (Wave 5 — Settings opt-out) ──
+
+    /// Writing `enabled=false` persists `{"dailyChallengeEnabled":false}` into
+    /// preferences_json so that `is_daily_challenge_enabled_inner` honors the
+    /// opt-out (A5 — the same key that the parser reads in Wave 2).
+    #[test]
+    fn set_daily_challenge_enabled_writes_false() {
+        let conn = fresh_conn();
+        let (_learner, _track, _module, _block) = seed_full_stack(&conn);
+
+        set_daily_challenge_enabled_inner(&conn, false).expect("ok");
+
+        let prefs: String = conn
+            .query_row(
+                "SELECT preferences_json FROM learner_profiles WHERE id = 'learner-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        // The key must serialize as the JSON boolean `false`. We read back
+        // via json_extract -> integer (SQLite represents JSON bool as 0/1 in
+        // the SQL column-type projection) and assert == 0.
+        let extracted: i64 = conn
+            .query_row(
+                "SELECT json_extract(?1, '$.dailyChallengeEnabled')",
+                params![&prefs],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(extracted, 0, "dailyChallengeEnabled must be 0 / false (got: {})", prefs);
+        // The Wave-2 parser must agree this is opted-out.
+        assert!(prefs_dailychallenge_disabled(&prefs));
+    }
+
+    /// Writing `enabled=true` persists `{"dailyChallengeEnabled":true}` so the
+    /// stringy parser (which only flags explicit `false`) yields opted-in.
+    #[test]
+    fn set_daily_challenge_enabled_writes_true() {
+        let conn = fresh_conn();
+        let (_learner, _track, _module, _block) = seed_full_stack(&conn);
+
+        set_daily_challenge_enabled_inner(&conn, true).expect("ok");
+
+        let prefs: String = conn
+            .query_row(
+                "SELECT preferences_json FROM learner_profiles WHERE id = 'learner-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let extracted: i64 = conn
+            .query_row(
+                "SELECT json_extract(?1, '$.dailyChallengeEnabled')",
+                params![&prefs],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(extracted, 1, "dailyChallengeEnabled must be 1 / true (got: {})", prefs);
+        // And critically, the Wave-2 parser must NOT flag this as opted-out.
+        assert!(!prefs_dailychallenge_disabled(&prefs));
+    }
+
+    /// End-to-end: master a module (gate satisfied) → opt out via set IPC →
+    /// `is_daily_challenge_enabled_inner` returns enabled=false. Locks the
+    /// contract between the new IPC and Wave 2's existing reader.
+    #[test]
+    fn set_daily_challenge_enabled_then_is_daily_challenge_enabled_returns_false() {
+        let conn = fresh_conn();
+        let (learner_id, _track, module_id, _block) = seed_full_stack(&conn);
+        insert_mp(&conn, &learner_id, &module_id, 0.8);
+
+        // Pre-condition: gate is satisfied.
+        let r = is_daily_challenge_enabled_inner(&conn).expect("ok");
+        assert!(r.enabled, "gate should fire after mastery (pre-condition)");
+
+        // Opt out via the new IPC.
+        set_daily_challenge_enabled_inner(&conn, false).expect("ok");
+
+        let r = is_daily_challenge_enabled_inner(&conn).expect("ok");
+        assert!(
+            !r.enabled,
+            "opt-out via set_daily_challenge_enabled must disable even when gate fires"
+        );
     }
 }

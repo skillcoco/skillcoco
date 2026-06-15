@@ -82,6 +82,13 @@ export function Settings() {
   // FIX-01: OAuth error state — populated from OAuthStatusResult.error
   const [oauthErrors, setOauthErrors] = useState<Record<string, string>>({});
 
+  // ── Phase 4 Wave 5 — Daily Challenge toggle (D-13 opt-out) ──
+  // Default = true (matches the Rust gate: an absent `dailyChallengeEnabled`
+  // key in preferences_json means "opted-in once the auto-enable gate fires";
+  // the Wave-2 reader only flags an explicit `false` token).
+  const [dailyChallengeEnabled, setDailyChallengeEnabledState] = useState(true);
+  const [toggleError, setToggleError] = useState<string | null>(null);
+
   function setProviderOAuthError(providerId: string, message: string) {
     setOauthErrors((prev) => ({ ...prev, [providerId]: message }));
     setOauthPending(null);
@@ -125,6 +132,51 @@ export function Settings() {
     checkPendingOAuthErrors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Phase 4 Wave 5 — read the persisted Daily Challenge opt-out preference on
+  // mount. Default = true (absent key in preferences_json means opted-in once
+  // the auto-enable gate fires). Defensive: any parse failure or IPC error
+  // leaves the toggle at its default ON state.
+  useEffect(() => {
+    let cancelled = false;
+    commands
+      .getOrCreateProfile()
+      .then((profile) => {
+        if (cancelled) return;
+        try {
+          const prefs = JSON.parse(profile.preferencesJson || "{}") as Record<
+            string,
+            unknown
+          >;
+          const v = prefs.dailyChallengeEnabled;
+          setDailyChallengeEnabledState(v === false ? false : true);
+        } catch {
+          setDailyChallengeEnabledState(true);
+        }
+      })
+      .catch(() => {
+        // Defensive — leave at default
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleToggleDailyChallenge() {
+    setToggleError(null);
+    const next = !dailyChallengeEnabled;
+    // Optimistic UI flip.
+    setDailyChallengeEnabledState(next);
+    try {
+      await commands.setDailyChallengeEnabled(next);
+      // No explicit refetch needed — leaving Settings re-mounts Dashboard,
+      // which fires is_daily_challenge_enabled and picks up the new value.
+    } catch (err) {
+      // Roll back on IPC failure.
+      setDailyChallengeEnabledState(!next);
+      setToggleError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   // ── Derived State ──
 
@@ -709,6 +761,42 @@ export function Settings() {
 
       {/* ── Labs (Phase 03.1 LAB-03) ── */}
       <SettingsLabsSection />
+
+      {/* ── Learning (Phase 4 Wave 5 — daily challenge opt-out, Q8 lock) ── */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-foreground">Learning</h2>
+        <div className="glass rounded-xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Daily Challenge</p>
+              <p className="text-xs text-muted-foreground">
+                Show a small daily practice card on the Dashboard once you have
+                mastered your first module.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={dailyChallengeEnabled}
+              aria-label="Daily Challenge"
+              data-testid="daily-challenge-toggle"
+              onClick={handleToggleDailyChallenge}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                dailyChallengeEnabled ? "bg-primary" : "bg-input"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  dailyChallengeEnabled ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+          {toggleError && (
+            <p className="text-xs text-destructive">{toggleError}</p>
+          )}
+        </div>
+      </section>
 
       {/* ── Preferences ── */}
       <section className="space-y-4">
