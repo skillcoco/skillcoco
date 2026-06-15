@@ -730,24 +730,26 @@ pub fn apply_mastery_update(
     if became_completed {
         conn.execute(
             "INSERT INTO module_progress
-                (id, module_id, learner_id, status, mastery_level, attempts, started_at, completed_at)
-             VALUES (?1, ?2, ?3, 'completed', ?4, 1, datetime('now'), datetime('now'))
+                (id, module_id, learner_id, status, mastery_level, attempts, started_at, completed_at, last_bkt_update_at)
+             VALUES (?1, ?2, ?3, 'completed', ?4, 1, datetime('now'), datetime('now'), datetime('now'))
              ON CONFLICT(module_id, learner_id) DO UPDATE SET
                 mastery_level = excluded.mastery_level,
                 attempts = module_progress.attempts + 1,
                 status = 'completed',
-                completed_at = datetime('now')",
+                completed_at = datetime('now'),
+                last_bkt_update_at = datetime('now')",
             rusqlite::params![new_id, module_id, learner_id, new_mastery],
         )
         .map_err(|e| format!("apply_mastery_update: {}", e))?;
     } else {
         conn.execute(
             "INSERT INTO module_progress
-                (id, module_id, learner_id, status, mastery_level, attempts, started_at)
-             VALUES (?1, ?2, ?3, 'in_progress', ?4, 1, datetime('now'))
+                (id, module_id, learner_id, status, mastery_level, attempts, started_at, last_bkt_update_at)
+             VALUES (?1, ?2, ?3, 'in_progress', ?4, 1, datetime('now'), datetime('now'))
              ON CONFLICT(module_id, learner_id) DO UPDATE SET
                 mastery_level = excluded.mastery_level,
-                attempts = module_progress.attempts + 1",
+                attempts = module_progress.attempts + 1,
+                last_bkt_update_at = datetime('now')",
             rusqlite::params![new_id, module_id, learner_id, new_mastery],
         )
         .map_err(|e| format!("apply_mastery_update: {}", e))?;
@@ -799,24 +801,26 @@ pub fn apply_mastery_update_iterative(
     if became_completed {
         conn.execute(
             "INSERT INTO module_progress
-                (id, module_id, learner_id, status, mastery_level, attempts, started_at, completed_at)
-             VALUES (?1, ?2, ?3, 'completed', ?4, 1, datetime('now'), datetime('now'))
+                (id, module_id, learner_id, status, mastery_level, attempts, started_at, completed_at, last_bkt_update_at)
+             VALUES (?1, ?2, ?3, 'completed', ?4, 1, datetime('now'), datetime('now'), datetime('now'))
              ON CONFLICT(module_id, learner_id) DO UPDATE SET
                 mastery_level = excluded.mastery_level,
                 attempts = module_progress.attempts + 1,
                 status = 'completed',
-                completed_at = datetime('now')",
+                completed_at = datetime('now'),
+                last_bkt_update_at = datetime('now')",
             rusqlite::params![new_id, module_id, learner_id, new_mastery],
         )
         .map_err(|e| format!("apply_mastery_update_iterative: {}", e))?;
     } else {
         conn.execute(
             "INSERT INTO module_progress
-                (id, module_id, learner_id, status, mastery_level, attempts, started_at)
-             VALUES (?1, ?2, ?3, 'in_progress', ?4, 1, datetime('now'))
+                (id, module_id, learner_id, status, mastery_level, attempts, started_at, last_bkt_update_at)
+             VALUES (?1, ?2, ?3, 'in_progress', ?4, 1, datetime('now'), datetime('now'))
              ON CONFLICT(module_id, learner_id) DO UPDATE SET
                 mastery_level = excluded.mastery_level,
-                attempts = module_progress.attempts + 1",
+                attempts = module_progress.attempts + 1,
+                last_bkt_update_at = datetime('now')",
             rusqlite::params![new_id, module_id, learner_id, new_mastery],
         )
         .map_err(|e| format!("apply_mastery_update_iterative: {}", e))?;
@@ -1349,6 +1353,12 @@ mod tests {
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(CREATE_TABLES).unwrap();
+        // Phase 4 / 04-02 — apply registered migrations so the column additions
+        // (e.g. module_progress.last_bkt_update_at from v007) are present when
+        // apply_mastery_update writes them. Backward-compatible: every prior
+        // test only references base-schema columns.
+        crate::db::migrations::apply_migrations(&conn)
+            .expect("apply_migrations must succeed in setup_test_db");
         conn
     }
 
@@ -1710,6 +1720,100 @@ mod tests {
         assert!(json.contains("newIntervalDays"), "must serialize to newIntervalDays (camelCase)");
         assert!(json.contains("nextReview"), "must serialize to nextReview (camelCase)");
         assert!(json.contains("easeFactor"), "must serialize to easeFactor (camelCase)");
+    }
+
+    // ── Phase 4 — R2 mitigation: BKT update writes module_progress.last_bkt_update_at ──
+
+    /// Seed-helper for the BKT-decay column test. Mirrors `seed_linear_path` but
+    /// without the unlock-edge complexity — we only need one learner / track /
+    /// path / module to call apply_mastery_update against.
+    fn seed_for_bkt_decay_test(conn: &Connection) {
+        crate::db::migrations::apply_migrations(conn)
+            .expect("migrations must succeed for BKT-decay test");
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('learner-1', 'Tester')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal)
+             VALUES ('trk-1', 'learner-1', 'Rust', 'programming', 'Learn Rust')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO learning_paths (id, track_id) VALUES ('pth-1', 'trk-1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO modules (id, path_id, title) VALUES ('mod-1', 'pth-1', 'Module 1')",
+            [],
+        )
+        .unwrap();
+    }
+
+    /// R2 — apply_mastery_update writes `last_bkt_update_at` on the UPSERT.
+    /// Both INSERT and ON CONFLICT branches must set the column.
+    #[test]
+    fn apply_mastery_update_sets_last_bkt_update_at() {
+        let conn = setup_test_db();
+        seed_for_bkt_decay_test(&conn);
+
+        // First call — INSERT branch
+        apply_mastery_update(&conn, "learner-1", "mod-1", 0.5, true)
+            .expect("first apply_mastery_update ok");
+
+        let first_ts: Option<String> = conn
+            .query_row(
+                "SELECT last_bkt_update_at FROM module_progress WHERE module_id = 'mod-1' AND learner_id = 'learner-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let first = first_ts.expect("last_bkt_update_at must be non-NULL after first apply");
+        assert!(
+            first.len() >= 19,
+            "last_bkt_update_at must look like 'YYYY-MM-DD HH:MM:SS' (got {:?})",
+            first
+        );
+
+        // Second call — ON CONFLICT DO UPDATE branch
+        apply_mastery_update(&conn, "learner-1", "mod-1", 0.6, true)
+            .expect("second apply_mastery_update ok");
+        let second_ts: Option<String> = conn
+            .query_row(
+                "SELECT last_bkt_update_at FROM module_progress WHERE module_id = 'mod-1' AND learner_id = 'learner-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let second = second_ts.expect("last_bkt_update_at must remain non-NULL after second apply");
+        assert!(
+            second.len() >= 19,
+            "last_bkt_update_at must remain populated on UPSERT branch (got {:?})",
+            second
+        );
+    }
+
+    /// R2 — apply_mastery_update_iterative also writes `last_bkt_update_at`.
+    #[test]
+    fn apply_mastery_update_iterative_sets_last_bkt_update_at() {
+        let conn = setup_test_db();
+        seed_for_bkt_decay_test(&conn);
+
+        apply_mastery_update_iterative(&conn, "learner-1", "mod-1", 0.5, &[true, true, true])
+            .expect("apply_mastery_update_iterative ok");
+
+        let ts: Option<String> = conn
+            .query_row(
+                "SELECT last_bkt_update_at FROM module_progress WHERE module_id = 'mod-1' AND learner_id = 'learner-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let value = ts.expect("last_bkt_update_at must be populated after iterative apply");
+        assert!(value.len() >= 19);
     }
 }
 
