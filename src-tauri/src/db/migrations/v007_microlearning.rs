@@ -19,17 +19,66 @@ pub const NAME: &str = "microlearning";
 
 /// Apply the v007 migration.
 ///
-/// Wave 0 (this plan): intentional no-op. The empty body proves the
-/// registration framework can carry a v7 entry; the idempotency test
-/// below fails on the missing schema until Plan 02 fills the body.
-pub fn up(_conn: &Connection) -> Result<()> {
+/// Idempotently performs three operations in order:
+///
+/// 1. **ALTER TABLE module_progress ADD COLUMN last_bkt_update_at TEXT** —
+///    guarded with `column_exists` (mirrors v006_lab_progress pattern). Nullable
+///    so existing rows remain valid until the BKT update path touches them.
+///
+/// 2. **CREATE TABLE IF NOT EXISTS learner_streaks** — PK `learner_id`, FK
+///    CASCADE to `learner_profiles(id)`. Sibling of `learning_tracks.streak_days`
+///    at learner-global scope (D-06).
+///
+/// 3. **CREATE TABLE IF NOT EXISTS daily_challenges** — composite PK
+///    `(learner_id, challenge_date)`, FK CASCADE on all four foreign keys
+///    (learner_id, block_id, module_id, track_id) per R5. Indexes:
+///    `idx_daily_challenges_block` (supports FK CASCADE traversal),
+///    `idx_daily_challenges_recency` (supports the 48h recency lookup the
+///    selection algorithm runs).
+pub fn up(conn: &Connection) -> Result<()> {
+    // 1. module_progress.last_bkt_update_at — idempotent ALTER
+    if !column_exists(conn, "module_progress", "last_bkt_update_at")? {
+        conn.execute(
+            "ALTER TABLE module_progress ADD COLUMN last_bkt_update_at TEXT",
+            [],
+        )?;
+    }
+
+    // 2 + 3. learner_streaks + daily_challenges — both CREATE TABLE IF NOT EXISTS
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS learner_streaks (
+            learner_id          TEXT PRIMARY KEY REFERENCES learner_profiles(id) ON DELETE CASCADE,
+            streak_days         INTEGER NOT NULL DEFAULT 0,
+            last_activity_date  TEXT,
+            updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS daily_challenges (
+            learner_id          TEXT NOT NULL REFERENCES learner_profiles(id) ON DELETE CASCADE,
+            challenge_date      TEXT NOT NULL,
+            block_id            TEXT NOT NULL REFERENCES module_blocks(id) ON DELETE CASCADE,
+            module_id           TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+            track_id            TEXT NOT NULL REFERENCES learning_tracks(id) ON DELETE CASCADE,
+            block_type          TEXT NOT NULL,
+            started_at          TEXT,
+            completed_at        TEXT,
+            created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (learner_id, challenge_date)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_daily_challenges_block
+            ON daily_challenges(block_id);
+        CREATE INDEX IF NOT EXISTS idx_daily_challenges_recency
+            ON daily_challenges(learner_id, block_id, created_at);
+        "#,
+    )?;
+
     Ok(())
 }
 
 /// Check whether `column` exists in `table` by querying PRAGMA table_info.
-/// Copied verbatim from `v006_lab_progress.rs:55-64` — Plan 02 will use it
-/// to gate the `module_progress.last_bkt_update_at` ALTER.
-#[allow(dead_code)] // unused until Plan 02 fills `up()`
+/// Copied verbatim from `v006_lab_progress.rs:55-64`.
 fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
     let cols = stmt.query_map([], |row| row.get::<_, String>(1))?;
