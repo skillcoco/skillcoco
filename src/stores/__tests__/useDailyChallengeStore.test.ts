@@ -1,11 +1,9 @@
-// Phase 4 Wave 0 — RED scaffold for useDailyChallengeStore.
-//
-// This file imports `@/stores/useDailyChallengeStore` which does NOT exist
-// yet. Vitest fails with "Cannot find module" — that IS the RED state and
-// the contract Plan 04 satisfies (Plan 04 lands the store).
+// Phase 4 Plan 04 (Wave 3) — GREEN store tests.
 //
 // Sibling-slice pattern (NOT extension of useLearningStore) per Q2 lock +
-// Phase 03.1 useLabStore precedent.
+// Phase 03.1 useLabStore precedent. Plan 03 made both `startDailyChallenge`
+// and `completeDailyChallenge` IPCs parameterless — server resolves
+// learner_id + challenge_date — so the store actions also take no args.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -17,10 +15,6 @@ vi.mock("@/lib/tauri-commands", () => ({
   isDailyChallengeEnabled: vi.fn(),
 }));
 
-// Wave 0 typed shell lives at `@/stores/useDailyChallengeStore`. Plan 04
-// replaces its stub bodies with the real IPC wiring. Each action currently
-// throws "Plan 04 implements ..." so the *assertion-level* RED state is
-// preserved (vitest fails on expect(...).toBe(...) — not on imports).
 import { useDailyChallengeStore, __resetStore } from "@/stores/useDailyChallengeStore";
 import {
   getDailyChallenge,
@@ -29,7 +23,7 @@ import {
   isDailyChallengeEnabled,
 } from "@/lib/tauri-commands";
 
-describe("useDailyChallengeStore — Phase 4 Wave 0 (failing scaffolds)", () => {
+describe("useDailyChallengeStore — Phase 4 Plan 04 (GREEN)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __resetStore();
@@ -79,8 +73,25 @@ describe("useDailyChallengeStore — Phase 4 Wave 0 (failing scaffolds)", () => 
     expect(next.todaysChallenge?.status).toBe("pending");
   });
 
-  it("completeDailyChallenge — optimistically updates completedAt, increments globalStreakDays from IPC result", async () => {
-    // Seed the store with an in-progress challenge + streak=3.
+  it("loadDailyChallenge — surfaces empty zone as todaysChallenge=null with isEnabled=true (Q3)", async () => {
+    // The auto-enable gate fires, but the BKT [0.3, 0.7] zone has no candidates.
+    // Card's empty-zone variant consumes this exact shape.
+    vi.mocked(isDailyChallengeEnabled).mockResolvedValue({
+      enabled: true,
+      globalStreakDays: 2,
+    });
+    vi.mocked(getDailyChallenge).mockResolvedValue({ challenge: null });
+
+    const store = useDailyChallengeStore.getState();
+    await store.loadDailyChallenge();
+
+    const next = useDailyChallengeStore.getState();
+    expect(next.isEnabled).toBe(true);
+    expect(next.todaysChallenge).toBeNull();
+    expect(next.globalStreakDays).toBe(2);
+  });
+
+  it("completeDailyChallenge — optimistically updates status, syncs streak from IPC result", async () => {
     useDailyChallengeStore.setState({
       isEnabled: true,
       globalStreakDays: 3,
@@ -100,13 +111,41 @@ describe("useDailyChallengeStore — Phase 4 Wave 0 (failing scaffolds)", () => 
     });
 
     const store = useDailyChallengeStore.getState();
-    await store.completeDailyChallenge("2026-06-15");
+    await store.completeDailyChallenge();
 
-    expect(completeDailyChallenge).toHaveBeenCalledWith("2026-06-15");
-
+    expect(completeDailyChallenge).toHaveBeenCalledTimes(1);
     const next = useDailyChallengeStore.getState();
     expect(next.todaysChallenge?.status).toBe("done");
     expect(next.globalStreakDays).toBe(4);
+  });
+
+  it("completeDailyChallenge — server result overrides optimistic streak (e.g., server returns 3 when prior was 0)", async () => {
+    // Scenario: client had no prior streak loaded (e.g., a stale tab) but the
+    // server had a 2-day streak that the IPC now completes into 3.
+    useDailyChallengeStore.setState({
+      isEnabled: true,
+      globalStreakDays: 0,
+      todaysChallenge: {
+        blockId: "blk-1",
+        blockType: "quiz",
+        moduleId: "mod-1",
+        trackId: "trk-1",
+        estMinutes: 5,
+        status: "in_progress",
+      },
+    });
+
+    vi.mocked(completeDailyChallenge).mockResolvedValue({
+      newStreakDays: 3,
+      completedAt: "2026-06-15T18:00:00Z",
+    });
+
+    const store = useDailyChallengeStore.getState();
+    await store.completeDailyChallenge();
+
+    const next = useDailyChallengeStore.getState();
+    expect(next.globalStreakDays).toBe(3);
+    expect(next.todaysChallenge?.status).toBe("done");
   });
 
   it("completeDailyChallenge — rolls back on IPC error (Pattern 3 — useLearningStore.markLessonComplete:169-192)", async () => {
@@ -126,7 +165,7 @@ describe("useDailyChallengeStore — Phase 4 Wave 0 (failing scaffolds)", () => 
     vi.mocked(completeDailyChallenge).mockRejectedValue(new Error("IPC boom"));
 
     const store = useDailyChallengeStore.getState();
-    await store.completeDailyChallenge("2026-06-15");
+    await store.completeDailyChallenge();
 
     const next = useDailyChallengeStore.getState();
     // On error: status reverts to in_progress, streak unchanged.
@@ -151,9 +190,9 @@ describe("useDailyChallengeStore — Phase 4 Wave 0 (failing scaffolds)", () => 
     vi.mocked(startDailyChallenge).mockResolvedValue(undefined);
 
     const store = useDailyChallengeStore.getState();
-    await store.startDailyChallenge("2026-06-15");
+    await store.startDailyChallenge();
 
-    expect(startDailyChallenge).toHaveBeenCalledWith("2026-06-15");
+    expect(startDailyChallenge).toHaveBeenCalledTimes(1);
     expect(useDailyChallengeStore.getState().todaysChallenge?.status).toBe("in_progress");
   });
 });

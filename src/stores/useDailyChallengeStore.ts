@@ -1,18 +1,25 @@
-// Phase 4 Wave 0 — typed Zustand shell for the daily-challenge sibling slice.
+// Phase 4 Plan 04 (Wave 3) — real Zustand slice for the daily-challenge surface.
 //
-// Sibling slice (NOT extension of useLearningStore) per Q2 lock + Phase 03.1
-// useLabStore precedent.
+// Sibling slice (NOT an extension of useLearningStore) per Q2 lock + Phase 03.1
+// useLabStore precedent (Pitfall 5). NEVER import or extend useLearningStore
+// here — grep guard: `rg useLearningStore src/stores/useDailyChallengeStore.ts`
+// must return 0.
 //
-// Wave 0 lands the typed surface so:
-//   - tsc passes (the build gate `pnpm build` succeeds)
-//   - vitest still fails at the *assertion* level (every action throws
-//     "Plan 04 implements" — preserves the RED contract)
+// Mount-time IPC budget (Pitfall 6 — Dashboard load runs ≤ 2 IPCs):
+//   1) isDailyChallengeEnabled() — gate + globalStreakDays in one round-trip
+//   2) getDailyChallenge() — ONLY when enabled === true
 //
-// Plan 04 (Wave 4 — Frontend store) replaces each action body with the
-// optimistic-update-and-rollback IPC wiring sketched in
-// `04-RESEARCH.md` Pattern 3.
+// Pattern 3 (RESEARCH §"Optimistic UI + rollback") is honored for the two
+// status-mutating actions: state flips locally first, IPC fires, server result
+// reconciles (or rolls back on error).
 
 import { create } from "zustand";
+import {
+  getDailyChallenge,
+  startDailyChallenge as ipcStartDailyChallenge,
+  completeDailyChallenge as ipcCompleteDailyChallenge,
+  isDailyChallengeEnabled,
+} from "@/lib/tauri-commands";
 import type { DailyChallengePayload } from "@/types/learning";
 
 interface DailyChallengeState {
@@ -21,43 +28,110 @@ interface DailyChallengeState {
   todaysChallenge: DailyChallengePayload | null;
   isLoading: boolean;
 
-  // Actions — bodies are RED stubs; Plan 04 fills them.
+  // Actions — Plan 03 made both IPC wrappers parameterless (server resolves
+  // challenge_date + learner_id), so neither store action takes a date arg.
   loadDailyChallenge: () => Promise<void>;
-  startDailyChallenge: (challengeDate: string) => Promise<void>;
-  completeDailyChallenge: (challengeDate: string) => Promise<void>;
+  startDailyChallenge: () => Promise<void>;
+  completeDailyChallenge: () => Promise<void>;
 }
 
-const INITIAL: Omit<DailyChallengeState, "loadDailyChallenge" | "startDailyChallenge" | "completeDailyChallenge"> = {
+const INITIAL: Omit<
+  DailyChallengeState,
+  "loadDailyChallenge" | "startDailyChallenge" | "completeDailyChallenge"
+> = {
   isEnabled: false,
   globalStreakDays: 0,
   todaysChallenge: null,
   isLoading: false,
 };
 
-export const useDailyChallengeStore = create<DailyChallengeState>((set, _get) => ({
+export const useDailyChallengeStore = create<DailyChallengeState>((set, get) => ({
   ...INITIAL,
 
   loadDailyChallenge: async () => {
-    // Wave 0 RED stub — Plan 04 wires isDailyChallengeEnabled + getDailyChallenge.
     set({ isLoading: true });
-    throw new Error("Plan 04 implements loadDailyChallenge");
+    try {
+      // Gate first. When disabled, we skip getDailyChallenge entirely
+      // (Pitfall 6 — max 2 IPCs on Dashboard mount, but only 1 when gated).
+      const enabledResult = await isDailyChallengeEnabled();
+      if (!enabledResult.enabled) {
+        set({
+          isEnabled: false,
+          todaysChallenge: null,
+          globalStreakDays: enabledResult.globalStreakDays,
+          isLoading: false,
+        });
+        return;
+      }
+
+      // Enabled → fetch today's challenge payload.
+      const payload = await getDailyChallenge();
+      set({
+        isEnabled: true,
+        // challenge is null when the BKT [0.3, 0.7] zone is empty (Q3 — empty-zone
+        // variant). The store surfaces this as todaysChallenge=null with
+        // isEnabled=true — that contract is consumed by TodaysChallengeCard.
+        todaysChallenge: payload.challenge,
+        globalStreakDays: enabledResult.globalStreakDays,
+        isLoading: false,
+      });
+    } catch (err) {
+      console.error("[useDailyChallengeStore] loadDailyChallenge failed:", err);
+      set({ isLoading: false });
+    }
   },
 
-  startDailyChallenge: async (_challengeDate: string) => {
-    // Wave 0 RED stub — Plan 04 wires startDailyChallenge IPC.
-    throw new Error("Plan 04 implements startDailyChallenge");
+  startDailyChallenge: async () => {
+    const current = get().todaysChallenge;
+    if (!current) return;
+    // Optimistic flip pending → in_progress. Idempotent on non-pending.
+    if (current.status !== "pending") {
+      // Still fire the IPC so the server records started_at on first call
+      // even if a stray render started us in in_progress (defense in depth).
+      try {
+        await ipcStartDailyChallenge();
+      } catch (err) {
+        console.error("[useDailyChallengeStore] startDailyChallenge failed:", err);
+      }
+      return;
+    }
+    set({ todaysChallenge: { ...current, status: "in_progress" } });
+    try {
+      await ipcStartDailyChallenge();
+    } catch (err) {
+      console.error("[useDailyChallengeStore] startDailyChallenge failed:", err);
+      // Roll back (Pattern 3 — useLearningStore.markLessonComplete:169-192).
+      set({ todaysChallenge: current });
+    }
   },
 
-  completeDailyChallenge: async (_challengeDate: string) => {
-    // Wave 0 RED stub — Plan 04 wires completeDailyChallenge IPC with
-    // optimistic update + rollback per Pattern 3.
-    throw new Error("Plan 04 implements completeDailyChallenge");
+  completeDailyChallenge: async () => {
+    const current = get().todaysChallenge;
+    if (!current) return;
+    if (current.status === "done") return; // idempotent guard
+
+    // Optimistic: mark done; do NOT touch globalStreakDays yet — the IPC
+    // result is authoritative (handles same-day idempotency, gap-reset, etc.).
+    const priorStreak = get().globalStreakDays;
+    set({ todaysChallenge: { ...current, status: "done" } });
+
+    try {
+      const result = await ipcCompleteDailyChallenge();
+      // Reconcile with server-authoritative streak. The IPC may return a
+      // value different from priorStreak+1 (e.g., user had an existing
+      // server-side streak the client missed) — trust the server.
+      set({ globalStreakDays: result.newStreakDays });
+    } catch (err) {
+      console.error("[useDailyChallengeStore] completeDailyChallenge failed:", err);
+      // Roll back status + streak (Pattern 3).
+      set({ todaysChallenge: current, globalStreakDays: priorStreak });
+    }
   },
 }));
 
 /**
- * Test-only helper — resets the store to its initial state. Pattern mirrors
- * `useLabStore.__resetStore`. Plan 04 keeps this export.
+ * Test-only helper — resets the store to its initial state. Mirrors
+ * `useLabStore.__resetStore`.
  */
 export function __resetStore(): void {
   useDailyChallengeStore.setState({ ...INITIAL });
