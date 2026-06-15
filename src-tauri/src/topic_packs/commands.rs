@@ -65,21 +65,33 @@ pub fn list_admin_impl(reg: &PackRegistry) -> Vec<LoadedPack> {
     reg.packs.values().cloned().collect()
 }
 
-/// Inner impl for [`set_topic_pack_enabled`]: updates registry **and**
-/// SQLite atomically (well — sequentially; rusqlite caller holds the
-/// connection lock for the duration of this call). Returns `Err` with a
-/// "Unknown pack id: …" message if the id is not in the registry — T-05-08
-/// short-circuit so SQL never touches the DB for an unknown id.
+/// Inner impl for [`set_topic_pack_enabled`]: updates SQLite first, then
+/// mirrors the change into the in-memory registry. Returns `Err` with a
+/// "Unknown pack id: …" message if the id is not in the registry —
+/// T-05-08 short-circuit so SQL never touches the DB for an unknown id.
+///
+/// WR-01 (Phase 5 review): order matters. The registry write is
+/// performed only AFTER `persistence::write_enabled` returns `Ok`. If
+/// the SQL write fails (disk full, lock contention, schema corruption),
+/// the in-memory registry stays consistent with persistence rather than
+/// drifting "newer-than-DB" — which would silently revert on next
+/// process restart and confuse the frontend store's refresh-after-toggle
+/// path.
 pub fn set_enabled_impl(
     reg: &mut PackRegistry,
     conn: &Connection,
     req: &SetTopicPackEnabledRequest,
 ) -> Result<(), String> {
-    if !reg.set_enabled(&req.pack_id, req.enabled) {
+    // Existence check (T-05-08) — does NOT mutate either layer.
+    if !reg.packs.contains_key(&req.pack_id) {
         return Err(format!("Unknown pack id: {}", req.pack_id));
     }
+    // DB first: if this fails, neither persistence nor registry mutates.
     persistence::write_enabled(conn, &req.pack_id, req.enabled)
         .map_err(|e| format!("persistence::write_enabled failed: {}", e))?;
+    // Mirror to the registry; infallible because we just verified the id
+    // exists (and `set_enabled` is a no-op for unknown ids anyway).
+    reg.set_enabled(&req.pack_id, req.enabled);
     Ok(())
 }
 
@@ -342,6 +354,48 @@ mod tests {
         .expect_err("must err on unknown pack");
         assert!(err.contains("Unknown pack id"));
         assert!(err.contains("missing"));
+    }
+
+    /// WR-01: `set_enabled_impl` must NOT mutate the in-memory registry
+    /// when the persistence write fails. Original implementation flipped
+    /// `reg.set_enabled` BEFORE calling `persistence::write_enabled`, so a
+    /// DB-write failure (disk full, schema corruption, lock contention)
+    /// left the registry "newer" than SQLite — and the next process
+    /// restart would silently revert the toggle.
+    ///
+    /// Fix: write to SQLite first; only mirror to memory on success.
+    /// The "Unknown pack id" short-circuit (T-05-08) is preserved as a
+    /// pre-flight existence check that does NOT mutate either layer.
+    #[test]
+    fn set_enabled_does_not_mutate_registry_when_db_write_fails() {
+        // Build a registry seeded with a known pack (enabled = true).
+        let mut reg = registry_with(vec![make_loaded_pack("alpha", true)]);
+
+        // Use a connection that lacks the `topic_packs` table — any
+        // UPDATE against it will return a rusqlite::Error and the
+        // persistence layer will surface it. No migrations applied.
+        let bad_conn = Connection::open_in_memory().unwrap();
+
+        let result = set_enabled_impl(
+            &mut reg,
+            &bad_conn,
+            &SetTopicPackEnabledRequest {
+                pack_id: "alpha".to_string(),
+                enabled: false,
+            },
+        );
+
+        assert!(
+            result.is_err(),
+            "DB write failure must propagate as Err (got Ok)"
+        );
+
+        // Critical assertion: the registry's `enabled` is still `true`,
+        // i.e. the in-memory state was NOT mutated despite the failure.
+        assert!(
+            reg.get("alpha").expect("pack must still exist").enabled,
+            "WR-01: registry must NOT be flipped when persistence::write_enabled fails"
+        );
     }
 
     /// get_modules_impl returns the modules + edges from the requested pack.
