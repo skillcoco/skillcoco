@@ -17,6 +17,7 @@ import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
 import type { PathModule, ModuleStatus } from "@/types";
 import { cn, formatDuration } from "@/lib/utils";
 import { listTopicPacksAdmin } from "@/lib/tauri-commands";
+import { CertificationProgress } from "@/components/achievements/CertificationProgress";
 
 // ── Track color helper (matches TrackCard pattern) ──
 
@@ -526,6 +527,13 @@ export function TrackView() {
             </div>
           )}
         </div>
+
+        {/* Phase 6 Plan 06-05 (Wave 4) — D-11 + CERT-11. Three-row earned/
+            in-progress/locked indicator. Mounts immediately below the
+            track header + stats row, above the DAG, so the learner sees
+            progress signals before the modules tree. The component
+            handles its own IPC + error state. */}
+        {trackId && <CertificationProgress trackId={trackId} />}
       </div>
 
       {/* DAG Visualization */}

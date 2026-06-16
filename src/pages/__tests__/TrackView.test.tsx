@@ -24,6 +24,31 @@ vi.mock("react-router-dom", async () => {
 
 vi.mock("@/lib/tauri-commands", () => ({
   listTopicPacksAdmin: vi.fn(),
+  // Plan 06-05 (Wave 4) — CertificationProgress, mounted in TrackView,
+  // calls getTrackCertifications on mount. Mock it so the TrackView tests
+  // do not error out on missing IPC. We don't care about its exact
+  // behavior here — that's covered by CertificationProgress.test.tsx.
+  getTrackCertifications: vi.fn().mockResolvedValue({
+    earnedLevels: [],
+    nextLevel: "Associate",
+    criteria: "Master 25% of modules",
+  }),
+}));
+
+// Plan 06-05 (Wave 4) — CertificationProgress also reads the
+// useAchievementsStore. Stub it out so TrackView.test.tsx does not touch
+// the real store (which would bring its own IPCs in).
+const achievementsMockState = {
+  achievements: [] as unknown[],
+  exportCertificate: vi.fn(),
+};
+vi.mock("@/stores/useAchievementsStore", () => ({
+  useAchievementsStore: <T,>(
+    selector?: (s: typeof achievementsMockState) => T,
+  ): T | typeof achievementsMockState => {
+    if (typeof selector === "function") return selector(achievementsMockState);
+    return achievementsMockState;
+  },
 }));
 
 import { listTopicPacksAdmin } from "@/lib/tauri-commands";
@@ -161,5 +186,26 @@ describe("TrackView pack-source attribution (R1)", () => {
     expect(screen.queryByTestId("pack-attribution")).not.toBeInTheDocument();
     // listTopicPacksAdmin should not even be called for non-pack paths.
     expect(listTopicPacksAdminMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("TrackView CertificationProgress mount (Plan 06-05 Wave 4)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStoreState.currentTrack = makeTrack();
+    mockStoreState.currentPath = makePath("");
+    mockStoreState.isLoading = false;
+    mockStoreState.selectTrack = vi.fn().mockResolvedValue(undefined);
+  });
+
+  it("mounts CertificationProgress with the current trackId", async () => {
+    renderTrackView();
+
+    // CertificationProgress renders a section with testid
+    // "certification-progress" once its IPC resolves. The IPC mock above
+    // resolves synchronously, so the section appears after a microtask.
+    await waitFor(() => {
+      expect(screen.getByTestId("certification-progress")).toBeInTheDocument();
+    });
   });
 });
