@@ -157,4 +157,25 @@ describe("PackPicker", () => {
 
     expect(onCustomTopic).toHaveBeenCalledWith("Distributed systems", "concepts");
   });
+
+  // ── Plan 06-05 (Wave 4) — PackPickerCertPreview integration ───────────
+  it("renders PackPickerCertPreview on each pack tile (D-10)", async () => {
+    listTopicPacksMock.mockResolvedValue([
+      makePack("kubernetes-fundamentals", "bundled"),
+      makePack("rust-from-zero", "bundled"),
+    ]);
+    render(<PackPicker onPick={vi.fn()} onCustomTopic={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pack-card-kubernetes-fundamentals")).toBeInTheDocument();
+    });
+
+    // Two tiles → two preview components in the DOM.
+    const previews = screen.getAllByTestId("pack-picker-cert-preview");
+    expect(previews).toHaveLength(2);
+    // Each preview shows the static count text per D-02 thresholds.
+    expect(
+      screen.getAllByText(/3 certifications available/i).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
 });

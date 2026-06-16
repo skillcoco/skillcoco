@@ -16,6 +16,7 @@ import { ArrowRight, ChevronDown, ChevronRight, Package2, Sparkles } from "lucid
 import { cn } from "@/lib/utils";
 import { listTopicPacks } from "@/lib/tauri-commands";
 import type { TopicPack } from "@/types/topic-packs";
+import { PackPickerCertPreview } from "@/components/achievements/PackPickerCertPreview";
 
 // Canonical domain list — was previously in Onboarding.tsx (R5). The free-
 // text fallback inside the picker is now its sole authoritative source.
@@ -197,12 +198,26 @@ function PackCard({
   showSourceBadge: boolean;
 }) {
   const moduleCount = pack.pack.modules.length;
+  const handlePick = () =>
+    onPick(pack.pack.id, pack.pack.title, pack.pack.domain_module);
+  // Plan 06-05 (Wave 4) — converted outer <button> to a <div role="button">
+  // to host the PackPickerCertPreview expand toggle as a nested button
+  // (HTML disallows button-inside-button; React also warns at runtime).
+  // Pack selection still flows through the same onPick handler via the
+  // top region, with keyboard support preserved through role + tabIndex.
   return (
-    <button
-      type="button"
-      onClick={() => onPick(pack.pack.id, pack.pack.title, pack.pack.domain_module)}
+    <div
       data-testid={`pack-card-${pack.pack.id}`}
-      className="flex flex-col items-start gap-1 rounded-lg border border-border bg-background p-3 text-left transition-colors hover:border-primary/50 hover:bg-accent/30"
+      role="button"
+      tabIndex={0}
+      onClick={handlePick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handlePick();
+        }
+      }}
+      className="flex cursor-pointer flex-col items-start gap-1 rounded-lg border border-border bg-background p-3 text-left transition-colors hover:border-primary/50 hover:bg-accent/30"
     >
       <div className="flex w-full items-start justify-between gap-2">
         <span className="font-medium text-foreground">{pack.pack.title}</span>
@@ -227,6 +242,17 @@ function PackCard({
           </span>
         )}
       </div>
-    </button>
+      {/* Phase 6 Plan 06-05 (Wave 4) — D-10 + CERT-10. Static preview
+          (no IPC) of the three certifications offered by every pack per
+          D-02. Stop click propagation so toggling the preview does NOT
+          accidentally pick the pack. */}
+      <div
+        className="mt-2 w-full"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <PackPickerCertPreview moduleCount={moduleCount} />
+      </div>
+    </div>
   );
 }
