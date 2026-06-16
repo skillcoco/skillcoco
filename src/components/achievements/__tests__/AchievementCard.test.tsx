@@ -7,13 +7,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-// Hoisted mock — emulates the real Zustand hook surface (selector +
-// getState). The card reads exportCertificate / exportBadge actions via
-// selectors and triggers them imperatively via `useAchievementsStore.getState()`
-// is NOT used here — selectors only. We expose vi.fn()'s for both actions
-// so the component invocation routes through them.
-const exportCertificateMock = vi.fn().mockResolvedValue({ saved: true, path: "/p.pdf" });
-const exportBadgeMock = vi.fn().mockResolvedValue({ saved: true, path: "/p.png" });
+// vi.hoisted runs before module imports are evaluated, so the mock
+// factory closing over { exportCertificateMock, exportBadgeMock } never
+// hits the "top-level variable" hoisting error. Without hoisted(), the
+// vi.mock factory body executes BEFORE the consts below are initialized.
+const { exportCertificateMock, exportBadgeMock } = vi.hoisted(() => ({
+  exportCertificateMock: vi.fn().mockResolvedValue({ saved: true, path: "/p.pdf" }),
+  exportBadgeMock: vi.fn().mockResolvedValue({ saved: true, path: "/p.png" }),
+}));
 
 vi.mock("@/stores/useAchievementsStore", () => {
   const state = {
