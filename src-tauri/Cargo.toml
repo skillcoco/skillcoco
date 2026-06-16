@@ -54,6 +54,12 @@ include_dir = "0.7"
 #   - ed25519-dalek 2.x for OSS cert signing (separate from Pro licensing)
 #   - sha2 / base64 / hex / rand for canonical payload + key fingerprint
 ed25519-dalek = { version = "2", features = ["pkcs8", "rand_core", "pem"] }
+# Plan 06-02 (Wave 1) — direct access to pkcs8::LineEnding for PEM I/O.
+# ed25519-dalek 2.x re-exports DecodePrivateKey/EncodePrivateKey but not
+# LineEnding (which lives behind `pkcs8/pem`). Pulling pkcs8 directly with
+# the `pem` feature exposes LineEnding without changing the resolved
+# version (already in the tree via ed25519-dalek).
+pkcs8 = { version = "0.10", features = ["pem"] }
 qrcode = "0.14"
 image = "0.25"
 printpdf = { version = "0.9", features = ["images"] }

@@ -2985,6 +2985,7 @@ dependencies = [
  "jsonschema",
  "log",
  "open",
+ "pkcs8",
  "portable-pty",
  "printpdf",
  "qrcode",

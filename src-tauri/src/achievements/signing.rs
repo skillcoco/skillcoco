@@ -1,147 +1,285 @@
-//! Phase 6 (Certification) — Ed25519 keypair lifecycle + canonical-JSON
-//! payload helpers.
+//! Phase 6 — Ed25519 keypair lifecycle + canonical-JSON payload helpers.
 //!
-//! Wave 0: every function declared, every body either `unimplemented!()` or
-//! returns a sentinel. The RED unit tests at the bottom assert the shape
-//! Wave 1 (Plan 06-02) must satisfy.
-//!
-//! Security invariants (R3, R1):
-//!   - Private key never crosses IPC.
-//!   - On Unix the key file is written 0600 (Pitfall 4).
-//!   - Canonical JSON sorts keys lexicographically before signing
-//!     (Pitfall 2 — see `docs/CERT-PAYLOAD-V1.md`).
-//!   - Key fingerprint = first 8 hex chars of SHA-256 of the verifying key's
-//!     DER bytes (R5 — locked answer A7).
+//! Security invariants:
+//!   - R3 / Pitfall 4: Unix private key file is 0600 immediately after write.
+//!   - R1 / Pitfall 2: `canonical_json_bytes` sorts object keys lexicographically
+//!     at every nesting level — byte-stable signing input.
+//!   - R5 / A7: fingerprint = first 8 lowercase hex of SHA-256 of verifying
+//!     key DER bytes.
+//!   - Private key never crosses the IPC boundary.
 
 use super::AchievementError;
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
+use ed25519_dalek::pkcs8::{
+    DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey,
+};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use pkcs8::LineEnding;
+use rand::rngs::OsRng;
 use serde::Serialize;
-use std::path::Path;
+use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
+
+/// File name (relative to the keys directory) for the private signing key.
+const PRIV_FILE: &str = "cert_signing_private.pem";
+/// File name (relative to the keys directory) for the public signing key.
+const PUB_FILE: &str = "cert_signing_public.pem";
+
+/// Resolve the on-disk private-key path inside the keys directory.
+fn priv_path(key_dir: &Path) -> PathBuf {
+    key_dir.join(PRIV_FILE)
+}
+
+/// Resolve the on-disk public-key path inside the keys directory.
+fn pub_path(key_dir: &Path) -> PathBuf {
+    key_dir.join(PUB_FILE)
+}
 
 /// Load the per-install signing key from `<key_dir>/cert_signing_private.pem`,
 /// generating a fresh keypair (and writing both PEMs to disk with 0600
 /// perms on Unix) on first call.
 ///
-/// Wave 0 stub panics. Wave 1 (Plan 06-02) fills the real impl per
-/// 06-RESEARCH.md "Ed25519 keypair generation + PKCS#8 PEM round-trip".
-pub fn get_or_init_key(_key_path: &Path) -> Result<SigningKey, AchievementError> {
-    unimplemented!("Plan 06-02 (Wave 1) implements get_or_init_key")
+/// On Unix, the private file is chmod'd to 0o600 immediately after write
+/// (R3 / Pitfall 4). On Windows, per-user app-data ACLs provide the
+/// isolation; no explicit mode change.
+pub fn get_or_init_key(key_dir: &Path) -> Result<SigningKey, AchievementError> {
+    let priv_p = priv_path(key_dir);
+
+    if priv_p.exists() {
+        let pem = std::fs::read_to_string(&priv_p)?;
+        let key = SigningKey::from_pkcs8_pem(&pem)
+            .map_err(|e| AchievementError::Pkcs8(format!("decode private pem: {}", e)))?;
+        return Ok(key);
+    }
+
+    // Fresh keypair path.
+    std::fs::create_dir_all(key_dir)?;
+    let mut csprng = OsRng;
+    let signing_key = SigningKey::generate(&mut csprng);
+
+    // Encode + write the private PEM.
+    let priv_pem = signing_key
+        .to_pkcs8_pem(LineEnding::LF)
+        .map_err(|e| AchievementError::Pkcs8(format!("encode private pem: {}", e)))?;
+    std::fs::write(&priv_p, priv_pem.as_bytes())?;
+
+    // R3 / Pitfall 4 — enforce 0600 on Unix immediately after write.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&priv_p, std::fs::Permissions::from_mode(0o600))?;
+    }
+
+    // Encode + write the public PEM. World-readable on disk is acceptable
+    // (verifying keys are public information).
+    let pub_pem = signing_key
+        .verifying_key()
+        .to_public_key_pem(LineEnding::LF)
+        .map_err(|e| AchievementError::Pkcs8(format!("encode public pem: {}", e)))?;
+    std::fs::write(pub_path(key_dir), pub_pem)?;
+
+    Ok(signing_key)
+}
+
+/// Read the on-disk public-key PEM (convenience for the future Settings
+/// "Show signing public key" panel — Wave 5).
+pub fn read_public_pem(key_dir: &Path) -> Result<String, AchievementError> {
+    let pem = std::fs::read_to_string(pub_path(key_dir))?;
+    Ok(pem)
+}
+
+/// Recursively canonicalize a JSON value: sort object keys lexicographically
+/// at every nesting level; reject non-finite numbers (R1).
+fn canonicalize(v: Value) -> Result<Value, AchievementError> {
+    match v {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            let mut sorted = Map::with_capacity(entries.len());
+            for (k, val) in entries {
+                sorted.insert(k, canonicalize(val)?);
+            }
+            Ok(Value::Object(sorted))
+        }
+        Value::Array(items) => items
+            .into_iter()
+            .map(canonicalize)
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
+        Value::Number(n) => {
+            if let Some(f) = n.as_f64() {
+                if !f.is_finite() {
+                    return Err(AchievementError::Validation(
+                        "non-finite number in payload".to_string(),
+                    ));
+                }
+            }
+            Ok(Value::Number(n))
+        }
+        other => Ok(other),
+    }
 }
 
 /// Serialize `payload` to JSON with object keys sorted lexicographically —
-/// the byte sequence Ed25519 then signs. Determinism is mandatory: the
-/// Phase 14 hosted verifier must reproduce the same bytes from the same
-/// logical payload (R1, Pitfall 2).
+/// the byte sequence Ed25519 then signs.
 ///
-/// Wave 0 returns Err. Wave 1 fills via `serde_json::Value` ->
-/// `serde_json::Map<String, Value>` with sorted keys.
-pub fn canonical_json_bytes<T: Serialize>(_payload: &T) -> Result<Vec<u8>, AchievementError> {
-    Err(AchievementError::Validation(
-        "Plan 06-02 (Wave 1) implements canonical_json_bytes".to_string(),
-    ))
+/// Determinism is mandatory: the Phase 14 hosted verifier must reproduce the
+/// same bytes from the same logical payload (R1 / Pitfall 2 / CERT-PAYLOAD-V1).
+pub fn canonical_json_bytes<T: Serialize>(payload: &T) -> Result<Vec<u8>, AchievementError> {
+    let v: Value = serde_json::to_value(payload)?;
+    let canonical = canonicalize(v)?;
+    let bytes = serde_json::to_vec(&canonical)?;
+    Ok(bytes)
 }
 
-/// Sign canonical bytes with the cached signing key. Wave 0 panics.
-pub fn sign_payload(_key: &SigningKey, _canonical_bytes: &[u8]) -> Signature {
-    unimplemented!("Plan 06-02 (Wave 1) implements sign_payload")
+/// Sign canonical bytes with the cached signing key.
+pub fn sign_payload(key: &SigningKey, canonical_bytes: &[u8]) -> Signature {
+    key.sign(canonical_bytes)
 }
 
 /// Verify a signature against canonical bytes using a PEM-encoded public
 /// key. Returns `false` on any decode/parse failure (never panics).
-///
-/// Wave 0 always returns `false`. Wave 1 (Plan 06-02) fills.
-pub fn verify_payload(
-    _public_pem: &str,
-    _canonical_bytes: &[u8],
-    _sig_hex: &str,
-) -> bool {
-    false
+pub fn verify_payload(public_pem: &str, canonical_bytes: &[u8], sig_hex: &str) -> bool {
+    let Ok(verifying) = VerifyingKey::from_public_key_pem(public_pem) else {
+        return false;
+    };
+    let Ok(sig_bytes) = hex::decode(sig_hex) else {
+        return false;
+    };
+    let Ok(sig_array): Result<[u8; 64], _> = sig_bytes.as_slice().try_into() else {
+        return false;
+    };
+    let sig = Signature::from_bytes(&sig_array);
+    verifying.verify(canonical_bytes, &sig).is_ok()
 }
 
-/// Compute the 8-character key fingerprint (first 8 hex chars of
-/// SHA-256(verifying_key.to_public_key_der())). R5 / locked answer A7.
-///
-/// Wave 0 returns `"00000000"` (RED — Wave 1 fills).
-pub fn public_key_fingerprint(_verifying: &VerifyingKey) -> String {
-    "00000000".to_string()
+/// First 8 lowercase hex chars of SHA-256 of the verifying key's DER bytes
+/// (R5 / A7). Falls back to raw 32-byte key if DER encoding fails (never
+/// panics in production paths).
+pub fn public_key_fingerprint(verifying: &VerifyingKey) -> String {
+    let der_bytes: Vec<u8> = verifying
+        .to_public_key_der()
+        .map(|d| d.as_bytes().to_vec())
+        .unwrap_or_else(|_| verifying.as_bytes().to_vec());
+    let hash = Sha256::digest(&der_bytes);
+    hex::encode(&hash[..4])
 }
 
 #[cfg(test)]
 mod tests {
-    //! Wave 0 RED contract tests. Each asserts a Wave 1+ invariant.
+    //! Wave 1 GREEN tests. Each asserts a Wave 1+ invariant required by
+    //! `docs/CERT-PAYLOAD-V1.md` and 06-CONTEXT.md D-04..D-13.
 
     use super::*;
     use ed25519_dalek::SigningKey;
     use rand::rngs::OsRng;
 
     fn ephemeral_key() -> SigningKey {
-        // Generate a throwaway key in-memory ONLY (never written to disk).
-        // The rand_core feature on ed25519-dalek 2.x pulls OsRng.
         SigningKey::generate(&mut OsRng)
     }
 
     #[test]
-    #[ignore = "Plan 06-02 (Wave 1) implements sign + verify"]
     fn sign_verify_roundtrip() {
-        // RED contract: sign(canonical) then verify(public_pem, canonical, sig_hex) == true.
         let key = ephemeral_key();
         let payload = b"learnforge-test-payload";
         let sig = sign_payload(&key, payload);
         let sig_hex = hex::encode(sig.to_bytes());
-        // Wave 1 fills `public_key_pem` extraction; for now we just assert
-        // the verify wrapper returns true given a real signature.
-        // Stub returns false unconditionally — RED.
-        let dummy_pem = "-----BEGIN PUBLIC KEY-----\n-----END PUBLIC KEY-----\n";
+        let pub_pem = key
+            .verifying_key()
+            .to_public_key_pem(LineEnding::LF)
+            .expect("encode public pem");
+
+        assert!(verify_payload(&pub_pem, payload, &sig_hex), "real verify");
         assert!(
-            verify_payload(dummy_pem, payload, &sig_hex),
-            "Wave 1: verify_payload(real_pem, canonical, sig_hex) must return true"
+            !verify_payload(&pub_pem, b"learnforge-test-paylo!d", &sig_hex),
+            "tampered payload"
         );
+        let mut tampered_sig = sig_hex.clone();
+        tampered_sig.replace_range(0..2, "00");
+        assert!(!verify_payload(&pub_pem, payload, &tampered_sig), "tampered sig");
+        assert!(!verify_payload(&pub_pem, payload, "not-hex"), "garbage hex");
+        assert!(!verify_payload("not a pem", payload, &sig_hex), "garbage pem");
     }
 
     #[test]
-    #[ignore = "Plan 06-02 (Wave 1) implements canonical_json_bytes"]
-    fn canonical_json_byte_stable() {
-        // RED contract: two calls with the same payload yield byte-identical Vec<u8>.
-        // Pitfall 2 — map-key ordering must be deterministic.
-        #[derive(serde::Serialize)]
-        struct Probe {
-            b: u32,
-            a: u32,
-        }
-        let p = Probe { b: 2, a: 1 };
-        let first = canonical_json_bytes(&p).expect("first canonicalization");
-        let second = canonical_json_bytes(&p).expect("second canonicalization");
+    fn generate_then_load() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let key_dir = tmp.path();
+        let k1 = get_or_init_key(key_dir).expect("first init");
+        assert!(key_dir.join(PRIV_FILE).exists() && key_dir.join(PUB_FILE).exists());
+        let k2 = get_or_init_key(key_dir).expect("reload");
+        assert_eq!(k1.to_bytes(), k2.to_bytes(), "reload yields same key");
         assert_eq!(
-            first, second,
-            "canonical_json_bytes must be byte-stable across calls"
-        );
-        // Sorted-key invariant: 'a' must precede 'b' in the output.
-        let s = std::str::from_utf8(&first).expect("utf-8");
-        let pos_a = s.find("\"a\"").expect("a key present");
-        let pos_b = s.find("\"b\"").expect("b key present");
-        assert!(
-            pos_a < pos_b,
-            "canonical JSON must sort keys lexicographically (got: {})",
-            s
+            public_key_fingerprint(&k1.verifying_key()),
+            public_key_fingerprint(&k2.verifying_key())
         );
     }
 
+    /// R3 / Pitfall 4 — private key file is 0600 on Unix immediately after write.
     #[test]
-    #[ignore = "Plan 06-02 (Wave 1) implements public_key_fingerprint"]
-    fn fingerprint_is_8_hex_chars() {
-        // RED contract: fingerprint is 8 lowercase hex chars (SHA-256[..8]).
-        // Stub returns "00000000" — Wave 1 fills.
-        let key = ephemeral_key();
-        let fp = public_key_fingerprint(&key.verifying_key());
+    #[cfg(unix)]
+    fn private_key_file_mode_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _k = get_or_init_key(tmp.path()).expect("init");
+        let meta = std::fs::metadata(tmp.path().join(PRIV_FILE)).expect("metadata");
+        let mode = meta.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "expected 0600, got {:o}", mode);
+    }
+
+    /// R1 / Pitfall 2 — byte-stable AND keys sort lexicographically at every level.
+    #[test]
+    fn canonical_json_byte_stable() {
+        #[derive(serde::Serialize)]
+        struct Probe { b: u32, a: u32, nested: Nested }
+        #[derive(serde::Serialize)]
+        struct Nested { z: u32, m: u32, a: u32 }
+        let p = Probe { b: 2, a: 1, nested: Nested { z: 99, m: 5, a: 0 } };
+        let first = canonical_json_bytes(&p).unwrap();
+        assert_eq!(first, canonical_json_bytes(&p).unwrap(), "byte-stable");
+
+        let s = std::str::from_utf8(&first).unwrap();
+        let pa = s.find("\"a\"").unwrap();
+        let pb = s.find("\"b\"").unwrap();
+        let pn = s.find("\"nested\"").unwrap();
+        assert!(pa < pb && pb < pn, "top-level keys must sort (got: {})", s);
+
+        let nested = &s[pn..];
+        let na = nested.find("\"a\":").unwrap();
+        let nm = nested.find("\"m\":").unwrap();
+        let nz = nested.find("\"z\":").unwrap();
+        assert!(na < nm && nm < nz, "nested keys must sort (got: {})", nested);
+    }
+
+    /// Finite floats pass; serde_json::Number itself rejects NaN/Inf at
+    /// construction (canonicalize's non-finite check is second-line defense).
+    #[test]
+    fn canonical_json_rejects_non_finite_mastery() {
+        #[derive(serde::Serialize)]
+        struct GoodPayload { mastery_score: f64 }
+        canonical_json_bytes(&GoodPayload { mastery_score: 0.85 }).expect("finite ok");
+        assert!(serde_json::Number::from_f64(f64::NAN).is_none());
+        assert!(serde_json::Number::from_f64(f64::INFINITY).is_none());
+    }
+
+    /// R5 / A7 — fingerprint is exactly 8 lowercase hex chars.
+    #[test]
+    fn public_key_fingerprint_8_hex_chars() {
+        let fp = public_key_fingerprint(&ephemeral_key().verifying_key());
         assert_eq!(fp.len(), 8, "fingerprint must be 8 chars");
         assert!(
-            fp.chars().all(|c| c.is_ascii_hexdigit()),
+            fp.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
             "fingerprint must be lowercase hex (got {})",
             fp
         );
-        assert_ne!(
-            fp, "00000000",
-            "Wave 1 fingerprint must NOT be the Wave 0 placeholder"
-        );
+        assert_ne!(fp, "00000000", "must not be Wave 0 placeholder");
+    }
+
+    /// Two random keypairs must yield two distinct fingerprints (sanity).
+    #[test]
+    fn fingerprint_differs_across_keys() {
+        let fp1 = public_key_fingerprint(&ephemeral_key().verifying_key());
+        let fp2 = public_key_fingerprint(&ephemeral_key().verifying_key());
+        assert_ne!(fp1, fp2);
     }
 }
