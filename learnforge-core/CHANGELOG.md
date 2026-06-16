@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`microlearning` module (Phase 7 Wave 4 / 07-04)** — daily-challenge
+  selection algorithm moved verbatim from
+  `src-tauri/src/learning/microlearning_selection.rs`. Adds the
+  `MicrolearningStore` trait (A3 lock — per-module storage trait) with
+  five methods covering the four SQL touch points the pre-Wave-4 file
+  exposed (`candidate_modules`, `blocks_for_module`, `is_recently_seen`,
+  `module_has_due_sr_card`, `decay_days_for_module`) — Pitfall 9
+  resolution. `select_daily_challenge<S: MicrolearningStore>` is
+  parameterized with an explicit `now: DateTime<Utc>` (A5 clock
+  injection / Pitfall 10 mitigation): the algorithm never calls
+  `chrono::Utc::now()` internally, so WASM builds cannot leak the
+  1970 epoch and unit tests pin a deterministic timestamp. Exports
+  the public scoring constants (`BKT_LOWER`, `BKT_UPPER`, `W_DECAY`,
+  `W_SR_DUE`, `W_RECENCY`, `RECENCY_PENALTY_HOURS`,
+  `DECAY_HALF_LIFE_DAYS`, `DECAY_DAYS_CAP_MULT`). Also adds the
+  `MicrolearningError` enum (`thiserror::Error` derive) backed by a
+  single `Backend(String)` variant — same T-07-05 trust-boundary
+  stringification pattern as `BktError` / `SrError`. Rustdoc on every
+  public item; 10 unit tests using inline stub stores + 1 doctest. No
+  `rusqlite` in this module; WASM build still succeeds (R1 / D-02
+  intact).
 - **`threshold` module (Phase 7 Wave 4 / 07-04)** — pure skill-tier
   predicates moved verbatim from
   `src-tauri/src/achievements/threshold.rs`: `TrackAggregate` struct,
@@ -62,6 +83,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`src-tauri/src/learning/microlearning_selection.rs` is now a
+  transitional shim** (Phase 7 Wave 4 / 07-04) — re-exports the algorithm
+  surface (`Candidate`, `CandidateModule`, `MicrolearningError`,
+  `MicrolearningStore`, and the scoring constants) from
+  `learnforge_core::microlearning`, and keeps a legacy
+  `select_daily_challenge(&Connection, &str) -> Result<Option<Candidate>, String>`
+  wrapper that supplies `chrono::Utc::now()` at the call site so the
+  single existing caller (`commands/microlearning.rs:32`) compiles
+  unchanged. The rusqlite-backed impl lives at
+  `src-tauri/src/storage_impl/microlearning.rs::SqliteMicrolearningStore<'a>(&'a Connection)`
+  — same orphan-rule newtype recipe Waves 2/3 introduced for
+  `SqliteBktStore` / `SqliteSrStore` (E0117 prevents
+  `impl MicrolearningStore for &Connection` directly). 6 adapter unit
+  tests + 6 cross-crate integration tests at the shim cover end-to-end
+  behavior. Wave 10 grep-and-rewrite will switch the command caller to
+  invoke the core fn directly with its own clock + typed error.
+- **`src-tauri/src/achievements/threshold.rs` is now a transitional
+  shim** (Phase 7 Wave 4 / 07-04) — pure predicates re-export from
+  `learnforge_core::threshold` while the SQL aggregate
+  (`track_mastery_aggregate`) re-exports from
+  `crate::storage_impl::threshold`. The single caller
+  (`achievements::mod::maybe_issue`) compiles unchanged. Wave 8 will
+  promote `track_mastery_aggregate` into a method on the forthcoming
+  `AchievementStore` trait — that's the moment the SQL also gets hidden
+  behind a trait, matching the `BktStore` / `SrStore` /
+  `MicrolearningStore` pattern.
 - **`src-tauri/src/learning/spaced_repetition.rs` is now a transitional
   shim** (Phase 7 Wave 3 / 07-03) — `pub use learnforge_core::sm2::{SM2Result,
   sm2_calculate}`. The single remaining caller

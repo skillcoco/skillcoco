@@ -8,12 +8,15 @@
 //! - [`sr`] — `SqliteSrStore<'a>(&'a Connection)` (Phase 7 Wave 3).
 //! - [`threshold`] — parked `track_mastery_aggregate` free fn (Phase 7
 //!   Wave 4); Wave 8 will promote it to an `AchievementStore` trait method.
+//! - [`microlearning`] — `SqliteMicrolearningStore<'a>(&'a Connection)`
+//!   (Phase 7 Wave 4).
 //!
-//! Later waves add `microlearning`, `packs`, `achievements`, etc.
+//! Later waves add `packs`, `achievements`, etc.
 //!
 //! Both adapters use the local-newtype pattern to satisfy Rust's orphan rule
 //! (E0117) — see each module's "Orphan-rule note" for details.
 
 pub mod bkt;
+pub mod microlearning;
 pub mod sr;
 pub mod threshold;
