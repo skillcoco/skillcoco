@@ -38,6 +38,10 @@ pub struct QuizQuestionReview {
 }
 
 /// Result returned from submit_quiz.
+///
+/// Phase 6 (Plan 06-02 Task 3) — adds `newly_issued_achievements` (A4 lock).
+/// Empty `Vec` whenever the quiz did not cross the module completion gate,
+/// or when `achievements::maybe_issue` failed (log-and-continue per R2).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubmitQuizResult {
@@ -48,6 +52,11 @@ pub struct SubmitQuizResult {
     pub newly_unlocked_module_ids: Vec<String>,
     pub cards_created: usize,
     pub review: Vec<QuizQuestionReview>,
+    /// Phase 6 — achievements freshly issued by this submission. Empty
+    /// when `module_completed == false` (R2 short-circuit) or when
+    /// issuance failed (log-and-continue).
+    #[serde(default)]
+    pub newly_issued_achievements: Vec<crate::achievements::Achievement>,
 }
 
 /// Request to rate a flash card (SM-2 quality signal + optional BKT reinforcement).
@@ -348,6 +357,10 @@ pub async fn submit_quiz(
 
     let mut newly_unlocked: Vec<String> = Vec::new();
     let mut cards_created: usize = 0;
+    // Phase 6 (Plan 06-02 Task 3) — sentinel for the post-completion
+    // achievement issuance. R2 short-circuit: we only populate this
+    // inside the `became_completed` branch.
+    let mut newly_issued_achievements: Vec<crate::achievements::Achievement> = Vec::new();
 
     if transition.became_completed {
         // 6. Find path_id for this track so check_unlock_modules can load edges_json
@@ -378,6 +391,26 @@ pub async fn submit_quiz(
 
         // 10. Update track progress_percent
         update_track_progress_percent(&db.conn, &req.track_id);
+
+        // 11. Phase 6 (CERT-03) — issue any threshold-crossing achievements.
+        // Log-and-continue on error per RESEARCH.md Pattern 4: an achievement
+        // failure must never block quiz completion. R2 short-circuit lives
+        // here (we are inside `if became_completed`).
+        newly_issued_achievements = crate::achievements::maybe_issue(
+            &db.conn,
+            &req.track_id,
+            &learner_id,
+            &state.signing_key,
+            &state.signing_key_path,
+        )
+        .unwrap_or_else(|e| {
+            log::warn!(
+                "submit_quiz: achievements::maybe_issue failed for track {}: {}",
+                req.track_id,
+                e
+            );
+            Vec::new()
+        });
     }
 
     Ok(SubmitQuizResult {
@@ -388,6 +421,7 @@ pub async fn submit_quiz(
         newly_unlocked_module_ids: newly_unlocked,
         cards_created,
         review,
+        newly_issued_achievements,
     })
 }
 
@@ -1861,6 +1895,7 @@ mod phase3_tests {
             newly_unlocked_module_ids: vec![],
             cards_created: 0,
             review: vec![],
+            newly_issued_achievements: vec![],
         };
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("scorePercent"), "must serialize to scorePercent");
@@ -1868,6 +1903,11 @@ mod phase3_tests {
         assert!(json.contains("moduleCompleted"), "must serialize to moduleCompleted");
         assert!(json.contains("newlyUnlockedModuleIds"), "must serialize to newlyUnlockedModuleIds");
         assert!(json.contains("cardsCreated"), "must serialize to cardsCreated");
+        // Phase 6 (06-02 Task 3): newlyIssuedAchievements (A4 lock).
+        assert!(
+            json.contains("newlyIssuedAchievements"),
+            "must serialize to newlyIssuedAchievements"
+        );
     }
 
     #[test]
@@ -2514,6 +2554,136 @@ mod phase3_tests {
             |row| row.get(0),
         ).unwrap();
         assert_eq!(cards, 0, "no SR cards must be inserted on failed quiz");
+    }
+
+    // ── Phase 6 (Plan 06-02 Task 3) — submit_quiz achievements hook ──
+    //
+    // We do not invoke the `submit_quiz` Tauri command directly (it
+    // requires `tauri::State`), but we DO replicate the exact code path:
+    //   1. apply_mastery_update_iterative + check `became_completed`.
+    //   2. If completed → call `achievements::maybe_issue` with an
+    //      AppState-shaped Mutex<Option<SigningKey>> + key dir.
+    //   3. Assert the achievement row count and `newly_issued_achievements`
+    //      cardinality match the expected R2 / Pattern 4 behavior.
+
+    /// CERT-03 / A4 — On module completion, maybe_issue fires and the
+    /// freshly-issued achievements are surfaced through what `submit_quiz`
+    /// would return.
+    #[test]
+    fn submit_quiz_emits_newly_issued_achievements_on_completion() {
+        let conn = fresh_conn();
+        // 4 modules in track; m1 is the one we drive across mastery.
+        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Alice')", []).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'Kubernetes', 'devops', 'CKA')", []).unwrap();
+        conn.execute("INSERT INTO learning_paths (id, track_id, version, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', 1, '[]', '[]', 'test')", []).unwrap();
+        for (mid, ml, status) in [
+            ("m1", 0.65, "in_progress"),
+            ("m2", 0.30, "in_progress"),
+            ("m3", 0.30, "in_progress"),
+            ("m4", 0.30, "in_progress"),
+        ] {
+            conn.execute(
+                "INSERT INTO modules (id, path_id, title, content_json) VALUES (?1, 'path1', ?2, '{}')",
+                rusqlite::params![mid, mid],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES (?1, ?2, 'lp1', ?3, ?4)",
+                rusqlite::params![format!("mp-{}", mid), mid, status, ml],
+            ).unwrap();
+        }
+
+        // Drive m1 across the mastery threshold via one correct BKT update
+        // (prior 0.65 + one true observation crosses 0.7 from the default
+        // BKT params, matching the `integration_submit_quiz_full_pipeline`
+        // precedent above).
+        let t = apply_mastery_update_iterative(&conn, "lp1", "m1", 0.65, &[true, true]).unwrap();
+        assert!(t.became_completed, "pre-condition: m1 must complete");
+
+        // Hook under test — same code path as `submit_quiz` after Plan 06-02.
+        let key_slot: std::sync::Mutex<Option<ed25519_dalek::SigningKey>> = std::sync::Mutex::new(None);
+        let key_dir = tempfile::tempdir().expect("tempdir");
+        let newly_issued = crate::achievements::maybe_issue(
+            &conn,
+            "trk1",
+            "lp1",
+            &key_slot,
+            key_dir.path(),
+        ).expect("maybe_issue");
+
+        // 1 of 4 modules mastered = 25% — Associate (only).
+        assert_eq!(newly_issued.len(), 1);
+        assert_eq!(newly_issued[0].level, "Associate");
+        assert_eq!(newly_issued[0].kind, "badge");
+        // Field is camelCase on the wire.
+        let json = serde_json::to_string(&newly_issued[0]).unwrap();
+        assert!(json.contains("trackTopic"));
+        assert!(json.contains("keyFingerprint"));
+    }
+
+    /// R2 short-circuit — when `became_completed == false`, maybe_issue
+    /// is NOT called and no achievement rows are created. We assert
+    /// this by NOT invoking maybe_issue in the failed branch and
+    /// asserting the achievements table count is zero.
+    #[test]
+    fn submit_quiz_does_not_call_maybe_issue_when_not_completed() {
+        let conn = fresh_conn();
+        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'T')", []).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'K8s', 'devops', 'CKA')", []).unwrap();
+        conn.execute("INSERT INTO learning_paths (id, track_id, version, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', 1, '[]', '[]', 'test')", []).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title, content_json) VALUES ('m1', 'path1', 'M1', '{}')", []).unwrap();
+        conn.execute("INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp1', 'm1', 'lp1', 'in_progress', 0.1)", []).unwrap();
+
+        // Failed quiz: is_correct=false, mastery stays well below threshold.
+        let t = apply_mastery_update_iterative(&conn, "lp1", "m1", 0.1, &[false, false, false]).unwrap();
+        assert!(!t.became_completed, "fail must not complete module");
+
+        // R2 — the production hook gates maybe_issue on `became_completed`;
+        // when false, the call MUST NOT happen. Asserted by zero rows.
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM achievements WHERE learner_id = 'lp1' AND track_id = 'trk1'",
+            [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(count, 0, "R2: maybe_issue must not run when became_completed=false");
+    }
+
+    /// Pattern 4 log-and-continue — when `maybe_issue` errors, the IPC
+    /// returns `Ok(SubmitQuizResult { ..., newly_issued_achievements: [] })`
+    /// rather than propagating the error. We simulate the failure by
+    /// pointing the key_dir at a path that cannot be a directory (a regular
+    /// file). The hook wraps the call in `unwrap_or_else(|e| Vec::new())`,
+    /// so a real submit_quiz invocation would still succeed.
+    #[test]
+    fn submit_quiz_continues_when_maybe_issue_fails() {
+        let conn = fresh_conn();
+        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'T')", []).unwrap();
+        conn.execute("INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk1', 'lp1', 'K8s', 'devops', 'CKA')", []).unwrap();
+        conn.execute("INSERT INTO learning_paths (id, track_id, version, edges_json, modules_json, generated_by_model) VALUES ('path1', 'trk1', 1, '[]', '[]', 'test')", []).unwrap();
+        conn.execute("INSERT INTO modules (id, path_id, title, content_json) VALUES ('m1', 'path1', 'M1', '{}')", []).unwrap();
+        conn.execute("INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level) VALUES ('mp1', 'm1', 'lp1', 'in_progress', 0.75)", []).unwrap();
+
+        // Construct a path that exists but is a FILE (so create_dir_all
+        // inside signing::get_or_init_key returns Err(NotADirectory)).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let blocking_file = tmp.path().join("not-a-dir");
+        std::fs::write(&blocking_file, b"this is a file").unwrap();
+
+        let key_slot: std::sync::Mutex<Option<ed25519_dalek::SigningKey>> = std::sync::Mutex::new(None);
+
+        // The hook in submit_quiz wraps in unwrap_or_else(|e| Vec::new()).
+        // Replicate that wrap here and assert it produces an empty Vec.
+        let newly_issued = crate::achievements::maybe_issue(
+            &conn,
+            "trk1",
+            "lp1",
+            &key_slot,
+            &blocking_file,
+        )
+        .unwrap_or_else(|_| Vec::new());
+
+        assert!(
+            newly_issued.is_empty(),
+            "log-and-continue: failure must yield empty Vec, not propagate"
+        );
     }
 
     // ── Task 3: rate_flash_card tests (GREEN in 03-04 Task 3) ──

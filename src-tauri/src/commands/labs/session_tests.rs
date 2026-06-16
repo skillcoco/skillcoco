@@ -26,6 +26,9 @@ fn test_app_state() -> Arc<AppState> {
         topic_packs: Arc::new(Mutex::new(
             crate::topic_packs::PackRegistry::default(),
         )),
+        // Phase 6 — lazy signing key; lab tests never trigger maybe_issue.
+        signing_key: Arc::new(Mutex::new(None)),
+        signing_key_path: std::path::PathBuf::from("/tmp/learnforge-lab-tests-keys"),
     })
 }
 

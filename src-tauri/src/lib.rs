@@ -53,6 +53,16 @@ pub struct AppState {
     /// call). Uses `std::sync::Mutex` because pack-reads in IPC handlers
     /// don't await.
     pub topic_packs: Arc<Mutex<topic_packs::PackRegistry>>,
+    /// Phase 6 (Certification) — lazy-loaded Ed25519 signing key for cert
+    /// issuance. `None` until the first `achievements::maybe_issue` call,
+    /// which loads-or-generates via `signing::get_or_init_key`. Avoids
+    /// disk I/O on cold start; the BKT path triggers init only when a
+    /// learner actually crosses a threshold.
+    pub signing_key: Arc<Mutex<Option<ed25519_dalek::SigningKey>>>,
+    /// Phase 6 — `<app_data>/keys/` directory where the signing private +
+    /// public PEMs live. Wave 1 reads/writes this path; Wave 5 Settings
+    /// "Show signing public key" will expose `cert_signing_public.pem`.
+    pub signing_key_path: PathBuf,
 }
 
 /// Contract that Pro overlays satisfy to inject additional Tauri commands.
@@ -141,10 +151,19 @@ pub fn build_app() -> tauri::Builder<tauri::Wry> {
             let topic_packs_registry = topic_packs::loader::load_all(&database.conn)
                 .expect("Failed to load topic packs at startup — see logs");
 
+            // Phase 6 (Certification) — keys directory + lazy signing key.
+            // Pattern 2 from 06-RESEARCH.md: AppState holds an Arc<Mutex<Option<SigningKey>>>
+            // that the first `maybe_issue` call populates by reading or generating
+            // `<app_data>/keys/cert_signing_{public,private}.pem`. We do NOT
+            // pre-generate the key at startup — keeping cold-start free of disk I/O.
+            let signing_key_path = app_dir.join("keys");
+
             app.manage(AppState {
                 db: Arc::new(Mutex::new(database)),
                 lab_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 topic_packs: Arc::new(Mutex::new(topic_packs_registry)),
+                signing_key: Arc::new(Mutex::new(None)),
+                signing_key_path,
             });
 
             // Auth credential store
@@ -308,22 +327,23 @@ mod build_app_tests {
     /// Phase 5 (Plan 05-02 Task 3) — compile-time gate proving `AppState`
     /// has the `topic_packs` field with the expected type. Pattern-matches
     /// on every field so a future deletion or rename breaks this test.
+    ///
+    /// Phase 6 (Plan 06-02 Task 3) — extended to require `signing_key` +
+    /// `signing_key_path` so a future deletion would break compilation.
     #[test]
     fn appstate_has_topic_packs_field() {
         fn _type_check(s: AppState) {
-            // Destructure-bind every field — if any field is added/removed
-            // without updating this test, the compiler complains, which is
-            // what we want from a structural smoke test.
             let AppState {
                 db: _,
                 lab_sessions: _,
                 topic_packs,
+                signing_key,
+                signing_key_path,
             } = s;
-            // Confirm the type is `Arc<Mutex<PackRegistry>>`.
             let _typed: Arc<Mutex<topic_packs::PackRegistry>> = topic_packs;
+            let _key: Arc<Mutex<Option<ed25519_dalek::SigningKey>>> = signing_key;
+            let _path: PathBuf = signing_key_path;
         }
-        // Don't actually call `_type_check` — constructing an `AppState`
-        // requires a real Database. Compile-only gating is sufficient.
         let _: fn(AppState) = _type_check;
     }
 }
