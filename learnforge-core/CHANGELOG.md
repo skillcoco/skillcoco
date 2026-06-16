@@ -50,6 +50,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`src-tauri/src/db/blocks.rs` is now a transitional shim** (Phase 7
+  Wave 6 / 07-06) — re-exports the type surface (`BlockType`,
+  `BlockStatus`, `ModuleBlock`, `BlocksError`, `BlockStore`,
+  `block_type_to_str`, `status_to_str`) from `learnforge_core::blocks`
+  and keeps six legacy free-fn facades (`insert_block`,
+  `list_blocks_by_module`, `get_block`, `update_block_payload`,
+  `count_blocks_by_module`, `delete_blocks_by_module`) that delegate to
+  the trait impl via `SqliteBlockStore(conn)`. **Zero call-site churn**
+  for `commands/blocks.rs` (96.7KB / most-called IPC surface),
+  `commands/ai.rs:502`, `labs/{eval,session,session_tests,state}.rs`,
+  and `commands/learning.rs:309`. **Error envelope change** — the
+  legacy facades now return `Result<_, BlocksError>` instead of the
+  pre-Wave-6 `rusqlite::Result<_>` (i.e. `Result<_, rusqlite::Error>`);
+  every existing call site uses `.map_err(|e| e.to_string())` or
+  `format!("get_block: {}", e)`, both of which work unchanged because
+  `BlocksError` derives `thiserror::Error` (Display). Wave 10 deletes
+  the shim once callsites migrate onto `SqliteBlockStore(conn)`
+  directly. **No `#[deprecated]`** on the `pub use` items (R5 / Pitfall
+  6 — rustc silently ignores it).
+- **`src-tauri/src/storage_impl/blocks.rs` (new, Phase 7 Wave 6 /
+  07-06)** — rusqlite-backed `BlockStore` impl via the local newtype
+  `SqliteBlockStore<'a>(pub &'a Connection)` (sixth application of the
+  orphan-rule recipe, Waves 2/3/4/5 precedent). All six trait method
+  bodies are lifted **verbatim** from pre-Wave-6
+  `src-tauri/src/db/blocks.rs:68-185` with the error envelope rewrapped
+  from `rusqlite::Error` → `BlocksError::Db` at the trust boundary
+  (T-07-05). 6 unit tests cover the full CRUD surface (insert+list,
+  get_by_id present/absent, update_payload, count, delete-and-empty,
+  trait-object-safety).
+
 - **`achievements::signing` (src-tauri) → transitional shim (Phase 7
   Wave 5 / 07-05)** — pre-Wave-5 the file was the single home for both
   pure crypto and FS-backed key lifecycle; post-Wave-5 it's a thin

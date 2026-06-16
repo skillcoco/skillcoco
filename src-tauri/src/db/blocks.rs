@@ -1,191 +1,101 @@
-use rusqlite::{Connection, Result};
-use serde::{Deserialize, Serialize};
+//! Transitional shim — Phase 7 Wave 6 (07-06) moved the block taxonomy
+//! to [`learnforge_core::blocks`]. The rusqlite-backed [`BlockStore`] impl
+//! lives in [`crate::storage_impl::blocks::SqliteBlockStore`].
+//!
+//! ## What's here now
+//!
+//! - **Re-exports** of [`BlockType`], [`BlockStatus`], [`ModuleBlock`],
+//!   [`BlocksError`], [`BlockStore`], and the [`block_type_to_str`] /
+//!   [`status_to_str`] helpers from `learnforge_core::blocks` — so every
+//!   `use crate::db::blocks::*` call site compiles unchanged.
+//! - **Legacy free-fn facades** (`insert_block`, `list_blocks_by_module`,
+//!   `get_block`, `update_block_payload`, `count_blocks_by_module`,
+//!   `delete_blocks_by_module`) that delegate to the trait impl via
+//!   `SqliteBlockStore(conn)`. **Zero call-site churn** for
+//!   `commands/blocks.rs` (96.7KB, the most-called IPC surface in the
+//!   codebase), `commands/ai.rs:502`, `labs/{eval,session,state}.rs`, and
+//!   `commands/learning.rs:309`.
+//!
+//! ## Wave 10 cleanup
+//!
+//! Wave 10 grep-and-rewrites the call sites to call the trait directly
+//! (`SqliteBlockStore(conn).insert(...)`) and deletes this shim. The
+//! pub-use does **NOT** use `#[deprecated]` because rustc silently
+//! ignores it on `pub use` items (R5 / Pitfall 6).
+//!
+//! ## Integration tests
+//!
+//! The CRUD-against-in-memory-Connection tests retained at the bottom
+//! of this file now exercise the trait impl via the legacy facades —
+//! same test bodies as pre-Wave-6, proving the shim preserves
+//! end-to-end behavior. Pure type-level tests (serde round-trips,
+//! enum-to-str helpers) moved to `learnforge-core/src/blocks.rs`.
 
-/// Block type taxonomy — serialized as snake_case strings.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum BlockType {
-    Section,
-    Text,
-    Callout,
-    Quiz,
-    FlashCards,
-    /// Phase 03.1 — Hands-on Lab block (LAB-01).
-    Lab,
+pub use learnforge_core::blocks::{
+    block_type_to_str, status_to_str, BlockStatus, BlockStore, BlockType, BlocksError,
+    ModuleBlock,
+};
+
+use crate::storage_impl::blocks::SqliteBlockStore;
+use rusqlite::Connection;
+
+/// Legacy facade — delegates to [`BlockStore::insert`].
+/// Wave 10 deletes this; callers switch to `SqliteBlockStore(conn).insert(...)`.
+pub fn insert_block(conn: &Connection, b: &ModuleBlock) -> Result<(), BlocksError> {
+    SqliteBlockStore(conn).insert(b)
 }
 
-/// Block generation/content status.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum BlockStatus {
-    Pending,
-    Generating,
-    Ready,
-    Failed,
+/// Legacy facade — delegates to [`BlockStore::list_for_module`].
+/// Wave 10 deletes this; callers switch to `SqliteBlockStore(conn).list_for_module(...)`.
+pub fn list_blocks_by_module(
+    conn: &Connection,
+    module_id: &str,
+) -> Result<Vec<ModuleBlock>, BlocksError> {
+    SqliteBlockStore(conn).list_for_module(module_id)
 }
 
-/// Database row for module_blocks. Crosses the Tauri IPC boundary — must use camelCase.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModuleBlock {
-    pub id: String,
-    pub module_id: String,
-    pub ordering: i32,
-    pub block_type: String,        // serialized BlockType (snake_case variant)
-    pub status: String,            // serialized BlockStatus
-    pub params_json: String,
-    pub payload_json: String,
-    pub source_anchors_json: String,
-    pub metadata_json: String,
-    pub retry_count: i32,
-    pub created_at: String,
-    pub updated_at: String,
+/// Legacy facade — delegates to [`BlockStore::get_by_id`].
+/// Wave 10 deletes this; callers switch to `SqliteBlockStore(conn).get_by_id(...)`.
+pub fn get_block(
+    conn: &Connection,
+    block_id: &str,
+) -> Result<Option<ModuleBlock>, BlocksError> {
+    SqliteBlockStore(conn).get_by_id(block_id)
 }
 
-/// Convert BlockStatus to its string representation for DB storage.
-pub fn status_to_str(s: &BlockStatus) -> &'static str {
-    match s {
-        BlockStatus::Pending => "pending",
-        BlockStatus::Generating => "generating",
-        BlockStatus::Ready => "ready",
-        BlockStatus::Failed => "failed",
-    }
-}
-
-/// Convert BlockType to its string representation for DB storage.
-pub fn block_type_to_str(t: &BlockType) -> &'static str {
-    match t {
-        BlockType::Section => "section",
-        BlockType::Text => "text",
-        BlockType::Callout => "callout",
-        BlockType::Quiz => "quiz",
-        BlockType::FlashCards => "flash_cards",
-        BlockType::Lab => "lab",
-    }
-}
-
-/// Insert a block row into module_blocks.
-pub fn insert_block(conn: &Connection, b: &ModuleBlock) -> Result<()> {
-    conn.execute(
-        "INSERT INTO module_blocks (id, module_id, ordering, block_type, status,
-             params_json, payload_json, source_anchors_json, metadata_json, retry_count,
-             created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-        rusqlite::params![
-            b.id,
-            b.module_id,
-            b.ordering,
-            b.block_type,
-            b.status,
-            b.params_json,
-            b.payload_json,
-            b.source_anchors_json,
-            b.metadata_json,
-            b.retry_count,
-            b.created_at,
-            b.updated_at
-        ],
-    )?;
-    Ok(())
-}
-
-/// Query all blocks for a module, ordered by ordering ASC.
-pub fn list_blocks_by_module(conn: &Connection, module_id: &str) -> Result<Vec<ModuleBlock>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, module_id, ordering, block_type, status,
-                params_json, payload_json, source_anchors_json, metadata_json, retry_count,
-                created_at, updated_at
-         FROM module_blocks
-         WHERE module_id = ?1
-         ORDER BY ordering ASC",
-    )?;
-    let blocks = stmt
-        .query_map([module_id], |row| {
-            Ok(ModuleBlock {
-                id: row.get(0)?,
-                module_id: row.get(1)?,
-                ordering: row.get(2)?,
-                block_type: row.get(3)?,
-                status: row.get(4)?,
-                params_json: row.get(5)?,
-                payload_json: row.get(6)?,
-                source_anchors_json: row.get(7)?,
-                metadata_json: row.get(8)?,
-                retry_count: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?
-        .collect::<Result<Vec<ModuleBlock>>>()?;
-    Ok(blocks)
-}
-
-/// Get a single block by ID. Returns None if not found.
-pub fn get_block(conn: &Connection, block_id: &str) -> Result<Option<ModuleBlock>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, module_id, ordering, block_type, status,
-                params_json, payload_json, source_anchors_json, metadata_json, retry_count,
-                created_at, updated_at
-         FROM module_blocks
-         WHERE id = ?1",
-    )?;
-    let mut rows = stmt.query_map([block_id], |row| {
-        Ok(ModuleBlock {
-            id: row.get(0)?,
-            module_id: row.get(1)?,
-            ordering: row.get(2)?,
-            block_type: row.get(3)?,
-            status: row.get(4)?,
-            params_json: row.get(5)?,
-            payload_json: row.get(6)?,
-            source_anchors_json: row.get(7)?,
-            metadata_json: row.get(8)?,
-            retry_count: row.get(9)?,
-            created_at: row.get(10)?,
-            updated_at: row.get(11)?,
-        })
-    })?;
-    match rows.next() {
-        Some(Ok(block)) => Ok(Some(block)),
-        Some(Err(e)) => Err(e),
-        None => Ok(None),
-    }
-}
-
-/// Update payload and status for a single block.
+/// Legacy facade — delegates to [`BlockStore::update_payload`].
+/// Wave 10 deletes this; callers switch to `SqliteBlockStore(conn).update_payload(...)`.
 pub fn update_block_payload(
     conn: &Connection,
     id: &str,
     status: BlockStatus,
     payload_json: &str,
-) -> Result<()> {
-    conn.execute(
-        "UPDATE module_blocks SET status=?1, payload_json=?2, updated_at=datetime('now') WHERE id=?3",
-        rusqlite::params![status_to_str(&status), payload_json, id],
-    )?;
-    Ok(())
+) -> Result<(), BlocksError> {
+    SqliteBlockStore(conn).update_payload(id, status, payload_json)
 }
 
-/// Count blocks for a module.
-pub fn count_blocks_by_module(conn: &Connection, module_id: &str) -> Result<i64> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM module_blocks WHERE module_id = ?1",
-        [module_id],
-        |r| r.get(0),
-    )
+/// Legacy facade — delegates to [`BlockStore::count_for_module`].
+/// Wave 10 deletes this; callers switch to `SqliteBlockStore(conn).count_for_module(...)`.
+pub fn count_blocks_by_module(conn: &Connection, module_id: &str) -> Result<i64, BlocksError> {
+    SqliteBlockStore(conn).count_for_module(module_id)
 }
 
-/// Delete all blocks for a module. Returns rows affected.
+/// Legacy facade — delegates to [`BlockStore::delete_for_module`].
+/// Wave 10 deletes this; callers switch to `SqliteBlockStore(conn).delete_for_module(...)`.
 /// Used by `regenerate_module` in 03-03.
-pub fn delete_blocks_by_module(conn: &Connection, module_id: &str) -> Result<usize> {
-    conn.execute(
-        "DELETE FROM module_blocks WHERE module_id = ?1",
-        [module_id],
-    )
+pub fn delete_blocks_by_module(conn: &Connection, module_id: &str) -> Result<usize, BlocksError> {
+    SqliteBlockStore(conn).delete_for_module(module_id)
 }
 
 #[cfg(test)]
 mod tests {
+    //! Integration tests through the legacy free-fn facades — these
+    //! exercise the trait impl via the shim and prove that the
+    //! end-to-end behavior is preserved across the Wave 6 move.
+    //!
+    //! Pure type-level tests (serde round-trips, enum-to-str coverage)
+    //! moved to `learnforge-core/src/blocks.rs::tests`.
+
     use super::*;
     use crate::db::migrations::apply_migrations;
     use crate::db::schema;
@@ -218,7 +128,6 @@ mod tests {
 
     /// Insert a parent module row so foreign key constraints are satisfied.
     fn insert_parent_module(conn: &Connection, module_id: &str) {
-        // Insert learner profile -> track -> path -> module chain
         conn.execute(
             "INSERT OR IGNORE INTO learner_profiles (id) VALUES ('lp-test')",
             [],
@@ -241,7 +150,9 @@ mod tests {
         .unwrap();
     }
 
-    /// Serde test: serialized JSON must contain camelCase keys.
+    /// Serde IPC contract: serialized JSON must contain camelCase keys.
+    /// (Re-asserted here as a cross-crate integration test; the unit-level
+    /// guarantee lives in `learnforge-core/src/blocks.rs::tests::module_block_serializes_camel_case`.)
     #[test]
     fn test_module_block_camel_case() {
         let block = sample_block("mod-001");
@@ -256,7 +167,7 @@ mod tests {
         assert!(json.contains("createdAt"), "must serialize to createdAt");
         assert!(json.contains("updatedAt"), "must serialize to updatedAt");
 
-        // Verify round-trip with DB
+        // Verify round-trip with DB through the shim
         let conn = fresh_conn();
         insert_parent_module(&conn, "mod-001");
         insert_block(&conn, &block).unwrap();
@@ -342,8 +253,7 @@ mod tests {
     }
 
     /// LAB-01 — BlockType::Lab serializes / deserializes as "lab" string.
-    /// Plumbing test: passes once the Lab arm is added in 03.1-01 (this plan).
-    /// Flagged as "pre-passing" in SUMMARY.md per plan pitfall #10.
+    /// (Smoke / re-export integration; canonical guarantee in core.)
     #[test]
     fn block_type_lab_serializes_as_lab() {
         let bt = BlockType::Lab;
@@ -355,7 +265,6 @@ mod tests {
     }
 
     /// LAB-01 — block_type_to_str arm for Lab returns "lab".
-    /// Plumbing test, see block_type_lab_serializes_as_lab.
     #[test]
     fn block_type_to_str_lab_arm() {
         assert_eq!(block_type_to_str(&BlockType::Lab), "lab");

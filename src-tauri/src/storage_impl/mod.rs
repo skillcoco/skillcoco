@@ -13,6 +13,8 @@
 //! - [`signing`] — `FsKeyStore { key_dir: PathBuf }` (Phase 7 Wave 5);
 //!   filesystem-backed `SigningKeyStore` impl preserving the 0o600 file
 //!   mode invariant (R3 / Pitfall 4 / V6 ASVS).
+//! - [`blocks`] — `SqliteBlockStore<'a>(&'a Connection)` (Phase 7 Wave 6);
+//!   per-block-row CRUD against the `module_blocks` table.
 //!
 //! Later waves add `packs`, `achievements`, etc.
 //!
@@ -20,6 +22,7 @@
 //! (E0117) — see each module's "Orphan-rule note" for details.
 
 pub mod bkt;
+pub mod blocks;
 pub mod microlearning;
 pub mod signing;
 pub mod sr;
