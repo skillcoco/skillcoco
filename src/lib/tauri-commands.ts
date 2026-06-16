@@ -368,24 +368,24 @@ export async function setDailyChallengeEnabled(enabled: boolean): Promise<void> 
   return invoke("set_daily_challenge_enabled", { request: { enabled } });
 }
 
-// ── Phase 6 (Certification) — Plan 06-01 (Wave 0) IPC wrappers ──
+// ── Phase 6 (Certification) — Plan 06-03 (Wave 2) IPC wrappers ──
 //
-// All five wrappers throw at runtime in Wave 0 because the corresponding
-// Rust handlers are not yet registered in `tauri::generate_handler!` (Plan
-// 06-03 / Wave 2 wires them). The wrapper signatures are still locked here
-// so downstream Wave 0 store + component tests can typecheck against them
-// without import errors. Once Wave 2 lands, removing the throw is a 1-line
-// change per wrapper.
-//
-// Envelope: `{ request: T }` for the three save-as / verify flows;
-// flat-arg pattern for the two read flows (matches Phase 5 listTracks /
-// getTrack precedent).
+// All wrappers follow the `{ request: T }` envelope per CONVENTIONS.md Q9.
+// `exportCertificate` + `exportBadge` drive native save-as via
+// `@tauri-apps/plugin-dialog::save` and write bytes via
+// `@tauri-apps/plugin-fs::writeFile` (A7 lock — Tauri sandbox-enforced
+// path; no path traversal possible per T-06-11).
 
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeFile } from "@tauri-apps/plugin-fs";
 import type {
   Achievement,
+  ExportBadgeRequest,
+  ExportCertificateRequest,
+  GetTrackCertificationsRequest,
   TrackCertifications,
-  VerifyCertificateRequest,
-  VerifyCertificateResult,
+  VerifySignatureRequest,
+  VerifySignatureResult,
 } from "@/types/achievements";
 
 /// List the current learner's earned achievements (badges + certificates).
@@ -397,31 +397,47 @@ export async function listAchievements(): Promise<Achievement[]> {
 /// Per-track earned-levels + next-level snapshot. TrackView's
 /// CertificationProgress component reads this.
 export async function getTrackCertifications(
-  trackId: string,
+  request: GetTrackCertificationsRequest,
 ): Promise<TrackCertifications> {
-  return invoke("get_track_certifications", { trackId });
+  return invoke("get_track_certifications", { request });
 }
 
-/// Render a PDF certificate to bytes. Caller converts to Blob for save-as.
-/// Returns `number[]` to match Tauri's Vec<u8> serialization shape.
-export async function exportCertificatePdf(
-  achievementId: string,
-): Promise<number[]> {
-  return invoke("export_certificate_pdf", { request: { achievementId } });
+/// Render the certificate PDF and prompt the user to save it via the
+/// native dialog. Returns the saved path or `null` on cancel.
+export async function exportCertificate(
+  request: ExportCertificateRequest,
+  suggestedFilename: string,
+): Promise<string | null> {
+  const bytes: number[] = await invoke("export_certificate", { request });
+  const path = await save({
+    defaultPath: suggestedFilename,
+    filters: [{ name: "PDF Certificate", extensions: ["pdf"] }],
+  });
+  if (!path) return null;
+  await writeFile(path, new Uint8Array(bytes));
+  return path;
 }
 
-/// Render a PNG badge to bytes (transparent bg, QR + optional brand mark).
-/// PNG-only per D-06 amendment — text labels are Phase 14.
-export async function exportBadgePng(
-  achievementId: string,
-): Promise<number[]> {
-  return invoke("export_badge_png", { request: { achievementId } });
+/// Render the PNG badge and prompt the user to save it via the native
+/// dialog. Returns the saved path or `null` on cancel.
+export async function exportBadge(
+  request: ExportBadgeRequest,
+  suggestedFilename: string,
+): Promise<string | null> {
+  const bytes: number[] = await invoke("export_badge", { request });
+  const path = await save({
+    defaultPath: suggestedFilename,
+    filters: [{ name: "PNG Badge", extensions: ["png"] }],
+  });
+  if (!path) return null;
+  await writeFile(path, new Uint8Array(bytes));
+  return path;
 }
 
 /// Verify a pasted base64-encoded signed payload against either the local
 /// public key (default) or a user-provided PEM override.
-export async function verifyCertificate(
-  request: VerifyCertificateRequest,
-): Promise<VerifyCertificateResult> {
-  return invoke("verify_certificate", { request });
+export async function verifySignature(
+  request: VerifySignatureRequest,
+): Promise<VerifySignatureResult> {
+  return invoke("verify_signature", { request });
 }

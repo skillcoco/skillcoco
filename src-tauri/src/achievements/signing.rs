@@ -165,6 +165,17 @@ pub fn public_key_fingerprint(verifying: &VerifyingKey) -> String {
     hex::encode(&hash[..4])
 }
 
+/// Re-derive the 8-hex SHA-256 fingerprint from a public-key PEM string.
+///
+/// Pure function — no disk I/O. Used by Wave 5 Settings to populate the
+/// localFingerprint label on mount without running a full verify pass.
+/// Returns `AchievementError::Pkcs8(...)` on malformed PEM (never panics).
+pub fn fingerprint_from_public_pem(pem: &str) -> Result<String, AchievementError> {
+    let verifying = VerifyingKey::from_public_key_pem(pem)
+        .map_err(|e| AchievementError::Pkcs8(format!("decode public pem: {}", e)))?;
+    Ok(public_key_fingerprint(&verifying))
+}
+
 #[cfg(test)]
 mod tests {
     //! Wave 1 GREEN tests. Each asserts a Wave 1+ invariant required by
@@ -281,5 +292,32 @@ mod tests {
         let fp1 = public_key_fingerprint(&ephemeral_key().verifying_key());
         let fp2 = public_key_fingerprint(&ephemeral_key().verifying_key());
         assert_ne!(fp1, fp2);
+    }
+
+    /// fingerprint_from_public_pem returns the same 8-hex chars as
+    /// public_key_fingerprint(&verifying) for any valid key (Wave 5 enabler).
+    #[test]
+    fn fingerprint_from_public_pem_roundtrip() {
+        let key = ephemeral_key();
+        let verifying = key.verifying_key();
+        let pem = verifying
+            .to_public_key_pem(LineEnding::LF)
+            .expect("encode public pem");
+        let fp_from_pem = fingerprint_from_public_pem(&pem).expect("fingerprint from pem");
+        let fp_direct = public_key_fingerprint(&verifying);
+        assert_eq!(fp_from_pem, fp_direct);
+        assert_eq!(fp_from_pem.len(), 8);
+    }
+
+    /// Malformed PEM yields a typed error (never panics).
+    #[test]
+    fn fingerprint_from_public_pem_rejects_malformed() {
+        let result = fingerprint_from_public_pem("not a pem");
+        assert!(result.is_err(), "malformed PEM must error");
+        if let Err(AchievementError::Pkcs8(_)) = result {
+            // expected branch
+        } else {
+            panic!("expected AchievementError::Pkcs8, got {:?}", result);
+        }
     }
 }

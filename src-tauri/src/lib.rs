@@ -280,6 +280,12 @@ pub fn run() {
             topic_packs::commands::set_topic_pack_enabled,
             topic_packs::commands::reload_skills,
             topic_packs::commands::get_topic_pack_modules,
+            // Certification (Phase 6 — Wave 2, Plan 06-03)
+            commands::achievements::list_achievements_for_learner,
+            commands::achievements::get_track_certifications,
+            commands::achievements::export_certificate,
+            commands::achievements::export_badge,
+            commands::achievements::verify_signature,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

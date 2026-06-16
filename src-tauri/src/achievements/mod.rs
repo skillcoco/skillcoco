@@ -281,21 +281,117 @@ pub fn maybe_issue(
     Ok(issued)
 }
 
-/// Wave 2 (Plan 06-03) fills the body.
-pub fn list_for_learner_impl(_conn: &Connection) -> Result<Vec<Achievement>, AchievementError> {
-    Err(AchievementError::Validation(
-        "Plan 06-03 (Wave 2) implements list_for_learner_impl".into(),
-    ))
+/// Look up a single Achievement row by id. `Err(Validation)` on miss.
+pub fn lookup_achievement_impl(
+    conn: &Connection,
+    achievement_id: &str,
+) -> Result<Achievement, AchievementError> {
+    conn.query_row(
+        "SELECT id, learner_id, track_id, pack_id, kind, level, issued_at,
+                mastery_score, payload_json, signature, key_fingerprint, track_topic
+         FROM achievements WHERE id = ?1",
+        [achievement_id],
+        |r| {
+            Ok(Achievement {
+                id: r.get(0)?,
+                learner_id: r.get(1)?,
+                track_id: r.get(2)?,
+                pack_id: r.get(3)?,
+                kind: r.get(4)?,
+                level: r.get(5)?,
+                issued_at: r.get(6)?,
+                mastery_score: r.get(7)?,
+                payload_json: r.get(8)?,
+                signature: r.get(9)?,
+                key_fingerprint: r.get(10)?,
+                track_topic: r.get(11)?,
+            })
+        },
+    )
+    .map_err(|e| {
+        AchievementError::Validation(format!("achievement {} not found: {}", achievement_id, e))
+    })
 }
 
-/// Wave 2 (Plan 06-03) fills the body.
+/// List the active learner's achievements in `issued_at DESC` order.
+///
+/// Single-learner desktop: when `learner_profiles` has a single row (the
+/// canonical Phase 6 state), we return every achievement. If multiple
+/// profiles exist (multi-tenant future), the caller is expected to resolve
+/// the active learner upstream and filter via SQL — this impl just streams
+/// the table.
+pub fn list_for_learner_impl(conn: &Connection) -> Result<Vec<Achievement>, AchievementError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, learner_id, track_id, pack_id, kind, level, issued_at,
+                mastery_score, payload_json, signature, key_fingerprint, track_topic
+         FROM achievements
+         ORDER BY issued_at DESC, id ASC",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(Achievement {
+                id: r.get(0)?,
+                learner_id: r.get(1)?,
+                track_id: r.get(2)?,
+                pack_id: r.get(3)?,
+                kind: r.get(4)?,
+                level: r.get(5)?,
+                issued_at: r.get(6)?,
+                mastery_score: r.get(7)?,
+                payload_json: r.get(8)?,
+                signature: r.get(9)?,
+                key_fingerprint: r.get(10)?,
+                track_topic: r.get(11)?,
+            })
+        })?
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+    Ok(rows)
+}
+
+/// Per-track earned-levels + next-level criteria.
+///
+/// Reads only `kind='badge'` rows (the three skill ladder rungs); the
+/// completion certificate is independent. `learner_id` is required to
+/// filter — Phase 6 is single-learner, but the impl stays multi-tenant-ready.
 pub fn get_track_certifications_impl(
-    _conn: &Connection,
-    _track_id: &str,
+    conn: &Connection,
+    track_id: &str,
+    learner_id: &str,
 ) -> Result<TrackCertifications, AchievementError> {
-    Err(AchievementError::Validation(
-        "Plan 06-03 (Wave 2) implements get_track_certifications_impl".into(),
-    ))
+    let mut stmt = conn.prepare(
+        "SELECT level FROM achievements
+         WHERE learner_id = ?1 AND track_id = ?2 AND kind = 'badge'",
+    )?;
+    let earned_levels: Vec<String> = stmt
+        .query_map([learner_id, track_id], |r| r.get::<_, String>(0))?
+        .filter_map(Result::ok)
+        .collect();
+
+    let has = |name: &str| earned_levels.iter().any(|l| l == name);
+
+    let (next_level, criteria) = if !has("Associate") {
+        (Some("Associate".to_string()), "25% of modules mastered".to_string())
+    } else if !has("Practitioner") {
+        (
+            Some("Practitioner".to_string()),
+            "60% of modules mastered".to_string(),
+        )
+    } else if !has("Professional") {
+        (
+            Some("Professional".to_string()),
+            "100% of modules mastered, average mastery >= 0.85, plus all practical labs if required"
+                .to_string(),
+        )
+    } else {
+        (None, String::new())
+    };
+
+    Ok(TrackCertifications {
+        earned_levels,
+        next_level,
+        criteria,
+    })
 }
 
 #[cfg(test)]
