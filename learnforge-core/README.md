@@ -1,0 +1,233 @@
+# learnforge-core
+
+> Adaptive learning algorithms — BKT, SM-2, threshold, microlearning
+> selection, signing, packs — desktop/web/WASM portable.
+
+[![Crate](https://img.shields.io/badge/crates.io-0.1.0-orange)](https://crates.io/crates/learnforge-core)
+[![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![Whitepapers](https://img.shields.io/badge/whitepapers-CC%20BY%204.0-lightgrey)](./docs)
+
+---
+
+## ⚠ API UNSTABLE
+
+This crate is published at `0.1.x`. **Breaking changes are allowed in any
+0.x release.** The public API stabilizes at `1.0.0`. Pin to a specific
+minor (`learnforge-core = "0.1"`) and read the [CHANGELOG](./CHANGELOG.md)
+before upgrading.
+
+We use [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format and
+[Semantic Versioning](https://semver.org/). Phase 8 (Publishing & OSS
+Launch) decides crates.io publish timing and the 1.0.0 commitment.
+
+---
+
+## What this is
+
+A focused Rust crate carved out of the LearnForge desktop app, packaging
+the **adaptive learning primitives** as a publishable, WASM-portable
+library:
+
+- **BKT** — Bayesian Knowledge Tracing for per-skill mastery estimation
+  (Corbett & Anderson 1995, four-parameter model). See
+  [`docs/BKT.md`](./docs/BKT.md).
+- **SM-2** — SuperMemo 2 spaced-repetition scheduler with ease-factor
+  decay (Wozniak 1990). See [`docs/SM2.md`](./docs/SM2.md).
+- **Threshold predicates** — track-level mastery aggregation +
+  certification level computation (foundational / proficient /
+  professional).
+- **Microlearning selection** — daily-challenge selection with recency
+  decay, due-card boosting, and DAG prerequisite gating.
+- **Block taxonomy** — module-block types (reading, quiz, video,
+  exercise, …) and lifecycle status.
+- **Topic packs** — JSON-Schema-validated topic-pack loader for bundled
+  and user-installed skill content.
+- **Canonical JSON + Ed25519 signing** — deterministic payload
+  serialization + signing/verification for certificate issuance.
+- **Achievement issuance** — badge / certificate awarding pipeline with
+  Phase 14 hosted-verifier forward-compat (see `verifier` module).
+
+## What this is NOT
+
+Explicit non-goals for `learnforge-core`:
+
+- **Not a full LMS.** No user management, no enrollment, no analytics.
+- **Not a DB layer.** Persistence is abstracted via small per-module
+  `Storage` traits (`BktStore`, `SrStore`, `BlockStore`, `PackStore`,
+  `AchievementStore`, `MicrolearningStore`). Bring your own DB. The
+  reference impl in [`learnforge`'s `src-tauri`][lf-tauri] uses
+  `rusqlite`; web/WASM consumers can implement against IndexedDB.
+- **Not a Tauri framework.** Zero Tauri dependencies. The crate compiles
+  to `wasm32-unknown-unknown`.
+- **Not a renderer.** PDF certificate generation, QR codes, and badge
+  rasterization live in `src-tauri` (printpdf / image / qrcode are not
+  reliably WASM-portable). This crate ships only the *input shapes*
+  (`CertificatePdfInput`, `BadgePngInput`, `share_text()`).
+- **Not a hosted verifier.** The `verifier` module is a Phase 14 contract
+  stub; the real implementation ships with the hosted verifier service.
+
+[lf-tauri]: https://github.com/schoolofdevops/learnforge/tree/main/src-tauri
+
+## Architecture
+
+```text
+                ┌─────────────────────────────────────────┐
+   Your DB ◀────┤  impl BktStore for &MyConnection {…}    │
+                │  impl SrStore for &MyConnection {…}     │
+                │  impl PackStore for &MyConnection {…}   │
+                │   …per-module Storage traits…           │
+                └────────────────┬────────────────────────┘
+                                 │
+                                 ▼ (sync, no async)
+                ┌─────────────────────────────────────────┐
+                │  learnforge-core                        │
+                │  ┌──────┐ ┌──────┐ ┌─────────────┐      │
+                │  │ bkt  │ │ sm2  │ │ threshold   │      │
+                │  └──────┘ └──────┘ └─────────────┘      │
+                │  ┌──────────────┐ ┌────────────────┐    │
+                │  │ microlearning│ │ achievements   │    │
+                │  └──────────────┘ └────────────────┘    │
+                │  ┌──────────────┐ ┌────────────────┐    │
+                │  │ packs        │ │ blocks         │    │
+                │  └──────────────┘ └────────────────┘    │
+                │  ┌──────────────┐ ┌────────────────┐    │
+                │  │canonical_json│ │ signing        │    │
+                │  └──────────────┘ └────────────────┘    │
+                │  ┌──────────────┐ ┌────────────────┐    │
+                │  │ verifier(stub)│ │ storage(traits)│   │
+                │  └──────────────┘ └────────────────┘    │
+                └─────────────────────────────────────────┘
+```
+
+### Per-module Storage trait pattern
+
+Each algorithm module that needs persistence owns a small, focused trait.
+The trait surface mirrors the underlying SQL access shape so call-site
+churn is minimal during migration. Mocking one trait for a unit test of
+(say) `bkt::update_mastery` does not force you to stub `PackStore` or
+`AchievementStore`.
+
+This mirrors LearnForge's existing `LabRuntime` + `LearnForgePlugin`
+patterns (small focused traits, not god-objects).
+
+## WASM portability
+
+`learnforge-core` is validated for `wasm32-unknown-unknown` at every
+Phase 7 wave gate:
+
+```bash
+cargo build --target wasm32-unknown-unknown -p learnforge-core
+```
+
+The crate's `[target.'cfg(target_arch = "wasm32")']` block in `Cargo.toml`
+declares:
+
+- `getrandom 0.3` with the `wasm_js` feature (wires
+  `crypto.getRandomValues` as the CSPRNG backend).
+- `getrandom 0.2` with the `js` feature (legacy spelling — required
+  because `ed25519-dalek 2.x → rand 0.8 → rand_core 0.6` pulls
+  `getrandom 0.2` transitively). This duplication disappears when
+  `ed25519-dalek 3.x` lands upstream.
+- `wasm-bindgen-test 0.3` as a dev-dep for WASM smoke tests (gated to
+  `cfg(target_arch = "wasm32")` so host builds don't pull it).
+
+The `chrono` workspace dep enables the `wasmbind` feature so `Utc::now()`
+returns wall-clock time (not the Unix epoch) on `wasm32-unknown-unknown`.
+
+### Building for WASM
+
+```bash
+# One-time setup (if rustup-managed Rust):
+rustup target add wasm32-unknown-unknown
+
+# Build (release recommended; debug bloats heavily on wasm):
+cargo build --target wasm32-unknown-unknown -p learnforge-core --release
+```
+
+If you see linker errors mentioning `__getrandom_v03_custom_unimpl`,
+try setting `RUSTFLAGS='--cfg getrandom_backend="wasm_js"'`. As of
+getrandom 0.3.2+ the feature alone is sufficient, but version-dependent
+quirks have been reported upstream (see [rust-random/getrandom#267]).
+
+[rust-random/getrandom#267]: https://github.com/rust-random/getrandom/issues/267
+
+### Running WASM tests
+
+Phase 9 will wire CI for WASM tests. Locally:
+
+```bash
+cargo install wasm-pack
+wasm-pack test --chrome --headless learnforge-core
+```
+
+## Whitepapers
+
+The two flagship algorithms in this crate ship with whitepaper-style
+explainers under `docs/`:
+
+- [`docs/BKT.md`](./docs/BKT.md) — Bayesian Knowledge Tracing model,
+  parameters, threshold calibration, references to Corbett & Anderson
+  1995 + follow-up literature.
+- [`docs/SM2.md`](./docs/SM2.md) — SuperMemo 2 algorithm, interval
+  calculation, ease-factor decay, decay-vs-recall trade-offs.
+
+*Both whitepapers land in a later Phase 7 wave (Wave 9 — Documentation).
+This Wave 1 scaffold creates the directory but leaves the .md files for
+the documentation wave.*
+
+## Installation
+
+```toml
+[dependencies]
+learnforge-core = "0.1"
+```
+
+The crate has no platform-conditional features at the consumer level;
+the WASM target wiring is transparent.
+
+## Quick example
+
+```rust,ignore
+use learnforge_core::verifier;
+
+// Phase 7 stub — the real verifier ships in Phase 14.
+let result = verifier::verify(b"<canonical-json-payload>");
+assert!(!result.valid);
+assert_eq!(result.payload_version, 0);
+assert_eq!(
+    result.error.as_deref(),
+    Some("verifier not implemented in Phase 7; ships in Phase 14"),
+);
+```
+
+More examples land alongside their algorithm modules in later Phase 7
+waves (`examples/bkt_update.rs`, `examples/sm2_schedule.rs`,
+`examples/pack_validate.rs`).
+
+## Versioning
+
+- `0.1.x` — Phase 7 (Core Extraction). API unstable. Breaking changes
+  allowed between any two 0.1.x releases.
+- `0.x` (post-Phase 7) — module surface stabilizes incrementally; each
+  module's docs note its stability status.
+- `1.0.0` — full API stability commitment. Decided in Phase 8 / 14.
+
+## License
+
+- **Code**: [MIT](./LICENSE).
+- **Whitepapers** (`docs/*.md`): [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+Matches the OSS LearnForge license constraint in `PROJECT.md`.
+
+## Status
+
+**Phase 7 in flight (started 2026-06-16).** This is the publishable
+extraction of the adaptive engine from the LearnForge desktop binary.
+Wave-by-wave migration is in progress; see the repository's
+`.planning/phases/07-core-extraction/` directory for the wave plans and
+summaries.
+
+Contributions are welcome via the LearnForge monorepo. See
+[CONTRIBUTING.md](https://github.com/schoolofdevops/learnforge/blob/main/CONTRIBUTING.md)
+and [CLA.md](https://github.com/schoolofdevops/learnforge/blob/main/CLA.md)
+at the repo root.
