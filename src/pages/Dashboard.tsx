@@ -9,6 +9,7 @@ import { StatsCard } from "@/components/dashboard/StatsCard";
 import { TrackCard } from "@/components/dashboard/TrackCard";
 import { SmartSessionCard } from "@/components/dashboard/SmartSessionCard";
 import { TodaysChallengeCard } from "@/components/dashboard/TodaysChallengeCard";
+import { AchievementSection } from "@/components/achievements/AchievementSection";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -104,6 +105,13 @@ export function Dashboard() {
           estimatedMinutes={estimatedMinutes}
         />
       )}
+
+      {/* Phase 6 Plan 06-04 (Wave 3) — Achievements section. Lives BETWEEN
+          SmartSessionCard and the StatsRow per D-09. Empty-state hides
+          itself behind a "No achievements yet" line; cap of 6 newest with
+          "View all" link to /achievements. Non-modal 5s celebration
+          banner surfaces when submitQuiz issues a new achievement. */}
+      <AchievementSection />
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

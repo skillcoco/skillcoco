@@ -1,63 +1,163 @@
-// Phase 6 (Certification) — Plan 06-01 (Wave 0) RED component spec.
+// Phase 6 (Certification) — Plan 06-04 (Wave 3 GREEN) AchievementSection tests.
 //
-// The component renders null in Wave 0. Wave 3 (Plan 06-04) implements the
-// empty-state copy "No achievements yet" — at which point this test flips
-// GREEN. Wave 0 deliberately fails it so the contract is visible.
+// Wave 0 shipped a RED skip for the empty-state copy; Wave 3 flips it
+// GREEN AND adds the View-all link, 6-card cap, on-mount load, and the
+// non-modal 5-second celebration banner.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
-// Hoisted mock — emulates the real Zustand hook's selector signature
-// (matches the TodaysChallengeCard.test.tsx pattern).
+const loadAchievementsMock = vi.fn().mockResolvedValue(undefined);
+const clearCelebrationMock = vi.fn();
+const exportCertificateMock = vi.fn().mockResolvedValue({ saved: true, path: "/p.pdf" });
+const exportBadgeMock = vi.fn().mockResolvedValue({ saved: true, path: "/p.png" });
+
+interface SliceShape {
+  achievements: import("@/types/achievements").Achievement[];
+  recentCelebration: import("@/types/achievements").Achievement | null;
+  loadAchievements: typeof loadAchievementsMock;
+  clearCelebration: typeof clearCelebrationMock;
+  exportCertificate: typeof exportCertificateMock;
+  exportBadge: typeof exportBadgeMock;
+}
+
+let mockState: SliceShape;
+
 vi.mock("@/stores/useAchievementsStore", () => ({
-  useAchievementsStore: vi.fn(),
+  useAchievementsStore: vi.fn((selector?: (s: SliceShape) => unknown) => {
+    if (typeof selector === "function") return selector(mockState);
+    return mockState;
+  }),
 }));
 
 import { AchievementSection } from "@/components/achievements/AchievementSection";
-import { useAchievementsStore } from "@/stores/useAchievementsStore";
 import type { Achievement } from "@/types/achievements";
 
-interface AchievementsSliceShape {
-  achievements: Achievement[];
+function makeAchievement(overrides: Partial<Achievement> = {}): Achievement {
+  return {
+    id: "ach-1",
+    learnerId: "lnr-1",
+    trackId: "trk-1",
+    packId: null,
+    kind: "badge",
+    level: "Associate",
+    issuedAt: "2026-06-16T12:00:00Z",
+    masteryScore: 0.75,
+    payloadJson: "",
+    signature: "",
+    keyFingerprint: "deadbeef",
+    trackTopic: "Kubernetes",
+    ...overrides,
+  };
 }
 
-function mockState(state: AchievementsSliceShape) {
-  vi.mocked(useAchievementsStore).mockImplementation(
-    ((selector?: (s: AchievementsSliceShape) => unknown) => {
-      if (typeof selector === "function") return selector(state);
-      return state;
-    }) as unknown as typeof useAchievementsStore,
+function renderWithRouter() {
+  return render(
+    <MemoryRouter>
+      <AchievementSection />
+    </MemoryRouter>,
   );
 }
 
-describe("AchievementSection — Phase 6 Plan 06-01 (Wave 0 RED)", () => {
+function makeState(overrides: Partial<SliceShape> = {}): SliceShape {
+  return {
+    achievements: [],
+    recentCelebration: null,
+    loadAchievements: loadAchievementsMock,
+    clearCelebration: clearCelebrationMock,
+    exportCertificate: exportCertificateMock,
+    exportBadge: exportBadgeMock,
+    ...overrides,
+  };
+}
+
+describe("AchievementSection — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockState = makeState();
   });
 
-  it.skip(
-    // RED contract: when achievements list is empty, the section renders
-    // the "No achievements yet" copy. Wave 0 returns null so this would
-    // fail; gated `.skip()` to keep CI green per Wave 0 contract.
-    // Wave 3 (Plan 06-04) implements + removes the .skip().
-    "renders empty state when no achievements (Wave 3 implements)",
-    () => {
-      mockState({ achievements: [] });
-      render(<AchievementSection />);
-      expect(
-        screen.getByText(/No achievements yet/i),
-      ).toBeInTheDocument();
-    },
-  );
+  it("renders_empty_state_when_no_achievements (Wave 0 RED → GREEN)", () => {
+    mockState = makeState({ achievements: [] });
+    renderWithRouter();
+    expect(screen.getByText(/no achievements yet/i)).toBeInTheDocument();
+  });
 
-  // Sanity guard — confirms the import surface compiles even with the
-  // .skip'd test above. This test is not the RED contract; it's a smoke
-  // check that the component can be invoked without runtime errors in
-  // Wave 0.
-  it("Wave 0 stub renders without crashing", () => {
-    mockState({ achievements: [] });
-    const { container } = render(<AchievementSection />);
-    // Wave 0 renders null → container has no children. Wave 3 inverts.
-    expect(container.firstChild).toBeNull();
+  it("renders_six_most_recent_achievements", () => {
+    const eight = Array.from({ length: 8 }, (_, i) =>
+      makeAchievement({
+        id: `a-${i}`,
+        issuedAt: `2026-06-${String(10 + i).padStart(2, "0")}T00:00:00Z`,
+        trackTopic: `Track ${i}`,
+      }),
+    );
+    // Newest first ordering — appendNewlyIssued prepends, so we sort DESC
+    // here too so the test mirrors the store contract.
+    const sorted = [...eight].sort((a, b) =>
+      b.issuedAt.localeCompare(a.issuedAt),
+    );
+    mockState = makeState({ achievements: sorted });
+    renderWithRouter();
+
+    const cards = screen.getAllByTestId(/^achievement-card-/);
+    expect(cards).toHaveLength(6);
+    // Newest first — Track 7 is highest-numbered (latest date)
+    expect(cards[0].textContent).toMatch(/Track 7/);
+  });
+
+  it("renders_view_all_link_when_more_than_six", () => {
+    const eight = Array.from({ length: 8 }, (_, i) =>
+      makeAchievement({ id: `a-${i}`, issuedAt: `2026-06-${String(10 + i).padStart(2, "0")}T00:00:00Z` }),
+    );
+    mockState = makeState({ achievements: eight });
+    renderWithRouter();
+
+    const link = screen.getByTestId("achievements-view-all");
+    expect(link).toBeInTheDocument();
+    expect(link.getAttribute("href")).toBe("/achievements");
+  });
+
+  it("hides_view_all_link_when_five_or_fewer", () => {
+    const five = Array.from({ length: 5 }, (_, i) =>
+      makeAchievement({ id: `a-${i}` }),
+    );
+    mockState = makeState({ achievements: five });
+    renderWithRouter();
+
+    expect(screen.queryByTestId("achievements-view-all")).toBeNull();
+  });
+
+  it("loads_achievements_on_mount", () => {
+    mockState = makeState({ achievements: [] });
+    renderWithRouter();
+
+    expect(loadAchievementsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("celebration_banner_shows_then_dismisses", async () => {
+    vi.useFakeTimers();
+    try {
+      const celeb = makeAchievement({
+        id: "celeb-1",
+        level: "Practitioner",
+        trackTopic: "Kubernetes",
+      });
+      mockState = makeState({ recentCelebration: celeb });
+      renderWithRouter();
+
+      expect(
+        screen.getByText(/You just earned Practitioner in Kubernetes/i),
+      ).toBeInTheDocument();
+
+      // Advance 5s — the timeout calls clearCelebration.
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(clearCelebrationMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

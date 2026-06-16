@@ -122,6 +122,36 @@ vi.mock("@/stores/useDailyChallengeStore", async () => {
   };
 });
 
+// Phase 6 Plan 06-04 (Wave 3) — mock the achievements sibling slice.
+// The Dashboard mounts <AchievementSection /> between SmartSessionCard
+// and the stats row. The section itself reads four selectors and fires
+// loadAchievements on mount; we expose vi.fn()s so the Dashboard tests
+// don't hit real Tauri IPCs.
+interface AchievementsState {
+  achievements: import("@/types/achievements").Achievement[];
+  recentCelebration: import("@/types/achievements").Achievement | null;
+  loadAchievements: () => Promise<void>;
+  clearCelebration: () => void;
+  exportCertificate: (a: import("@/types/achievements").Achievement) => Promise<{ saved: boolean; path: string | null }>;
+  exportBadge: (a: import("@/types/achievements").Achievement) => Promise<{ saved: boolean; path: string | null }>;
+}
+
+vi.mock("@/stores/useAchievementsStore", () => {
+  const state: AchievementsState = {
+    achievements: [],
+    recentCelebration: null,
+    loadAchievements: vi.fn().mockResolvedValue(undefined),
+    clearCelebration: vi.fn(),
+    exportCertificate: vi.fn().mockResolvedValue({ saved: true, path: "/p.pdf" }),
+    exportBadge: vi.fn().mockResolvedValue({ saved: true, path: "/p.png" }),
+  };
+  const useStore = vi.fn((selector?: (s: AchievementsState) => unknown) => {
+    if (typeof selector === "function") return selector(state);
+    return state;
+  });
+  return { useAchievementsStore: useStore };
+});
+
 // @ts-expect-error vi.mock injects __resetStore into the module
 import { __resetStore } from "@/stores/useLearningStore";
 // @ts-expect-error vi.mock injects __resetDailyStore into the module
@@ -375,6 +405,42 @@ describe("Dashboard", () => {
     });
     // The Best Streak card value is "--" and subtitle is "not yet active"
     expect(screen.getByText("not yet active")).toBeInTheDocument();
+  });
+
+  // ── Phase 6 Plan 06-04 (Wave 3) — Dashboard mount ordering ──
+
+  it("achievement_section_mounted_between_smart_session_and_stats", async () => {
+    vi.mocked(listTracks).mockResolvedValue([makeTrack()]);
+    vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
+    vi.mocked(getDueCards).mockResolvedValue([makeSRCard()]);
+
+    renderDashboard();
+
+    // Wait for the SmartSessionCard to render (requires active track OR
+    // due cards — both above).
+    await waitFor(() => {
+      expect(screen.getByText("Smart Session")).toBeInTheDocument();
+    });
+
+    const section = screen.getByTestId("achievement-section");
+    const smart = screen.getByText("Smart Session").closest("div") as HTMLElement;
+    const stats = screen.getByText("Reviews Due").closest("div") as HTMLElement;
+
+    expect(section).not.toBeNull();
+    expect(smart).not.toBeNull();
+    expect(stats).not.toBeNull();
+
+    // SmartSessionCard precedes AchievementSection.
+    const smartToSection = smart.compareDocumentPosition(section);
+    expect(smartToSection & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    // AchievementSection precedes the stats row.
+    const sectionToStats = section.compareDocumentPosition(stats);
+    expect(sectionToStats & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it("global streak StatsCard shows 'Xd' when isEnabled=true (Phase 4 Plan 04)", async () => {

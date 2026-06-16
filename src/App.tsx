@@ -7,6 +7,7 @@ import { ReviewSession } from "@/pages/ReviewSession";
 import { Settings } from "@/pages/Settings";
 import { Onboarding } from "@/pages/Onboarding";
 import { DailyChallenge } from "@/pages/DailyChallenge";
+import { Achievements } from "@/pages/Achievements";
 import { useTheme } from "@/hooks/useTheme";
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/review" element={<ReviewSession />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/daily/today" element={<DailyChallenge />} />
+        <Route path="/achievements" element={<Achievements />} />
       </Route>
       <Route path="/onboarding" element={<Onboarding />} />
     </Routes>
