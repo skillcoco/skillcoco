@@ -1,3 +1,4 @@
+pub mod achievements;
 pub mod ai;
 pub mod blocks;
 pub mod labs;

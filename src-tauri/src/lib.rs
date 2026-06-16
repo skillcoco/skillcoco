@@ -1,3 +1,4 @@
+pub mod achievements;
 mod ai;
 pub mod auth;
 pub mod commands;
@@ -115,6 +116,12 @@ impl LearnForgePlugin for NoopPlugin {
 pub fn build_app() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // Phase 6 (Plan 06-01 / locked answer A7) — dialog + fs plugins
+        // back the Wave 2 "Export certificate" + "Save badge as..." flows.
+        // Wired in Wave 0 so the Wave 2 frontend save-as code has a
+        // ready-to-call API surface.
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let app_dir = app
                 .path()
