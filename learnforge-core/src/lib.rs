@@ -24,6 +24,7 @@
 //! ## Modules
 //!
 //! - [`bkt`] — Bayesian Knowledge Tracing (BKT) algorithm + `BktStore` trait (Wave 2).
+//! - [`path`] — Learning-path DAG primitives + trait-driven prerequisite check (Wave 2).
 //! - [`verifier`] — Phase 14 verification contract stub (D-08).
 //!
 //! Additional algorithm modules (SM-2, threshold, microlearning, blocks,
@@ -37,4 +38,5 @@
 #![warn(missing_docs)]
 
 pub mod bkt;
+pub mod path;
 pub mod verifier;

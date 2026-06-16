@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`path` module (Phase 7 Wave 2 / 07-02)** — pure DAG primitives moved
+  from `src-tauri/src/learning/path.rs`: `EdgeRecord`, `PathNode`,
+  `PathEdge`, `PathError`, `parse_edges_json`, `validate_dag`.
+  `all_prerequisites_mastered` is reimplemented as a trait-driven free
+  function `pub fn all_prerequisites_mastered<S: BktStore>(...)` —
+  closes Pitfall 8 (mixed pure/DB code split) by making the prereq
+  check depend on `BktStore` rather than `rusqlite::Connection`.
+  Diamond-DAG correctness preserved (legacy `.unwrap_or(0.0)` semantics
+  for missing rows). Five new tests use an inline `MapStore: BktStore`
+  stub — no DB needed.
 - **`bkt` module (Phase 7 Wave 2 / 07-02)** — `BKTParams`, `MASTERY_THRESHOLD`,
   `update_mastery`, `should_adapt` moved verbatim from
   `src-tauri/src/learning/adaptive.rs`. Adds the `BktStore` trait and
