@@ -62,7 +62,7 @@ ed25519-dalek = { version = "2", features = ["pkcs8", "rand_core", "pem"] }
 pkcs8 = { version = "0.10", features = ["pem"] }
 qrcode = "0.14"
 image = "0.25"
-printpdf = { version = "0.9", features = ["images"] }
+printpdf = { version = "0.9", features = ["images", "png"] }
 base64 = "0.22"
 sha2 = "0.10"
 hex = "0.4"
