@@ -13,7 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Per-Phase-7-wave deliverables append here as the migration progresses.
+- **`bkt` module (Phase 7 Wave 2 / 07-02)** — `BKTParams`, `MASTERY_THRESHOLD`,
+  `update_mastery`, `should_adapt` moved verbatim from
+  `src-tauri/src/learning/adaptive.rs`. Adds the `BktStore` trait and
+  `BktError` enum next to the algorithm (A3 lock — per-module trait
+  location). Rustdoc on every public item; doctest examples for the
+  threshold constant, `BKTParams::default`, `update_mastery`,
+  `should_adapt`, `BktStore`. WASM-portable (no rusqlite leak; D-02 +
+  T-07-05 mitigated by stringified `BktError::Db`).
+- Per-Phase-7-wave deliverables continue to append here.
 
 ## [0.1.0] - 2026-06-16
 

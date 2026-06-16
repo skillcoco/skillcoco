@@ -23,12 +23,12 @@
 //!
 //! ## Modules
 //!
+//! - [`bkt`] — Bayesian Knowledge Tracing (BKT) algorithm + `BktStore` trait (Wave 2).
 //! - [`verifier`] — Phase 14 verification contract stub (D-08).
 //!
-//! Algorithm modules (BKT, SM-2, threshold, microlearning, blocks, packs,
-//! achievements, canonical_json, signing, storage) land in later Phase 7
-//! waves. This Wave 1 scaffold only includes the workspace-member skeleton
-//! plus the verifier stub interface.
+//! Additional algorithm modules (SM-2, threshold, microlearning, blocks,
+//! packs, achievements, canonical_json, signing) land in later Phase 7
+//! waves per decision D-05.
 //!
 //! ## License
 //!
@@ -36,4 +36,5 @@
 
 #![warn(missing_docs)]
 
+pub mod bkt;
 pub mod verifier;

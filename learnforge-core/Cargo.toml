@@ -21,6 +21,7 @@ authors = ["School of DevOps & AI"]
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# thiserror used at minimum by `bkt::BktError` (Wave 2). Workspace-pinned.
 chrono = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
