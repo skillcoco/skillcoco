@@ -1,7 +1,55 @@
 [workspace]
 resolver = "2"
 members = [
+    # Publishable algorithm crate — dependency of every downstream crate.
+    # Listed first so workspace convention "dependencies before dependents"
+    # holds. Phase 7 added (D-09).
+    "learnforge-core",
     "src-tauri",
     "pro/src-tauri-pro",
     "pro/src-tauri-pro/licensing",
 ]
+
+# ---------------------------------------------------------------------------
+# [workspace.dependencies] — shared dependency declarations (Phase 7 / Open Q
+# A2 = YES lock, 07-CONTEXT.md).
+#
+# Why this block exists:
+#   Both `learnforge-core` and `src-tauri` (and later: web-platform crate)
+#   transitively depend on serde, chrono, ed25519-dalek, etc. Without a
+#   workspace-level pin, the two crates can drift to incompatible patch
+#   versions and either:
+#     (a) double-link the crate (e.g. two `chrono::DateTime<Utc>` types
+#         the compiler considers distinct), or
+#     (b) silently regress a security patch when only one crate gets
+#         the bump.
+#
+# Member crates opt in by writing `serde = { workspace = true }` etc.
+# Phase 7 Wave 1 only moves learnforge-core onto workspace-deps; src-tauri
+# stays on local pins for now (refactor deferred to a quiet wave per
+# 07-01-PLAN.md Task 1 step 4 — "future drift impossible" once both crates
+# reference workspace-deps).
+# ---------------------------------------------------------------------------
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+# chrono — `wasmbind` enables JS `Date` integration so `Utc::now()` returns
+# wall-clock time (not Unix epoch) on wasm32-unknown-unknown.
+chrono = { version = "0.4", features = ["serde", "wasmbind"] }
+log = "0.4"
+# uuid — `js` feature gates wasm32-unknown-unknown RNG wiring (uuid 1.18+).
+# Host targets ignore the feature; cargo only links the JS-RNG glue on wasm.
+uuid = { version = "1", features = ["v4", "js"] }
+# Ed25519 signing stack — `pkcs8` + `pem` for key I/O, `rand_core` for OsRng.
+ed25519-dalek = { version = "2", features = ["pkcs8", "rand_core", "pem"] }
+pkcs8 = { version = "0.10", features = ["pem"] }
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+rand = "0.8"
+# jsonschema — `default-features = false` strips `resolve-file` + `resolve-http`
+# which would break wasm32-unknown-unknown builds.
+jsonschema = { version = "0.46", default-features = false }
+include_dir = "0.7"
+tempfile = "3"

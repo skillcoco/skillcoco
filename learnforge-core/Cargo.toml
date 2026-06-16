@@ -1,0 +1,69 @@
+[package]
+name = "learnforge-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Adaptive learning algorithms (BKT, SM-2, threshold, microlearning selection, signing, packs) — desktop/web/WASM portable."
+repository = "https://github.com/schoolofdevops/learnforge"
+readme = "README.md"
+keywords = ["adaptive-learning", "bkt", "spaced-repetition", "sm2", "education"]
+categories = ["algorithms", "science"]
+authors = ["School of DevOps & AI"]
+
+# ---------------------------------------------------------------------------
+# Standard Stack (07-RESEARCH.md). Every dep here is portable to
+# wasm32-unknown-unknown (with the per-target overrides below for getrandom).
+# Anti-leakage invariant (D-02): no rusqlite, no tauri, no printpdf, no image,
+# no qrcode, no reqwest, no tokio, no async-trait may appear in [dependencies].
+# CI in Wave 9 asserts this; Wave 1 documents the convention.
+# ---------------------------------------------------------------------------
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+ed25519-dalek = { workspace = true }
+pkcs8 = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+jsonschema = { workspace = true }
+include_dir = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# WASM target overrides (R1 / Pitfall 2 / Pitfall 10).
+#
+# Two getrandom versions live in the dependency graph today:
+#   - getrandom 0.3 is pulled by ahash, jsonschema, and (when rand 0.9
+#     lands) ed25519-dalek's rand_core 0.9.
+#   - getrandom 0.2 is pulled transitively by rand 0.8 → rand_core 0.6,
+#     which is what ed25519-dalek 2.x currently uses.
+#
+# Cargo only honors a wasm backend feature when SOME crate in the graph
+# declares it on that exact getrandom MAJOR. We therefore declare BOTH:
+#   - getrandom 0.3 with `wasm_js` (renamed from `js` in 0.3.x)
+#   - getrandom 0.2 with `js` (legacy spelling for the 0.2 line)
+#
+# Without the 0.2 declaration, `cargo build --target wasm32-unknown-unknown`
+# fails with `error: the wasm*-unknown-unknown targets are not supported by
+# default, you may need to enable the "js" feature.` This was 07-RESEARCH
+# Pitfall 2 — adjusted here for the actual graph shape observed at
+# implementation time. Wave 5 (signing move) revisits when ed25519-dalek
+# is fully migrated.
+#
+# wasm-bindgen-test as a dev-dep is the D-04 prep for Wave 5 + Wave 9
+# WASM smoke tests. Gating it behind cfg(target_arch = "wasm32") keeps it
+# out of host-target test builds.
+# ---------------------------------------------------------------------------
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
