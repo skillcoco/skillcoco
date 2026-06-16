@@ -28,10 +28,12 @@
 //! - [`sm2`] — SuperMemo 2 (SM-2) spaced-repetition algorithm + `SrStore` trait (Wave 3).
 //! - [`threshold`] — Skill-tier predicates (Associate/Practitioner/Professional) (Wave 4).
 //! - [`microlearning`] — Daily-challenge selection algorithm + `MicrolearningStore` trait + A5 clock injection (Wave 4).
+//! - [`canonical_json`] — Byte-stable canonical JSON serializer for signing payloads (Wave 5).
+//! - [`signing`] — Pure Ed25519 sign/verify + `SigningKeyStore` trait + `share_text` (Wave 5).
 //! - [`verifier`] — Phase 14 verification contract stub (D-08).
 //!
-//! Additional algorithm modules (blocks, packs, achievements,
-//! canonical_json, signing) land in later Phase 7 waves per decision D-05.
+//! Additional algorithm modules (blocks, packs, achievements)
+//! land in later Phase 7 waves per decision D-05.
 //!
 //! ## License
 //!
@@ -40,8 +42,10 @@
 #![warn(missing_docs)]
 
 pub mod bkt;
+pub mod canonical_json;
 pub mod microlearning;
 pub mod path;
+pub mod signing;
 pub mod sm2;
 pub mod threshold;
 pub mod verifier;

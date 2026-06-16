@@ -13,6 +13,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`canonical_json` module (Phase 7 Wave 5 / 07-05)** — byte-stable JSON
+  serializer moved verbatim from
+  `src-tauri/src/achievements/signing.rs:93-133` (canonicalize +
+  canonical_json_bytes). Object keys are sorted lexicographically at
+  every nesting level; non-finite floats (NaN, +∞, -∞) are rejected via
+  the typed `CanonicalJsonError::NonFiniteFloat` variant (Phase 6 R1 /
+  Pitfall 2 preserved). Pure, WASM-portable — no `std::fs`, no
+  `rusqlite`. 6 unit tests (5 moved verbatim + 1 new
+  `canonicalize_preserves_array_order` locking the "arrays are not
+  sorted" semantic) + 2 doctests.
+- **`signing` module (Phase 7 Wave 5 / 07-05)** — pure Ed25519 sign /
+  verify primitives + `SigningKeyStore` trait + `share_text` template.
+  `sign_payload`, `verify_payload`, `public_key_fingerprint`,
+  `fingerprint_from_public_pem` moved verbatim from
+  `src-tauri/src/achievements/signing.rs:135-177`; `share_text` moved
+  from `src-tauri/src/achievements/artifacts.rs:278` per the D-03
+  amendment (PDF / PNG renderers stay in src-tauri because printpdf /
+  image / qrcode are not WASM-portable). Adds the `SigningKeyStore`
+  trait (A3 lock — per-module storage trait): `get_or_init` +
+  `export_public_pem`. The FS-backed impl (`FsKeyStore`) lives in
+  `src-tauri/src/storage_impl/signing.rs` (D-03 amendment + Pitfall 4 —
+  `std::fs` is not WASM-portable). `SigningError` enum
+  (`thiserror::Error` derive) preserves Phase 6 error semantics with
+  `From<CanonicalJsonError>` for ergonomic propagation. **Function
+  signatures preserved verbatim** from the pre-Wave-5 src-tauri form
+  (`Signature` return, PEM-string + hex-string verify) instead of
+  switching to raw byte buffers as the plan's `<interfaces>` block
+  sketched — keeps the call-site churn confined to the module
+  boundary. 11 unit tests (8 moved verbatim + 3 new —
+  `sign_then_tamper_payload_fails_verify` for the plan's behavior
+  contract, `signature_is_64_bytes` sanity, `signing_error_renders` +
+  `signing_key_store_is_implementable` lock the trait surface) + 2
+  doctests. WASM build (`cargo build --target wasm32-unknown-unknown
+  -p learnforge-core`) green — Ed25519 + getrandom-wasm_js chain
+  validated end-to-end.
 - **`microlearning` module (Phase 7 Wave 4 / 07-04)** — daily-challenge
   selection algorithm moved verbatim from
   `src-tauri/src/learning/microlearning_selection.rs`. Adds the
