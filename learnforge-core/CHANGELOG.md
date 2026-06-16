@@ -13,6 +13,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`packs` module (Phase 7 Wave 7 / 07-07)** — topic-pack subsystem moved
+  from `src-tauri/src/topic_packs/`. Exports `Pack`, `PackModule`,
+  `PackEdge`, `LoadedPack`, `PackSource` enum (Bundled/Skill — origin
+  marker, serialized as snake_case), `ValidationStatus` enum (Ok/Warnings/
+  Errors — snake_case), `PackError` enum (Io/Json/Schema/Loader), the
+  Draft 2020-12 JSON Schema validator (`compile`, `validate`,
+  `SCHEMA_SOURCE` — embedded via `include_str!("../../../topic-packs/
+  pack-schema.json")`; **R2 / Pitfall 1 mitigated**: the original Wave-7
+  plan over-counted directory depth as 4; `rustc` resolves `include_str!`
+  paths relative to the file's directory not the crate root, so 3 segments
+  reach the repo root from `learnforge-core/src/packs/schema.rs`. Same
+  three-segment string worked at the pre-move site too because both
+  source files sit at the same depth.), the `BUNDLED_PACKS` static
+  (`include_dir!("$CARGO_MANIFEST_DIR/../topic-packs")` — one `..` up
+  from `learnforge-core/` to the repo root), `parse_and_validate`,
+  `classify_errors` (D-07 strict/soft classifier), `sentinel_pack`,
+  `now_rfc3339`, and the in-memory `PackRegistry`.
+  Adds two new traits:
+  - **`PackStore` trait** (in `packs::persistence`) — abstract persistence
+    over the `topic_packs` SQLite table; methods `upsert_pack`,
+    `read_enabled`, `write_enabled`, `delete_skill_rows`. Honors D-09
+    (user toggle survives upsert) + CR-02 (source column sticky on
+    `bundled`). Seventh application of the per-module storage-trait
+    recipe (A3 lock). Rusqlite-backed impl lives in
+    `src-tauri/src/storage_impl/packs.rs` via the
+    `SqlitePackStore<'a>(&'a Connection)` newtype.
+  - **`PackSource` trait** (in `packs::loader`) — abstract runtime
+    discovery of skill packs from disk; methods `skills_dir`,
+    `read_skill_pack_files`. R3 / Pitfall 4 mitigation: the FS-touching
+    code (`std::fs::read_dir`, `std::fs::canonicalize`, `dirs::home_dir`,
+    T-05-05 symlink-escape rejection, T-05-06 5 MB cap) moves to
+    `FsPackSource` in `src-tauri/src/topic_packs/loader.rs` rather than
+    being `#[cfg(not(target_arch = "wasm32"))]`-gated. The trait makes the
+    seam visible + testable; the cfg-gate alternative was rejected
+    (clutters production source, hides the seam from tooling, and
+    misframes the rusqlite-vs-IndexedDB split as "wasm vs not-wasm" when
+    it is actually "FS-backed vs browser-backed").
+
+  **Naming note:** the enum [`PackSource`] (Bundled/Skill marker) and the
+  trait [`PackSource`] share the identifier but live in different modules
+  (`packs::model::PackSource` vs `packs::loader::PackSource`). Only the
+  enum is re-exported at `packs::PackSource` to avoid shadowing; trait
+  callers reference `learnforge_core::packs::loader::PackSource`.
+
+  **WASM proof (A4):** `cargo build --target wasm32-unknown-unknown -p
+  learnforge-core` exit 0 — confirms `jsonschema 0.46` with
+  `default-features = false` builds on wasm32. The 0.46 feature trim
+  strips `resolve-file` + `resolve-http` (both non-wasm-portable);
+  `include_dir` and `chrono` (with `wasmbind`) carry the rest of the
+  graph cleanly. This was the wave's medium-confidence open question
+  (`07-RESEARCH.md` A4); proven via the build gate.
+
+  Pure data + algorithm types — no `rusqlite`, no `tauri`, no `std::fs`
+  read in core (`std::path::PathBuf` is used only in the `PackSource`
+  trait return type — host-safe). D-02 boundary intact.
+
 - **`blocks` module (Phase 7 Wave 6 / 07-06)** — block taxonomy moved
   verbatim from `src-tauri/src/db/blocks.rs:1-65` (pre-Wave-6). Exports
   `BlockType` enum (Section, Text, Callout, Quiz, FlashCards, Lab —
