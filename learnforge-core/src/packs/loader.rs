@@ -34,14 +34,19 @@ use super::schema;
 /// Compile-time-embedded `topic-packs/` directory.
 ///
 /// Path is relative to `$CARGO_MANIFEST_DIR` (= `learnforge-core/`).
-/// Resolves to `<repo>/topic-packs/`, picking up every pack directory
-/// automatically — no per-pack code edit needed.
+/// Resolves to `learnforge-core/topic-packs/`, picking up every pack
+/// directory automatically — no per-pack code edit needed.
 ///
-/// Phase 7 Wave 7 (07-07): the manifest base changed from `src-tauri/` to
-/// `learnforge-core/`; the relative string `$CARGO_MANIFEST_DIR/../topic-packs`
-/// is identical because both crates sit at the same depth from the repo root.
+/// Phase 7 Wave 9 (07-09): the `topic-packs/` directory was relocated
+/// from repo-root into the crate root so that `cargo publish` ships the
+/// bundled-pack assets in the crate tarball. The pre-Wave-9 path
+/// `$CARGO_MANIFEST_DIR/../topic-packs` reached one level above the crate
+/// root, which broke `cargo publish --dry-run` (the verified tarball
+/// cannot include files outside the crate directory). Moving the assets
+/// into the crate is the canonical fix and makes `learnforge-core`
+/// self-contained on crates.io.
 pub static BUNDLED_PACKS: Dir<'_> =
-    include_dir!("$CARGO_MANIFEST_DIR/../topic-packs");
+    include_dir!("$CARGO_MANIFEST_DIR/topic-packs");
 
 /// Abstract runtime source for skill packs (R3 / Pitfall 4 — Wave 7).
 ///

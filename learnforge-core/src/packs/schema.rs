@@ -1,25 +1,26 @@
 //! JSON Schema (Draft 2020-12) validator for pack.json files.
 //!
-//! ## Wave 7 (07-07) status — include_str! path mechanics
+//! ## Wave 9 (07-09) — packaged-asset path
 //!
-//! Moved from `src-tauri/src/topic_packs/schema.rs`. Both the pre-move
-//! and post-move locations sit three directories deep, so the string
-//! `"../../../topic-packs/pack-schema.json"` is identical at both sites:
+//! `topic-packs/` lives **inside** the crate at `learnforge-core/topic-packs/`
+//! so that `cargo publish` ships the bundled-pack assets in the crate
+//! tarball. The `include_str!` path is therefore relative to this file's
+//! directory:
 //!
 //! ```text
-//! src-tauri/src/topic_packs/schema.rs    →  ../../../topic-packs/pack-schema.json  ✓
-//! learnforge-core/src/packs/schema.rs    →  ../../../topic-packs/pack-schema.json  ✓
+//! learnforge-core/src/packs/schema.rs  →  ../../topic-packs/pack-schema.json
 //! ```
 //!
-//! **Why `../../../` and not `../../../../`** (R2 / Pitfall 1 unwind):
-//! `rustc` resolves `include_str!` paths relative to the **directory of
-//! the file containing the macro invocation**, not relative to the file
-//! itself or the crate root. So the first `..` segment goes from this
-//! file's directory (`learnforge-core/src/packs/`) to its parent
-//! (`learnforge-core/src/`), then `../..` to `learnforge-core/`, then
-//! `../../..` to the repo root — three segments total. The original
-//! Wave-7 plan miscounted as four; `cargo build` is the ground truth and
-//! it accepts three.
+//! Two `..` segments hop from `learnforge-core/src/packs/` →
+//! `learnforge-core/src/` → `learnforge-core/`, then `topic-packs/...`
+//! addresses the in-crate directory.
+//!
+//! Wave 9 relocation rationale: pre-Wave-9 the path was
+//! `../../../topic-packs/...`, which reached one level above the crate
+//! root. That worked for `cargo build` (Cargo lets `include_str!` chase
+//! any filesystem path) but **broke `cargo publish --dry-run`** — the
+//! verified package tarball cannot contain files outside the crate
+//! directory. Moving `topic-packs/` into the crate is the canonical fix.
 //!
 //! The schema source is embedded at compile time so the binary is
 //! self-contained — no runtime FS read needed for validation.
@@ -31,11 +32,12 @@ use std::sync::OnceLock;
 ///
 /// Path is relative to **this file's directory**
 /// (`learnforge-core/src/packs/`), resolving to
-/// `<repo>/topic-packs/pack-schema.json` via three `..` segments:
-/// `packs/ → src/ → learnforge-core/ → repo-root`. See the module-level
-/// doc-comment for the full derivation + rustc reference.
+/// `learnforge-core/topic-packs/pack-schema.json` via two `..` segments
+/// (`packs/ → src/ → learnforge-core/`). See the module-level
+/// doc-comment for the full derivation + Wave 9 publish-tarball
+/// constraint.
 pub const SCHEMA_SOURCE: &str =
-    include_str!("../../../topic-packs/pack-schema.json");
+    include_str!("../../topic-packs/pack-schema.json");
 
 /// Lazily-compiled Draft 2020-12 validator. Compiled once per process.
 fn compiled() -> &'static jsonschema::Validator {

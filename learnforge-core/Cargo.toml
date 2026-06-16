@@ -1,3 +1,10 @@
+# learnforge-core — adaptive learning algorithms for desktop, web, and WASM.
+#
+# API UNSTABLE until 1.0.0. Breaking changes permitted in any 0.x release.
+# Pin to a specific minor (`learnforge-core = "0.1"`) and read CHANGELOG.md
+# before upgrading. See README.md for the full publishing-status note and
+# crates.io plans (Phase 8).
+
 [package]
 name = "learnforge-core"
 version = "0.1.0"
@@ -5,6 +12,8 @@ edition = "2021"
 license = "MIT"
 description = "Adaptive learning algorithms (BKT, SM-2, threshold, microlearning selection, signing, packs) — desktop/web/WASM portable."
 repository = "https://github.com/schoolofdevops/learnforge"
+homepage = "https://github.com/schoolofdevops/learnforge"
+documentation = "https://docs.rs/learnforge-core"
 readme = "README.md"
 keywords = ["adaptive-learning", "bkt", "spaced-repetition", "sm2", "education"]
 categories = ["algorithms", "science"]

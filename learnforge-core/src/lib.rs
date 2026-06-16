@@ -44,7 +44,7 @@
 //!
 //! MIT — see `LICENSE` at the crate root.
 
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod achievements;
 pub mod bkt;

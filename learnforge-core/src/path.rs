@@ -3,7 +3,7 @@
 //! Moved from `src-tauri/src/learning/path.rs` in Phase 7 Wave 2 (Pitfall 8 —
 //! mixed pure/DB code split). The DB-touching prerequisite check
 //! ([`all_prerequisites_mastered`]) is preserved as a free function that takes
-//! a [`BktStore`](crate::bkt::BktStore) trait object, so persistence stays
+//! a [`BktStore`] trait object, so persistence stays
 //! behind the storage trait and `learnforge-core` itself remains
 //! WASM-portable / rusqlite-free.
 //!
@@ -17,7 +17,7 @@
 //!   handling).
 //! - [`validate_dag`] — Kahn's algorithm cycle check.
 //! - [`all_prerequisites_mastered`] — trait-driven prerequisite gate (uses
-//!   any [`BktStore`](crate::bkt::BktStore) implementation; correctness on
+//!   any [`BktStore`] implementation; correctness on
 //!   diamond DAGs preserved).
 
 use serde::{Deserialize, Serialize};

@@ -180,20 +180,51 @@ Verify the test binary at least *compiles* on wasm32 without running it:
 cargo build --tests --target wasm32-unknown-unknown -p learnforge-core
 ```
 
-## Whitepapers
+## Algorithms
 
 The two flagship algorithms in this crate ship with whitepaper-style
-explainers under `docs/`:
+explainers under [`docs/`](./docs/):
 
 - [`docs/BKT.md`](./docs/BKT.md) — Bayesian Knowledge Tracing model,
-  parameters, threshold calibration, references to Corbett & Anderson
-  1995 + follow-up literature.
-- [`docs/SM2.md`](./docs/SM2.md) — SuperMemo 2 algorithm, interval
-  calculation, ease-factor decay, decay-vs-recall trade-offs.
+  parameters (`P(L_0)`, `P(T)`, `P(G)`, `P(S)`), update equation with
+  worked examples, mastery-threshold calibration, decay considerations,
+  limitations, references to Corbett & Anderson 1995 and follow-up
+  literature.
+- [`docs/SM2.md`](./docs/SM2.md) — SuperMemo 2 spaced-repetition
+  algorithm, the `0-5` quality scale, ease-factor decay equation,
+  interval growth rules, failure-reset behavior, comparison with FSRS,
+  worked examples, limitations, references to Wozniak 1990 and the
+  testing-effect / spacing-effect literature.
 
-*Both whitepapers land in a later Phase 7 wave (Wave 9 — Documentation).
-This Wave 1 scaffold creates the directory but leaves the .md files for
-the documentation wave.*
+Both whitepapers are licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+so they may be reused with attribution. Rustdoc on every algorithm
+module cross-references the relevant whitepaper for the underlying
+mathematics.
+
+## Examples
+
+Runnable single-file demos live in [`examples/`](./examples/):
+
+```bash
+# Bayesian Knowledge Tracing: print the mastery trajectory across a
+# synthetic observation sequence.
+cargo run -p learnforge-core --example bkt_update
+
+# SuperMemo 2: print the schedule across ten reviews, including one
+# deliberately-injected failure to show the reset rule.
+cargo run -p learnforge-core --example sm2_schedule
+
+# Ed25519 sign/verify against a canonical JSON payload, including a
+# tampered-payload negative case and a key-reorder byte-stability proof.
+cargo run -p learnforge-core --example verify_payload
+
+# Topic-pack JSON-schema validation against a minimal valid pack and a
+# deliberately-broken pack to show the error-list shape.
+cargo run -p learnforge-core --example pack_validate
+```
+
+Each example is self-contained (no DB, no FS reads beyond the embedded
+schema) and runs in well under a second.
 
 ## Installation
 
@@ -220,9 +251,8 @@ assert_eq!(
 );
 ```
 
-More examples land alongside their algorithm modules in later Phase 7
-waves (`examples/bkt_update.rs`, `examples/sm2_schedule.rs`,
-`examples/pack_validate.rs`).
+For runnable single-file demos see the [Examples](#examples) section
+above (or just run `cargo run -p learnforge-core --example bkt_update`).
 
 ## Versioning
 
