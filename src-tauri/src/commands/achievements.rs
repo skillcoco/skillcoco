@@ -282,11 +282,22 @@ pub fn verify_signature(
                 .unwrap_or(0) as u32;
         }
         Err(_) => {
-            if is_valid {
-                result.error = Some("payload_unparseable".to_string());
-            } else {
-                result.error = Some("signature_mismatch".to_string());
-            }
+            // CR-02: an unparseable payload has no meaningful
+            // verification semantics — even if the Ed25519 signature
+            // verifies against the raw bytes, the cert as a
+            // CertPayloadV1 contract is malformed. Force valid=false
+            // and surface the precise error so the UI can render the
+            // failure (instead of showing a green banner with empty
+            // Learner/Track/Level fields).
+            result.valid = false;
+            result.error = Some(
+                if is_valid {
+                    "payload_unparseable"
+                } else {
+                    "signature_mismatch"
+                }
+                .to_string(),
+            );
         }
     }
 
@@ -636,34 +647,50 @@ mod tests {
             valid: is_valid,
             ..Default::default()
         };
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&canonical_bytes) {
-            result.learner = v
-                .get("learner")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            result.track = v
-                .get("track")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            result.level = v
-                .get("level")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            result.completion_date = v
-                .get("completionDate")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            result.payload_version =
-                v.get("payloadVersion").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+        // Mirror the production handler's match (CR-02): on parse
+        // failure, force `valid = false` and pick the precise error
+        // code (payload_unparseable vs signature_mismatch).
+        match serde_json::from_slice::<serde_json::Value>(&canonical_bytes) {
+            Ok(v) => {
+                result.learner = v
+                    .get("learner")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                result.track = v
+                    .get("track")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                result.level = v
+                    .get("level")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                result.completion_date = v
+                    .get("completionDate")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                result.payload_version =
+                    v.get("payloadVersion").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+            }
+            Err(_) => {
+                result.valid = false;
+                result.error = Some(
+                    if is_valid {
+                        "payload_unparseable"
+                    } else {
+                        "signature_mismatch"
+                    }
+                    .to_string(),
+                );
+            }
         }
         if let Ok(fp) = signing::fingerprint_from_public_pem(public_pem) {
             result.key_fingerprint = fp;
         }
-        if !is_valid && result.error.is_none() {
+        if !result.valid && result.error.is_none() {
             result.error = Some("signature_mismatch".to_string());
         }
         result
@@ -763,6 +790,55 @@ mod tests {
         let result = verify_signature_inner(&pem, &oversize);
         assert!(!result.valid);
         assert_eq!(result.error.as_deref(), Some("payload_too_large"));
+    }
+
+    /// CR-02 regression — a payload whose Ed25519 signature verifies but
+    /// whose bytes are NOT parseable as JSON must be reported as
+    /// `valid: false` with `error: "payload_unparseable"`. Before the fix,
+    /// the IPC handler set `valid = true` (because `is_valid = true`) AND
+    /// `error = "payload_unparseable"` — a contradiction that the
+    /// Settings panel rendered as a green "Valid signature" banner with
+    /// empty Learner/Track/Level fields. The contract is: if the
+    /// canonical bytes cannot be parsed into JSON, the verification has
+    /// no meaningful semantics, so `valid` MUST be false.
+    #[test]
+    fn verify_signature_rejects_unparseable_payload_even_when_signature_valid() {
+        use pkcs8::LineEnding;
+        let key = SigningKey::generate(&mut OsRng);
+        let pem = key
+            .verifying_key()
+            .to_public_key_pem(LineEnding::LF)
+            .unwrap();
+
+        // Sign arbitrary bytes that are NOT valid JSON. `sign_payload`
+        // signs whatever bytes it receives — we exploit that to
+        // construct a (valid signature) + (unparseable payload) pair,
+        // which is exactly the contradictory state CR-02 describes.
+        let garbage: &[u8] = b"this is definitely not JSON \x00\xff\xfe";
+        let sig = sig_mod::sign_payload(&key, garbage);
+        let sig_hex = hex::encode(sig.to_bytes());
+        let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(garbage);
+        let envelope = format!("{}.{}", b64, sig_hex);
+
+        let result = verify_signature_inner(&pem, &envelope);
+
+        // The signature itself verifies — but the payload cannot be parsed.
+        // Per CR-02, valid MUST be false (not true).
+        assert!(
+            !result.valid,
+            "signed-but-unparseable payload MUST be reported as invalid \
+             — sig verifies against bytes, but bytes are not a JSON cert"
+        );
+        assert_eq!(
+            result.error.as_deref(),
+            Some("payload_unparseable"),
+            "error code must communicate the precise failure mode so the \
+             UI can distinguish payload_unparseable from signature_mismatch"
+        );
+        // Display fields must be empty — we never extracted them.
+        assert_eq!(result.learner, "");
+        assert_eq!(result.track, "");
+        assert_eq!(result.level, "");
     }
 
     // ── encode_qr_payload sanity ─────────────────────────────────────
