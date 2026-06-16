@@ -30,10 +30,11 @@
 //! - [`microlearning`] — Daily-challenge selection algorithm + `MicrolearningStore` trait + A5 clock injection (Wave 4).
 //! - [`canonical_json`] — Byte-stable canonical JSON serializer for signing payloads (Wave 5).
 //! - [`signing`] — Pure Ed25519 sign/verify + `SigningKeyStore` trait + `share_text` (Wave 5).
+//! - [`blocks`] — Block taxonomy (BlockType, BlockStatus, ModuleBlock) + `BlockStore` trait (Wave 6).
 //! - [`verifier`] — Phase 14 verification contract stub (D-08).
 //!
-//! Additional algorithm modules (blocks, packs, achievements)
-//! land in later Phase 7 waves per decision D-05.
+//! Additional algorithm modules (packs, achievements) land in later
+//! Phase 7 waves per decision D-05.
 //!
 //! ## License
 //!
@@ -42,6 +43,7 @@
 #![warn(missing_docs)]
 
 pub mod bkt;
+pub mod blocks;
 pub mod canonical_json;
 pub mod microlearning;
 pub mod path;

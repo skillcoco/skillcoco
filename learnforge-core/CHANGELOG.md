@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`blocks` module (Phase 7 Wave 6 / 07-06)** — block taxonomy moved
+  verbatim from `src-tauri/src/db/blocks.rs:1-65` (pre-Wave-6). Exports
+  `BlockType` enum (Section, Text, Callout, Quiz, FlashCards, Lab —
+  serialized as snake_case), `BlockStatus` enum (Pending, Generating,
+  Ready, Failed — serialized as snake_case), `ModuleBlock` row struct
+  (camelCase serde **preserved** because the struct itself crosses the
+  Tauri IPC boundary in `commands/blocks.rs` — 96.7KB / most-called IPC
+  surface; this is the established convention for any future
+  domain-type-that-crosses-IPC), `block_type_to_str` +
+  `status_to_str` helper fns, and the new `BlockStore` trait + `BlocksError`
+  enum. The trait surface (`insert`, `list_for_module`, `get_by_id`,
+  `update_payload`, `count_for_module`, `delete_for_module`) was
+  enumerated by auditing the six existing CRUD free fns in pre-Wave-6
+  src-tauri (A3 lock — sixth application of the per-module storage trait
+  recipe). Pure data types — no `rusqlite`, no `tauri`, no `std::fs`;
+  WASM-portable. 11 unit tests (8 type-level serde + helper coverage + 3
+  trait surface: `block_store_trait_compiles` exercising every method
+  against an in-memory stub, `block_store_is_object_safe` locking
+  `&dyn BlockStore`, `blocks_error_renders` locking the Display strings)
+  + 4 doctests (BlockType / BlockStatus / block_type_to_str /
+  status_to_str module examples). WASM build (`cargo build --target
+  wasm32-unknown-unknown -p learnforge-core`) green.
+
 - **WASM smoke test (Phase 7 Wave 5 / 07-05)** — `learnforge-core/tests/wasm.rs`
   ships two `#[wasm_bindgen_test]` functions: `bkt_update_runs_in_wasm`
   (proves the pure-math BKT path compiles + runs on wasm32 — closes
