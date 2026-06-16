@@ -441,3 +441,35 @@ export async function verifySignature(
 ): Promise<VerifySignatureResult> {
   return invoke("verify_signature", { request });
 }
+
+// ── Phase 6 (Certification) — Plan 06-06 (Wave 5) Settings Verify panel ──
+//
+// Both wrappers are pure shims around `signing::*` helpers. They power
+// the Settings "Verify certificate" section: `getSigningPublicKey` feeds
+// the "Show signing public key" clipboard export AND seeds the mount-time
+// localFingerprint state (W4 fix — see SettingsVerifyCertSection.tsx);
+// `fingerprintFromPublicPem` derives the 8-hex fingerprint from any PEM
+// string (local or pasted override) without running a full verify pass.
+
+/// Return the local install's Ed25519 signing public-key PEM
+/// (`<app_data>/keys/cert_signing_public.pem`). Rejects with "Io ..." or
+/// "not found"-style errors on the cold-start case where no certificate
+/// has been issued yet (Phase 6 generates the keypair lazily on first
+/// issuance per RESEARCH.md Pattern 2). Callers must absorb errors
+/// silently — the Verify panel still works without a local key.
+export async function getSigningPublicKey(): Promise<string> {
+  return invoke("get_signing_public_key");
+}
+
+/// Derive the 8-hex SHA-256 fingerprint from a public-key PEM string.
+/// Pure helper — no disk I/O. Enforces a 4KB cap on the input PEM
+/// (T-06-22). The Settings Verify panel calls this on mount with the
+/// local public PEM so the untrusted-signer warning fires on the FIRST
+/// override paste — no prior verify pass required.
+export async function fingerprintFromPublicPem(
+  publicKeyPem: string,
+): Promise<string> {
+  return invoke("fingerprint_from_public_pem", {
+    request: { publicKeyPem },
+  });
+}

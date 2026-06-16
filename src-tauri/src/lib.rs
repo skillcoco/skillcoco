@@ -286,6 +286,9 @@ pub fn run() {
             commands::achievements::export_certificate,
             commands::achievements::export_badge,
             commands::achievements::verify_signature,
+            // Certification (Phase 6 — Wave 5, Plan 06-06) — Settings Verify panel
+            commands::achievements::get_signing_public_key,
+            commands::achievements::fingerprint_from_public_pem,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

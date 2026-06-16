@@ -4,6 +4,7 @@ import * as commands from "@/lib/tauri-commands";
 import type { ProviderAuthStatus, LoginRequest } from "@/types/ai";
 import { SettingsLabsSection } from "@/pages/SettingsLabsSection";
 import { SettingsTopicPacksSection } from "@/pages/SettingsTopicPacksSection";
+import { SettingsVerifyCertSection } from "@/components/settings/SettingsVerifyCertSection";
 import {
   Shield,
   Key,
@@ -765,6 +766,9 @@ export function Settings() {
 
       {/* ── Topic Packs (Phase 5 — D-09) ── */}
       <SettingsTopicPacksSection />
+
+      {/* ── Verify Certificate (Phase 6 Wave 5 — CERT-04..05, CERT-08) ── */}
+      <SettingsVerifyCertSection />
 
       {/* ── Learning (Phase 4 Wave 5 — daily challenge opt-out, Q8 lock) ── */}
       <section className="space-y-4">

@@ -60,6 +60,16 @@ pub struct GetTrackCertificationsRequest {
     pub track_id: String,
 }
 
+/// Phase 6 Wave 5 — request envelope for `fingerprint_from_public_pem`.
+/// Pure helper IPC: derives the 8-hex SHA-256 fingerprint from a PEM
+/// string, no disk I/O. Powers the Settings Verify panel mount-time
+/// localFingerprint derivation (W4 fix).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FingerprintFromPemRequest {
+    pub public_key_pem: String,
+}
+
 // ── Defensive limits (T-06-09 / DoS resistance) ──────────────────────────
 
 const MAX_PAYLOAD_B64_LEN: usize = 8 * 1024; // 8KB
@@ -291,6 +301,37 @@ pub fn verify_signature(
     }
 
     Ok(result)
+}
+
+/// Phase 6 Wave 5 — return the local signing public-key PEM. Powers the
+/// Settings "Show signing public key" button AND the on-mount
+/// localFingerprint derivation (so the untrusted-signer warning works on
+/// the FIRST override paste, without requiring a prior verify pass).
+///
+/// Errors with a stringified `AchievementError` on the cold-start case
+/// where the signing key has not yet been generated (Phase 6 generates
+/// lazily on first issuance per RESEARCH.md Pattern 2). The frontend
+/// silently absorbs this error — the verifier panel still renders; only
+/// the untrusted-signer warning is suppressed until a key exists.
+#[tauri::command]
+pub fn get_signing_public_key(state: State<'_, crate::AppState>) -> Result<String, String> {
+    signing::read_public_pem(&state.signing_key_path).map_err(|e| e.to_string())
+}
+
+/// Phase 6 Wave 5 — derive the 8-hex SHA-256 fingerprint from a PEM
+/// string. Pure shim around `signing::fingerprint_from_public_pem` (which
+/// landed in Wave 2). Enforces the same 4KB cap as `verify_signature`'s
+/// PEM override (T-06-22 / DoS resistance) so the frontend can call this
+/// on any user-pasted PEM without risking a giant string traversing the
+/// IPC boundary.
+#[tauri::command]
+pub fn fingerprint_from_public_pem(
+    request: FingerprintFromPemRequest,
+) -> Result<String, String> {
+    if request.public_key_pem.len() > MAX_PUBLIC_PEM_LEN {
+        return Err("public_key_too_large".to_string());
+    }
+    signing::fingerprint_from_public_pem(&request.public_key_pem).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -747,5 +788,106 @@ mod tests {
             extract_learner_name(r#"{"learner": "Bob"}"#),
             "Bob"
         );
+    }
+
+    // ── Phase 6 Wave 5 — get_signing_public_key + fingerprint_from_public_pem
+    //     IPC handler tests. The Tauri-State-bound handler bodies are
+    //     trivial wrappers around `signing::*`; we test them by invoking
+    //     the same code path against an ephemeral keys directory (no
+    //     State<AppState> needed since the wrapping is one line). ──────
+
+    #[test]
+    fn get_signing_public_key_returns_pem() {
+        let key_dir = fresh_key_dir();
+        // Pre-generate a keypair so `read_public_pem` has a file.
+        let _key = sig_mod::get_or_init_key(key_dir.path()).expect("init key");
+        let pem = sig_mod::read_public_pem(key_dir.path()).expect("read public pem");
+        assert!(
+            pem.starts_with("-----BEGIN PUBLIC KEY-----"),
+            "must be PEM-encoded, got: {:?}",
+            &pem[..pem.len().min(40)]
+        );
+        assert!(
+            pem.contains("-----END PUBLIC KEY-----"),
+            "must contain end marker"
+        );
+    }
+
+    #[test]
+    fn get_signing_public_key_errors_when_no_key_yet() {
+        // Fresh dir, no key generated — the on-disk file is absent.
+        // `signing::read_public_pem` returns Err (Io kind) and the IPC
+        // handler maps to String. The frontend interprets this as the
+        // "no signing key yet" case (Phase 6 generates lazily on first
+        // issuance) and silently degrades to localFingerprint=null.
+        let key_dir = fresh_key_dir();
+        let result = sig_mod::read_public_pem(key_dir.path());
+        assert!(result.is_err(), "no key file → error");
+        let msg = format!("{:?}", result.unwrap_err()).to_lowercase();
+        assert!(
+            msg.contains("not found")
+                || msg.contains("no such file")
+                || msg.contains("os error 2")
+                || msg.contains("io"),
+            "expected file-not-found-ish error, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn fingerprint_from_public_pem_command_returns_8_hex() {
+        use pkcs8::LineEnding;
+        let key = SigningKey::generate(&mut OsRng);
+        let pem = key
+            .verifying_key()
+            .to_public_key_pem(LineEnding::LF)
+            .expect("encode pem");
+
+        // Drive the same code path the IPC handler uses.
+        let request = FingerprintFromPemRequest { public_key_pem: pem.clone() };
+        // Reproduce the handler body (no Tauri State needed):
+        let result: Result<String, String> = if request.public_key_pem.len() > MAX_PUBLIC_PEM_LEN {
+            Err("public_key_too_large".to_string())
+        } else {
+            sig_mod::fingerprint_from_public_pem(&request.public_key_pem)
+                .map_err(|e| e.to_string())
+        };
+        let fp = result.expect("fingerprint");
+        assert_eq!(fp.len(), 8, "must be 8 hex chars");
+        assert!(
+            fp.chars().all(|c| c.is_ascii_hexdigit() && (c.is_ascii_digit() || c.is_ascii_lowercase())),
+            "must be lowercase hex, got: {}",
+            fp
+        );
+        // Equals the underlying helper output (the handler is a pure shim).
+        let direct = sig_mod::fingerprint_from_public_pem(&pem).expect("direct");
+        assert_eq!(fp, direct);
+    }
+
+    #[test]
+    fn fingerprint_from_public_pem_command_rejects_garbage() {
+        let request = FingerprintFromPemRequest {
+            public_key_pem: "not a pem".to_string(),
+        };
+        let result: Result<String, String> = if request.public_key_pem.len() > MAX_PUBLIC_PEM_LEN {
+            Err("public_key_too_large".to_string())
+        } else {
+            sig_mod::fingerprint_from_public_pem(&request.public_key_pem)
+                .map_err(|e| e.to_string())
+        };
+        assert!(result.is_err(), "garbage PEM must error, not panic");
+    }
+
+    #[test]
+    fn fingerprint_from_public_pem_command_rejects_oversize_pem() {
+        let big = "a".repeat(MAX_PUBLIC_PEM_LEN + 1);
+        let request = FingerprintFromPemRequest { public_key_pem: big };
+        let result: Result<String, String> = if request.public_key_pem.len() > MAX_PUBLIC_PEM_LEN {
+            Err("public_key_too_large".to_string())
+        } else {
+            sig_mod::fingerprint_from_public_pem(&request.public_key_pem)
+                .map_err(|e| e.to_string())
+        };
+        assert_eq!(result.unwrap_err(), "public_key_too_large");
     }
 }
