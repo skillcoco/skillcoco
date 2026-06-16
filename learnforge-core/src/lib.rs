@@ -25,9 +25,10 @@
 //!
 //! - [`bkt`] — Bayesian Knowledge Tracing (BKT) algorithm + `BktStore` trait (Wave 2).
 //! - [`path`] — Learning-path DAG primitives + trait-driven prerequisite check (Wave 2).
+//! - [`sm2`] — SuperMemo 2 (SM-2) spaced-repetition algorithm + `SrStore` trait (Wave 3).
 //! - [`verifier`] — Phase 14 verification contract stub (D-08).
 //!
-//! Additional algorithm modules (SM-2, threshold, microlearning, blocks,
+//! Additional algorithm modules (threshold, microlearning, blocks,
 //! packs, achievements, canonical_json, signing) land in later Phase 7
 //! waves per decision D-05.
 //!
@@ -39,4 +40,5 @@
 
 pub mod bkt;
 pub mod path;
+pub mod sm2;
 pub mod verifier;

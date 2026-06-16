@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`sm2` module (Phase 7 Wave 3 / 07-03)** — `SM2Result`, `sm2_calculate`
+  moved verbatim from `src-tauri/src/learning/spaced_repetition.rs`. Adds
+  the `SrStore` trait, `SrError` enum, and `SrCardRow` row type next to
+  the algorithm (A3 lock — per-module storage trait). Trait surface
+  enumerated via a grep audit of `src-tauri` `sr_cards` SQL: four methods
+  cover every existing read/write path (`read_due_cards`,
+  `count_due_cards_for_module`, `read_card_by_id`, `apply_review_update`).
+  `SrCardRow` keeps the reference schema's ISO-datetime string shape for
+  `next_review` / `last_review` (the SQLite table stores them as `TEXT`
+  produced via `datetime('now', ...)`), so the rusqlite adapter is a 1:1
+  row mapping rather than an in-flight unit conversion. Rustdoc on every
+  public item; 15 unit tests (11 moved verbatim + 4 new — trait-compiles,
+  apply-review-update dispatch, error rendering) and 4 doctests. No
+  `rusqlite` in `learnforge-core::sm2`; WASM build still succeeds (R1 /
+  D-02 / T-07-07 mitigations intact).
 - **`path` module (Phase 7 Wave 2 / 07-02)** — pure DAG primitives moved
   from `src-tauri/src/learning/path.rs`: `EdgeRecord`, `PathNode`,
   `PathEdge`, `PathError`, `parse_edges_json`, `validate_dag`.
