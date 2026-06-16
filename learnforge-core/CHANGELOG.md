@@ -50,6 +50,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`src-tauri/src/learning/spaced_repetition.rs` is now a transitional
+  shim** (Phase 7 Wave 3 / 07-03) — `pub use learnforge_core::sm2::{SM2Result,
+  sm2_calculate}`. The single remaining caller
+  (`commands/learning.rs::submit_review`) compiles unchanged. The
+  rusqlite-backed `SrStore` impl lives in
+  `src-tauri/src/storage_impl/sr.rs` as
+  `SqliteSrStore<'a>(pub &'a Connection)` — same newtype recipe as
+  `SqliteBktStore` from Wave 2 (orphan-rule E0117 prevents
+  `impl SrStore for &Connection` directly). 6 adapter unit tests cover the
+  four trait methods (due-card read + limit, count-due-for-module,
+  read-by-id present + not-found, apply-review-update persist).
+  Adapter stringifies `rusqlite::Error::QueryReturnedNoRows` to
+  `SrError::NotFound { card_id }` and all other rusqlite errors to
+  `SrError::Db(string)` — T-07-07 trust-boundary mitigation matches
+  Wave 2's `BktError` pattern.
 - **src-tauri now depends on `learnforge-core` via path dep** (workspace
   D-09 wired). `src-tauri/src/learning/adaptive.rs` and
   `src-tauri/src/learning/path.rs` are transitional shims that re-export

@@ -4,8 +4,13 @@
 //! Each algorithm crate module owns its own trait (A3 lock — `07-RESEARCH.md`),
 //! so the impls land in matching files here as the migration proceeds:
 //!
-//! - [`bkt`] — `impl BktStore for &rusqlite::Connection` (Phase 7 Wave 2).
+//! - [`bkt`] — `SqliteBktStore<'a>(&'a Connection)` (Phase 7 Wave 2).
+//! - [`sr`] — `SqliteSrStore<'a>(&'a Connection)` (Phase 7 Wave 3).
 //!
-//! Later waves add `sm2`, `microlearning`, `packs`, `achievements`, etc.
+//! Later waves add `microlearning`, `packs`, `achievements`, etc.
+//!
+//! Both adapters use the local-newtype pattern to satisfy Rust's orphan rule
+//! (E0117) — see each module's "Orphan-rule note" for details.
 
 pub mod bkt;
+pub mod sr;
