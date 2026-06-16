@@ -106,6 +106,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`src-tauri/src/topic_packs/*` is now a transitional shim group**
+  (Phase 7 Wave 7 / 07-07) — `mod.rs`, `error.rs`, `model.rs`,
+  `schema.rs`, `registry.rs` re-export from `learnforge_core::packs::*`.
+  The pre-Wave-7 bodies were lifted into core; the shim files are 1-10
+  lines each. `commands.rs` is **UNCHANGED** (Pitfall 7 — Tauri IPC
+  handlers cannot move because they use `tauri::AppState`).
+- **`src-tauri/src/topic_packs/loader.rs` is now a transitional shim +
+  `FsPackSource` impl** (Phase 7 Wave 7 / 07-07) — pure helpers
+  (`BUNDLED_PACKS`, `parse_and_validate`, `classify_errors`,
+  `sentinel_pack`, `now_rfc3339`) re-exported from
+  `learnforge_core::packs::loader`. The FS-touching skill-pack scan
+  (`std::fs::read_dir`, `std::fs::canonicalize`, `dirs::home_dir`,
+  T-05-05 symlink-escape rejection, T-05-06 5 MB cap) lives here as the
+  `FsPackSource` newtype, implementing the new
+  `learnforge_core::packs::loader::PackSource` trait. The orchestration
+  free fns `load_all(conn)` and `reload_skills_into(reg, conn)` stay
+  here (they bind the pure loader to rusqlite via
+  `crate::topic_packs::persistence`) so the two pre-Wave-7 call sites
+  (`lib.rs:156` and `commands::reload_skills`) compile unchanged. Wave 10
+  cleanup rewrites the call sites onto
+  `learnforge_core::packs::loader::*` + `FsPackSource` directly and
+  deletes the shim. R3 mitigation via TRAIT (chosen over
+  `#[cfg(not(target_arch = "wasm32"))]` because the trait makes the seam
+  testable + visible in tooling).
+- **`src-tauri/src/topic_packs/persistence.rs` is now a transitional
+  shim** (Phase 7 Wave 7 / 07-07) — re-exports `PackStore` trait + pure
+  mappers (`source_str`, `status_str`) from
+  `learnforge_core::packs::persistence`. The four legacy free fns
+  (`upsert_pack`, `read_enabled`, `write_enabled`, `delete_skill_rows`)
+  are 1-line forwards to `SqlitePackStore(conn).{method}(…)` so existing
+  call sites (`topic_packs::commands::*` + the legacy unit tests) compile
+  unchanged. **Error-envelope change** — the legacy facades' return type
+  shifted from `rusqlite::Result<T>` (pre-Wave-7) to
+  `Result<T, PackError>` (post-Wave-7). Every existing call site uses
+  `.map_err(|e| format!(\"...: {}\", e))` or `.ok().flatten()?`, both of
+  which work unchanged because `PackError` implements `Display` and
+  `.ok()` discards the error type. Zero call-site code changes needed.
+- **`src-tauri/src/storage_impl/packs.rs` (new, Phase 7 Wave 7 /
+  07-07)** — `SqlitePackStore<'a>(pub &'a Connection)` newtype carrying
+  the rusqlite-backed `PackStore` impl (D-09 + CR-02 contracts preserved
+  verbatim from pre-Wave-7 SQL). Seventh application of the orphan-rule
+  recipe established Waves 2-6. 8 lib tests against in-memory
+  `Connection`, including a CR-02 regression guard and an
+  object-safety smoke.
+
 - **`src-tauri/src/db/blocks.rs` is now a transitional shim** (Phase 7
   Wave 6 / 07-06) — re-exports the type surface (`BlockType`,
   `BlockStatus`, `ModuleBlock`, `BlocksError`, `BlockStore`,

@@ -1,21 +1,8 @@
-//! Error type for the topic_packs module.
+//! Transitional shim — Wave 7 (07-07) moved `PackError` to
+//! `learnforge_core::packs::error`.
 //!
-//! Plain `String` payloads keep the type cheap to construct and easy to
-//! convert to Tauri command error strings via `.to_string()`.
+//! Wave 10 grep-and-rewrites every `use crate::topic_packs::error::*` call
+//! site to import directly from `learnforge_core::packs` and deletes this
+//! shim.
 
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum PackError {
-    #[error("io error: {0}")]
-    Io(String),
-
-    #[error("invalid JSON: {0}")]
-    Json(String),
-
-    #[error("schema violation: {0}")]
-    Schema(String),
-
-    #[error("loader error: {0}")]
-    Loader(String),
-}
+pub use learnforge_core::packs::error::*;

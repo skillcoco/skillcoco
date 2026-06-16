@@ -15,8 +15,11 @@
 //!   mode invariant (R3 / Pitfall 4 / V6 ASVS).
 //! - [`blocks`] — `SqliteBlockStore<'a>(&'a Connection)` (Phase 7 Wave 6);
 //!   per-block-row CRUD against the `module_blocks` table.
+//! - [`packs`] — `SqlitePackStore<'a>(&'a Connection)` (Phase 7 Wave 7);
+//!   `topic_packs` table CRUD honoring D-09 enabled-on-conflict +
+//!   CR-02 source-column stickiness.
 //!
-//! Later waves add `packs`, `achievements`, etc.
+//! Later waves add `achievements`.
 //!
 //! Both adapters use the local-newtype pattern to satisfy Rust's orphan rule
 //! (E0117) — see each module's "Orphan-rule note" for details.
@@ -24,6 +27,7 @@
 pub mod bkt;
 pub mod blocks;
 pub mod microlearning;
+pub mod packs;
 pub mod signing;
 pub mod sr;
 pub mod threshold;

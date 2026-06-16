@@ -1,34 +1,30 @@
-//! # Topic Packs (Phase 5)
+//! # Topic Packs (Phase 5) — Phase 7 Wave 7 (07-07) transitional shim
 //!
 //! Pack format, loader, validator, persistence, and IPC handlers for the
 //! Topic Packs + Skills system.
 //!
-//! ## Wave 0 status (Plan 05-01)
+//! Phase 7 Wave 7 moved the pure parts of this subsystem
+//! (`error`, `model`, `schema`, `registry`, the bundled-pack loader, the
+//! `PackSource` + `PackStore` traits) to `learnforge_core::packs`. The
+//! files in this module are now thin re-export shims so existing call
+//! sites (`commands/ai.rs`, `commands/labs/session_tests.rs`,
+//! `topic_packs::commands::*`) compile unchanged.
 //!
-//! This module is in RED scaffold state. Every function body is `unimplemented!()`
-//! or returns an `Err(PackError::Loader(...))` with a message naming the downstream
-//! wave/plan that will turn it GREEN. The ONLY GREEN test in Wave 0 is
-//! [`schema::compiles`] — the schema itself is a deliverable, not a stub.
+//! ## What stays in src-tauri
 //!
-//! ## Module map
-//!
-//! - [`model`] — `Pack`, `PackModule`, `PackEdge`, `LoadedPack`, `PackSource`,
-//!   `ValidationStatus`. All IPC structs use `#[serde(rename_all = "camelCase")]`.
-//! - [`error`] — `PackError` enum (Io / Json / Schema / Loader).
-//! - [`schema`] — compiled Draft 2020-12 validator wrapping
-//!   `topic-packs/pack-schema.json` (embedded via `include_str!`).
-//! - [`loader`] — bundled+skills discovery, parsing, and collision resolution.
-//!   Bundled packs win on id collision (D-03).
-//! - [`commands`] — Tauri IPC handler signatures (`list_topic_packs`,
-//!   `list_topic_packs_admin`, `set_topic_pack_enabled`, `reload_skills`).
-//!
-//! ## Wave handoff
-//!
-//! - Wave 1 (Plan 05-02): implement loader + migration v008 `up()`.
-//! - Wave 2 (Plan 05-03): implement IPC handlers + persistence.
-//! - Wave 3 (Plan 05-04): Settings UI consuming the IPC surface.
-//! - Wave 4 (Plan 05-05): Onboarding picker consuming the IPC surface.
-//! - Wave 5 (Plan 05-06): format-upgrade the 4 existing packs.
+//! - [`commands`] — Tauri IPC handlers (`list_topic_packs`,
+//!   `list_topic_packs_admin`, `set_topic_pack_enabled`, `reload_skills`,
+//!   `get_topic_pack_modules`). **UNCHANGED** by Wave 7 — these use
+//!   `tauri::AppState`, which cannot move into core (Pitfall 7).
+//! - [`loader`] — FS-backed `FsPackSource` impl + the orchestration free
+//!   fns `load_all(conn)` and `reload_skills_into(reg, conn)` that bind
+//!   the pure bundled loader to rusqlite. Wave 10 cleanup will rewrite
+//!   the two call sites and delete the free fns.
+//! - [`persistence`] — re-exports `learnforge_core::packs::PackStore` +
+//!   `SqlitePackStore` from `crate::storage_impl::packs`, and exposes
+//!   legacy free fns (`upsert_pack`, `read_enabled`, `write_enabled`,
+//!   `delete_skill_rows`) so `commands.rs` and the existing unit tests
+//!   compile unchanged.
 
 pub mod commands;
 pub mod error;
