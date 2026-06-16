@@ -10,6 +10,9 @@
 //!   Wave 4); Wave 8 will promote it to an `AchievementStore` trait method.
 //! - [`microlearning`] — `SqliteMicrolearningStore<'a>(&'a Connection)`
 //!   (Phase 7 Wave 4).
+//! - [`signing`] — `FsKeyStore { key_dir: PathBuf }` (Phase 7 Wave 5);
+//!   filesystem-backed `SigningKeyStore` impl preserving the 0o600 file
+//!   mode invariant (R3 / Pitfall 4 / V6 ASVS).
 //!
 //! Later waves add `packs`, `achievements`, etc.
 //!
@@ -18,5 +21,6 @@
 
 pub mod bkt;
 pub mod microlearning;
+pub mod signing;
 pub mod sr;
 pub mod threshold;

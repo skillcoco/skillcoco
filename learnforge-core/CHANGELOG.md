@@ -13,6 +13,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **WASM smoke test (Phase 7 Wave 5 / 07-05)** — `learnforge-core/tests/wasm.rs`
+  ships two `#[wasm_bindgen_test]` functions: `bkt_update_runs_in_wasm`
+  (proves the pure-math BKT path compiles + runs on wasm32 — closes
+  D-04) and `ed25519_sign_runs_in_wasm` (proves `SigningKey::generate`
+  → `OsRng` → `getrandom` → `crypto.getRandomValues()` chain links on
+  wasm32 — closes R1 + T-07-13 mitigation). Gated with
+  `#![cfg(target_arch = "wasm32")]` so host `cargo test` skips them;
+  `cargo build --tests --target wasm32-unknown-unknown -p learnforge-core`
+  succeeds (validates the test binary compiles end-to-end including
+  the Ed25519 + getrandom path). Phase 9 wires CI to actually execute
+  the tests via `wasm-pack test`.
+
+### Changed
+
+- **`achievements::signing` (src-tauri) → transitional shim (Phase 7
+  Wave 5 / 07-05)** — pre-Wave-5 the file was the single home for both
+  pure crypto and FS-backed key lifecycle; post-Wave-5 it's a thin
+  compatibility layer re-exporting the pure surface from
+  `learnforge_core::{canonical_json, signing}` and delegating FS-backed
+  ops to `crate::storage_impl::signing::FsKeyStore`. Legacy wrapper fns
+  `get_or_init_key` + `read_public_pem` + `canonical_json_bytes` keep
+  their pre-Wave-5 `Result<_, AchievementError>` signatures so the
+  existing callsites (`achievements::mod::maybe_issue` + IPC handlers
+  in `commands/achievements.rs`) compile unchanged. `From<SigningError>
+  for AchievementError` + `From<CanonicalJsonError> for AchievementError`
+  impls live in this shim. Wave 10 deletes the shim once the callsites
+  migrate onto `learnforge_core::signing` directly.
+- **`achievements::artifacts::share_text` (src-tauri) → re-export
+  (Phase 7 Wave 5 / 07-05)** — the canonical template implementation
+  moved to `learnforge_core::signing::share_text` per the D-03
+  amendment (PDF / PNG renderers stay in src-tauri because printpdf /
+  image / qrcode are not reliably WASM-portable). `artifacts.rs`
+  re-exports it so the legacy callsite path
+  (`achievements::artifacts::share_text`) and the two existing
+  template tests in that module compile unchanged.
+- **`src-tauri::storage_impl::signing::FsKeyStore` (new, src-tauri
+  Phase 7 Wave 5 / 07-05)** — filesystem-backed [`SigningKeyStore`]
+  impl. Body lifted **verbatim** from pre-Wave-5
+  `achievements/signing.rs:45-89` (the `get_or_init_key` +
+  `read_public_pem` halves) so the 0o600 file-mode invariant (R3 /
+  Pitfall 4 / V6 ASVS) on Unix is preserved exactly. 5 unit tests
+  cover the FS-touching surface: `generate_then_load` +
+  `private_key_file_mode_0600` (both lifted verbatim from pre-Wave-5
+  src-tauri signing.rs) plus `export_public_pem_roundtrips`,
+  `export_public_pem_errors_when_missing`, `fs_key_store_is_object_safe`
+  (new — lock the trait surface for the IPC code that holds a boxed
+  store).
+- **`src-tauri/Cargo.toml` (Phase 7 Wave 5 / 07-05)** — `sha2` removed
+  from the `[dependencies]` block: no direct user remains after the
+  pure crypto move (`rg "sha2|Sha256" src-tauri/src/ --type rust` → 0
+  hits). All other Phase 6 crypto deps stay because they have direct
+  callsite users in `src-tauri/src/achievements/mod.rs` +
+  `src-tauri/src/commands/achievements.rs` + the new
+  `src-tauri/src/storage_impl/signing.rs`: `ed25519-dalek`, `pkcs8`,
+  `base64`, `hex`, `rand` remain declared. Transitive sha2 is still
+  pulled through `learnforge-core` so no resolution-graph change
+  occurs.
+
 - **`canonical_json` module (Phase 7 Wave 5 / 07-05)** — byte-stable JSON
   serializer moved verbatim from
   `src-tauri/src/achievements/signing.rs:93-133` (canonicalize +

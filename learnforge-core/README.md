@@ -153,11 +153,31 @@ quirks have been reported upstream (see [rust-random/getrandom#267]).
 
 ### Running WASM tests
 
-Phase 9 will wire CI for WASM tests. Locally:
+Phase 7 Wave 5 (07-05) added `tests/wasm.rs` with two
+`#[wasm_bindgen_test]` smoke functions — one exercising
+`bkt::update_mastery` and one exercising `ed25519_dalek::SigningKey::generate`
++ `signing::sign_payload` — that prove the pure-math + Ed25519/getrandom
+chains both compile and link on `wasm32-unknown-unknown`. The test file
+is gated with `#![cfg(target_arch = "wasm32")]` so host `cargo test`
+skips it; CI matrix (Phase 9) executes it on the wasm32 target.
+
+Locally, run it with [wasm-pack](https://rustwasm.github.io/wasm-pack/):
 
 ```bash
+# One-time setup
 cargo install wasm-pack
+
+# Node runner (fastest — no browser required)
+wasm-pack test --node learnforge-core
+
+# OR browser-side (matches the run_in_browser configure)
 wasm-pack test --chrome --headless learnforge-core
+```
+
+Verify the test binary at least *compiles* on wasm32 without running it:
+
+```bash
+cargo build --tests --target wasm32-unknown-unknown -p learnforge-core
 ```
 
 ## Whitepapers
