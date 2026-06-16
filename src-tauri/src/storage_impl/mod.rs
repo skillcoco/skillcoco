@@ -6,6 +6,8 @@
 //!
 //! - [`bkt`] — `SqliteBktStore<'a>(&'a Connection)` (Phase 7 Wave 2).
 //! - [`sr`] — `SqliteSrStore<'a>(&'a Connection)` (Phase 7 Wave 3).
+//! - [`threshold`] — parked `track_mastery_aggregate` free fn (Phase 7
+//!   Wave 4); Wave 8 will promote it to an `AchievementStore` trait method.
 //!
 //! Later waves add `microlearning`, `packs`, `achievements`, etc.
 //!
@@ -14,3 +16,4 @@
 
 pub mod bkt;
 pub mod sr;
+pub mod threshold;

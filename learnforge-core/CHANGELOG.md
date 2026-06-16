@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`threshold` module (Phase 7 Wave 4 / 07-04)** — pure skill-tier
+  predicates moved verbatim from
+  `src-tauri/src/achievements/threshold.rs`: `TrackAggregate` struct,
+  `which_level_just_crossed`, `levels_met`, and private `ratio` /
+  `is_professional` helpers. **No `rusqlite` in this module** — the SQL
+  aggregate query that builds a `TrackAggregate` from `module_progress`
+  rows (`track_mastery_aggregate`) is **parked in
+  `src-tauri/src/storage_impl/threshold.rs`** as a free function until
+  Wave 8 (`07-08-PLAN.md`) promotes it into a method on the forthcoming
+  `AchievementStore` trait. Wave 4 deliberately defers that step so the
+  move stays mechanical. 8 unit tests moved verbatim + 5 doctests. WASM
+  build still green (R1 / D-02 boundary intact).
 - **`sm2` module (Phase 7 Wave 3 / 07-03)** — `SM2Result`, `sm2_calculate`
   moved verbatim from `src-tauri/src/learning/spaced_repetition.rs`. Adds
   the `SrStore` trait, `SrError` enum, and `SrCardRow` row type next to
