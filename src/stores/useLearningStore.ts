@@ -6,6 +6,7 @@ import type {
   SubmitQuizResult,
 } from "@/types/learning";
 import * as commands from "@/lib/tauri-commands";
+import { useAchievementsStore } from "@/stores/useAchievementsStore";
 
 interface LearningState {
   tracks: LearningTrack[];
@@ -193,6 +194,21 @@ export const useLearningStore = create<LearningState>((set, _get) => ({
 
   submitQuiz: async (req) => {
     const result = await commands.submitQuiz(req);
+
+    // Phase 6 Wave 3 (06-04): forward newlyIssuedAchievements to the
+    // sibling achievements slice. Sibling-slice — DO NOT merge fields into
+    // useLearningStore state (Phase 4 Pitfall 5). The result type carries
+    // newlyIssuedAchievements as a flat array (A4 lock); empty array is a
+    // no-op inside appendNewlyIssued.
+    if (
+      result.newlyIssuedAchievements &&
+      result.newlyIssuedAchievements.length > 0
+    ) {
+      useAchievementsStore
+        .getState()
+        .appendNewlyIssued(result.newlyIssuedAchievements);
+    }
+
     // Refresh per-module progress so the sidebar/QuizBlock reflect the new
     // mastery_level and any unlocks immediately, without a manual reload.
     try {

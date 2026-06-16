@@ -83,6 +83,7 @@ const mockPassedResult: SubmitQuizResult = {
   moduleCompleted: true,
   newlyUnlockedModuleIds: [],
   cardsCreated: 0,
+  newlyIssuedAchievements: [],
   review: [
     {
       questionId: "q1",
@@ -118,6 +119,7 @@ const mockFailedResult: SubmitQuizResult = {
   moduleCompleted: false,
   newlyUnlockedModuleIds: [],
   cardsCreated: 0,
+  newlyIssuedAchievements: [],
   review: [
     {
       questionId: "q1",

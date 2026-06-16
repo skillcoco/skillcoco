@@ -204,6 +204,7 @@ export function QuizBlock({ block, moduleId, trackId, onComplete }: QuizBlockPro
           newlyUnlockedModuleIds: [],
           cardsCreated: 0,
           review,
+          newlyIssuedAchievements: [],
         });
         fireCompletionOnce();
       }
@@ -230,6 +231,7 @@ export function QuizBlock({ block, moduleId, trackId, onComplete }: QuizBlockPro
         newlyUnlockedModuleIds: [],
         cardsCreated: 0,
         review,
+        newlyIssuedAchievements: [],
       });
       fireCompletionOnce();
     } finally {

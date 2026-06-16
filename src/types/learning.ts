@@ -264,6 +264,15 @@ export interface SubmitQuizResult {
   newlyUnlockedModuleIds: string[];
   cardsCreated: number;
   review: QuizQuestionReview[];
+  /**
+   * Phase 6 Wave 1 (A4 lock): achievements issued by this submission.
+   * Empty array when no threshold was crossed. The frontend forwards this
+   * to `useAchievementsStore.appendNewlyIssued` (sibling-slice — Phase 4
+   * Pitfall 5 — see 06-04-PLAN.md). The Rust struct field is
+   * `newly_issued_achievements: Vec<Achievement>` (camelCase via
+   * #[serde(rename_all = "camelCase")]).
+   */
+  newlyIssuedAchievements: import("./achievements").Achievement[];
 }
 
 export interface GenerateModuleBlocksRequest {

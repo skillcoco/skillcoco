@@ -18,9 +18,11 @@ vi.mock("@/lib/tauri-commands", () => ({
 }));
 
 import { useLearningStore, selectModulePracticalMastery } from "@/stores/useLearningStore";
+import { useAchievementsStore, __resetStore as __resetAchievementsStore } from "@/stores/useAchievementsStore";
 import * as commands from "@/lib/tauri-commands";
 import type { ModuleBlock } from "@/types/learning";
 import type { ModuleProgress } from "@/types";
+import type { Achievement } from "@/types/achievements";
 
 function makeBlock(overrides: Partial<ModuleBlock> = {}): ModuleBlock {
   return {
@@ -87,6 +89,7 @@ describe("useLearningStore phase 3 extensions", () => {
       newlyUnlockedModuleIds: [],
       cardsCreated: 0,
       review: [],
+      newlyIssuedAchievements: [],
     };
     vi.mocked(commands.submitQuiz).mockResolvedValue(mockResult);
 
@@ -173,6 +176,83 @@ describe("useLearningStore phase 3 extensions", () => {
     useLearningStore.setState({ moduleProgress: [] });
     const value = selectModulePracticalMastery("missing")(useLearningStore.getState());
     expect(value).toBe(0);
+  });
+
+  // ── Phase 6 Plan 06-04 (Wave 3) — sibling-slice integration ──
+  //
+  // submitQuiz must forward result.newlyIssuedAchievements to the sibling
+  // useAchievementsStore.appendNewlyIssued. We do NOT extend useLearningStore
+  // state with achievement fields (Phase 4 Pitfall 5).
+
+  function makeAchievement(overrides: Partial<Achievement> = {}): Achievement {
+    return {
+      id: "ach-1",
+      learnerId: "lnr-1",
+      trackId: "trk-1",
+      packId: null,
+      kind: "badge",
+      level: "Associate",
+      issuedAt: "2026-06-15T00:00:00Z",
+      masteryScore: 0.8,
+      payloadJson: "",
+      signature: "",
+      keyFingerprint: "deadbeef",
+      trackTopic: "Kubernetes",
+      ...overrides,
+    };
+  }
+
+  it("submitQuiz_appendNewlyIssued_when_result_has_achievements", async () => {
+    __resetAchievementsStore();
+    const issued = [
+      makeAchievement({ id: "A" }),
+      makeAchievement({ id: "B", level: "Practitioner" }),
+    ];
+    vi.mocked(commands.submitQuiz).mockResolvedValue({
+      scorePercent: 90,
+      passed: true,
+      masteryLevel: 0.9,
+      moduleCompleted: true,
+      newlyUnlockedModuleIds: [],
+      cardsCreated: 0,
+      review: [],
+      newlyIssuedAchievements: issued,
+    });
+    vi.mocked(commands.getModuleProgress).mockResolvedValue([]);
+
+    await useLearningStore.getState().submitQuiz({
+      moduleId: "mod-1",
+      trackId: "trk-1",
+      blockId: "blk-q",
+      answers: [],
+    });
+
+    const ids = useAchievementsStore.getState().achievements.map((a) => a.id);
+    expect(ids.slice(0, 2)).toEqual(["A", "B"]);
+  });
+
+  it("submitQuiz_no_append_when_empty_array", async () => {
+    __resetAchievementsStore();
+    vi.mocked(commands.submitQuiz).mockResolvedValue({
+      scorePercent: 60,
+      passed: true,
+      masteryLevel: 0.65,
+      moduleCompleted: false,
+      newlyUnlockedModuleIds: [],
+      cardsCreated: 0,
+      review: [],
+      newlyIssuedAchievements: [],
+    });
+    vi.mocked(commands.getModuleProgress).mockResolvedValue([]);
+
+    await useLearningStore.getState().submitQuiz({
+      moduleId: "mod-1",
+      trackId: "trk-1",
+      blockId: "blk-q",
+      answers: [],
+    });
+
+    expect(useAchievementsStore.getState().achievements).toEqual([]);
   });
 
   it("store_regenerate_lesson — regenerateLesson replaces block in map", async () => {
