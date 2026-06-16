@@ -13,6 +13,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`achievements` module (Phase 7 Wave 8 / 07-08)** — achievement-issuance
+  algorithm moved from `src-tauri/src/achievements/mod.rs`. This is the
+  **final algorithmic move wave**; after Wave 8 every algorithm in the
+  learning loop lives in `learnforge-core` and the
+  `wasm32-unknown-unknown` build compiles cleanly without ever pulling
+  `rusqlite` / `printpdf` / `image` / `qrcode` / `tauri` into the
+  dependency graph.
+
+  Exports `Achievement` + `CertPayloadV1` + `TrackCertifications` (all
+  `#[serde(rename_all = "camelCase")]` because they cross IPC),
+  `IssuanceContext` (the per-track display snapshot the algorithm reads
+  via the storage trait), `CertificatePdfInput` + `BadgePngInput` (PDF/PNG
+  renderer **input shapes** only — D-03 amendment locks the renderers
+  themselves in src-tauri because printpdf / qrcode / image are not
+  WASM-portable), `AchievementError` (with `#[from]` for
+  `serde_json::Error`, `SigningError`, and `CanonicalJsonError`), the
+  `AchievementStore` trait (eighth and final application of the per-module
+  storage-trait recipe — A3 lock), and the `maybe_issue<S: AchievementStore,
+  K: SigningKeyStore>` free function.
+
+  **A5 clock injection lock:** `maybe_issue` accepts an explicit `now:
+  chrono::DateTime<chrono::Utc>` parameter instead of calling
+  `Utc::now()` internally. Tests pin `now` so the canonical payload
+  bytes (and therefore the Ed25519 signatures) are byte-for-byte
+  reproducible across runs — `signature_byte_stable_under_pinned_clock`
+  asserts this. The src-tauri shim wrapper supplies `Utc::now()` at the
+  call site to preserve production behavior.
+
+  **Wave-4 ↔ Wave-8 seam closed:** the rusqlite `AchievementStore`
+  implementation in `src-tauri/src/storage_impl/achievements.rs` wires
+  its `track_mastery_aggregate` method body straight into the Wave 4
+  parked free fn in `src-tauri/src/storage_impl/threshold.rs`. The
+  parking comment in that file is removed; the seam is now visible at
+  trait-method scope.
+
+  **What does NOT live here:** PDF/PNG/QR rendering (artifacts.rs stays
+  in src-tauri), FS-backed key loading (FsKeyStore stays in
+  storage_impl/signing.rs from Wave 5), and `From<rusqlite::Error> for
+  AchievementError` (the rusqlite-touching conversion lives only on the
+  src-tauri side so the core trait surface stays pure).
+
 - **`packs` module (Phase 7 Wave 7 / 07-07)** — topic-pack subsystem moved
   from `src-tauri/src/topic_packs/`. Exports `Pack`, `PackModule`,
   `PackEdge`, `LoadedPack`, `PackSource` enum (Bundled/Skill — origin

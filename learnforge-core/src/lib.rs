@@ -32,10 +32,13 @@
 //! - [`signing`] — Pure Ed25519 sign/verify + `SigningKeyStore` trait + `share_text` (Wave 5).
 //! - [`blocks`] — Block taxonomy (BlockType, BlockStatus, ModuleBlock) + `BlockStore` trait (Wave 6).
 //! - [`packs`] — Topic-pack subsystem: bundled loader, schema validator, `PackSource` + `PackStore` traits (Wave 7).
+//! - [`achievements`] — Achievement issuance algorithm + `AchievementStore` trait + `maybe_issue` with A5 clock injection (Wave 8).
 //! - [`verifier`] — Phase 14 verification contract stub (D-08).
 //!
-//! Additional algorithm modules (achievements) land in later Phase 7 waves
-//! per decision D-05.
+//! All algorithmic modules have now moved to `learnforge-core`. PDF/PNG
+//! rendering (printpdf/qrcode/image) STAYS in `src-tauri` per D-03
+//! amendment because those crates are not WASM-portable; only the data
+//! `CertificatePdfInput` / `BadgePngInput` input shapes live here.
 //!
 //! ## License
 //!
@@ -43,6 +46,7 @@
 
 #![warn(missing_docs)]
 
+pub mod achievements;
 pub mod bkt;
 pub mod blocks;
 pub mod canonical_json;
