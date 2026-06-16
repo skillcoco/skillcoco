@@ -367,3 +367,61 @@ export async function isDailyChallengeEnabled(): Promise<
 export async function setDailyChallengeEnabled(enabled: boolean): Promise<void> {
   return invoke("set_daily_challenge_enabled", { request: { enabled } });
 }
+
+// ── Phase 6 (Certification) — Plan 06-01 (Wave 0) IPC wrappers ──
+//
+// All five wrappers throw at runtime in Wave 0 because the corresponding
+// Rust handlers are not yet registered in `tauri::generate_handler!` (Plan
+// 06-03 / Wave 2 wires them). The wrapper signatures are still locked here
+// so downstream Wave 0 store + component tests can typecheck against them
+// without import errors. Once Wave 2 lands, removing the throw is a 1-line
+// change per wrapper.
+//
+// Envelope: `{ request: T }` for the three save-as / verify flows;
+// flat-arg pattern for the two read flows (matches Phase 5 listTracks /
+// getTrack precedent).
+
+import type {
+  Achievement,
+  TrackCertifications,
+  VerifyCertificateRequest,
+  VerifyCertificateResult,
+} from "@/types/achievements";
+
+/// List the current learner's earned achievements (badges + certificates).
+/// Frontend useAchievementsStore.loadAchievements() calls this on mount.
+export async function listAchievements(): Promise<Achievement[]> {
+  return invoke("list_achievements_for_learner");
+}
+
+/// Per-track earned-levels + next-level snapshot. TrackView's
+/// CertificationProgress component reads this.
+export async function getTrackCertifications(
+  trackId: string,
+): Promise<TrackCertifications> {
+  return invoke("get_track_certifications", { trackId });
+}
+
+/// Render a PDF certificate to bytes. Caller converts to Blob for save-as.
+/// Returns `number[]` to match Tauri's Vec<u8> serialization shape.
+export async function exportCertificatePdf(
+  achievementId: string,
+): Promise<number[]> {
+  return invoke("export_certificate_pdf", { request: { achievementId } });
+}
+
+/// Render a PNG badge to bytes (transparent bg, QR + optional brand mark).
+/// PNG-only per D-06 amendment — text labels are Phase 14.
+export async function exportBadgePng(
+  achievementId: string,
+): Promise<number[]> {
+  return invoke("export_badge_png", { request: { achievementId } });
+}
+
+/// Verify a pasted base64-encoded signed payload against either the local
+/// public key (default) or a user-provided PEM override.
+export async function verifyCertificate(
+  request: VerifyCertificateRequest,
+): Promise<VerifyCertificateResult> {
+  return invoke("verify_certificate", { request });
+}
