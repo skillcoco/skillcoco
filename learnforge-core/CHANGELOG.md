@@ -33,6 +33,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   T-07-05 mitigated by stringified `BktError::Db`).
 - Per-Phase-7-wave deliverables continue to append here.
 
+### Changed
+
+- **src-tauri now depends on `learnforge-core` via path dep** (workspace
+  D-09 wired). `src-tauri/src/learning/adaptive.rs` and
+  `src-tauri/src/learning/path.rs` are transitional shims that re-export
+  from `learnforge_core::bkt` and `learnforge_core::path` respectively
+  (deleted in Wave 10). All four pre-existing call sites
+  (`commands/learning.rs`, `commands/ai.rs`, `learning/microlearning_selection.rs`,
+  `learning/path.rs`) compile UNCHANGED through the shims. The shims
+  intentionally do NOT use `#[deprecated]` (rustc may silently ignore it
+  on `pub use` items — R5 / Pitfall 6).
+- **Rusqlite-backed `BktStore` impl** lives in
+  `src-tauri/src/storage_impl/bkt.rs` as `SqliteBktStore<'a>(pub &'a
+  Connection)`. The plan-verbatim wording `impl BktStore for &Connection`
+  would violate Rust's orphan rule (E0117) because both the trait
+  (learnforge_core) and the target type (rusqlite) are foreign — the
+  zero-cost newtype wrapper satisfies the local-type requirement.
+
 ## [0.1.0] - 2026-06-16
 
 ### Added

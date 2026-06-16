@@ -6,6 +6,11 @@ pub mod db;
 pub mod labs;
 pub mod learning;
 pub mod licensing;
+// Phase 7 Wave 2 (Plan 07-02) — rusqlite-backed impls of learnforge_core
+// per-module storage traits. The trait `impl BktStore for &Connection`
+// in storage_impl::bkt is a coherence requirement to live in src-tauri
+// (the trait is defined in learnforge_core; the impl carries rusqlite).
+pub mod storage_impl;
 pub mod topic_packs;
 mod vector;
 

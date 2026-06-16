@@ -13,6 +13,11 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Phase 7 Wave 2 (Plan 07-02) — workspace path dep wiring (D-09). src-tauri
+# now consumes the publishable algorithm crate; module-by-module migration
+# follows in Waves 3-8. learning/adaptive.rs and learning/path.rs are
+# transitional re-export shims that delete in Wave 10 (07-10-PLAN.md).
+learnforge-core = { path = "../learnforge-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }

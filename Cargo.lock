@@ -2991,6 +2991,7 @@ dependencies = [
  "image",
  "include_dir",
  "jsonschema",
+ "learnforge-core",
  "log",
  "open",
  "pkcs8",
