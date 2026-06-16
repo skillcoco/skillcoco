@@ -1,402 +1,208 @@
-//! Phase 6 (Certification) — achievements module entrypoint.
+//! Transitional shim — Phase 7 Wave 8 (07-08) moved the achievement-
+//! issuance algorithm to `learnforge_core::achievements`. This file
+//! preserves the legacy free-fn surface so existing callers
+//! (`commands/learning.rs`, `commands/achievements.rs`) compile
+//! unchanged.
 //!
-//! Wave 1 (Plan 06-02) fills the threshold logic, signing, and
-//! `maybe_issue`. Wave 2 (Plan 06-03) lands IPC handlers + artifact
-//! rendering.
+//! ## What lives here
+//!
+//! - **Re-exports** of every type the pre-Wave-8 module exposed:
+//!   `Achievement`, `CertPayloadV1`, `AchievementError`,
+//!   `TrackCertifications`, `IssuanceContext`, `CertificatePdfInput`,
+//!   `BadgePngInput`, `AchievementStore`. (`maybe_issue` is exposed via
+//!   a legacy-shaped wrapper — see below.)
+//! - **Legacy `maybe_issue`** with the pre-Wave-8 signature
+//!   `(conn, track_id, learner_id, signing_key_mutex, key_dir)`. The
+//!   body supplies `Utc::now()` + wraps the connection in
+//!   `SqliteAchievementStore` + wraps `(mutex, key_dir)` in
+//!   `MutexCachedKeyStore` and dispatches to the core fn.
+//! - **`list_for_learner_impl`**, **`lookup_achievement_impl`**,
+//!   **`get_track_certifications_impl`** — the IPC-handler helpers from
+//!   pre-Wave-8 are preserved as thin wrappers around the trait methods
+//!   so `commands/achievements.rs:17-21` imports compile unchanged.
+//! - **`pub mod artifacts`** — D-03 amendment + R-7 mitigation: the
+//!   PDF / PNG / QR renderers stay here because `printpdf` / `image` /
+//!   `qrcode` are not WASM-portable.
+//! - **`pub mod signing`** — Wave 5 shim around `learnforge_core::signing`
+//!   + `FsKeyStore`.
+//! - **`pub mod threshold`** — Wave 4 shim around
+//!   `learnforge_core::threshold` + the parked SQL aggregate.
+//!
+//! ## What was deleted
+//!
+//! - The pre-Wave-8 bodies of `maybe_issue` (lines 213-307), the four
+//!   SQL helpers (`lookup_context` 96-133, `list_for_learner_impl`
+//!   348-374, `lookup_achievement_impl` 310-339,
+//!   `get_track_certifications_impl` 387+), the `build_signed_achievement`
+//!   helper (162-207), and `get_or_load_into_mutex` (138-158) — every
+//!   one moved into `learnforge_core::achievements` (algorithm /
+//!   types) or `src-tauri/src/storage_impl/achievements.rs` (rusqlite
+//!   trait impl) or replaced by the
+//!   [`MutexCachedKeyStore`] inline below (key-mutex caching).
+//! - Pure tests moved with the algorithm to
+//!   `learnforge_core/src/achievements.rs::tests`. SQL-touching tests
+//!   stay in this file (they need a real `rusqlite::Connection`).
+//!
+//! No `#[deprecated]` on re-exports — rustc silently ignores it on
+//! `pub use` (R5 / Pitfall 6 from 07-RESEARCH.md). Wave 10
+//! grep-and-rewrite is the eventual cleanup target — at that point the
+//! IPC handlers + `commands/learning.rs:399` migrate onto
+//! `learnforge_core::achievements::maybe_issue` directly +
+//! `SqliteAchievementStore(&conn)` + their own clock + `FsKeyStore`,
+//! and this shim deletes.
 
 pub mod artifacts;
 pub mod signing;
 pub mod threshold;
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use chrono::Utc;
+use ed25519_dalek::SigningKey;
+use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-use ed25519_dalek::SigningKey;
-use rusqlite::Connection;
+// ── Re-exports of the core surface ───────────────────────────────────────
 
-/// Persisted achievement row. Mirrors the `achievements` table v009 1:1,
-/// with camelCase serde for IPC. D-12 + R4 + R5.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Achievement {
-    pub id: String,
-    pub learner_id: String,
-    pub track_id: String,
-    pub pack_id: Option<String>,
-    pub kind: String,
-    pub level: String,
-    pub issued_at: String,
-    pub mastery_score: f64,
-    pub payload_json: String,
-    pub signature: String,
-    pub key_fingerprint: String,
-    pub track_topic: String,
-}
+pub use learnforge_core::achievements::{
+    Achievement, AchievementError, AchievementStore, BadgePngInput, CertPayloadV1,
+    CertificatePdfInput, IssuanceContext, TrackCertifications,
+};
 
-/// Per-track certification status. Wave 2 (Plan 06-03) populates.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TrackCertifications {
-    pub earned_levels: Vec<String>,
-    pub next_level: Option<String>,
-    pub criteria: String,
-}
+// Re-export the core `maybe_issue` under a non-clashing name for callers
+// that want to invoke it directly (Wave 10 migration target).
+pub use learnforge_core::achievements::maybe_issue as maybe_issue_core;
 
-/// V1 signed-payload contract — see `docs/CERT-PAYLOAD-V1.md`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CertPayloadV1 {
-    pub learner: String,
-    pub learner_id: String,
-    pub track: String,
-    pub track_id: String,
-    pub level: String,
-    pub completion_date: String,
-    pub mastery_score: f64,
-    pub key_fingerprint: String,
-    pub pack_id: Option<String>,
-    /// Dispatch tag — `1` for Phase 6 v1 payloads. Phase 14 introduces `2`
-    /// if/when it switches to JWS-EdDSA.
-    pub payload_version: u32,
-}
+use crate::storage_impl::achievements::SqliteAchievementStore;
+use crate::storage_impl::signing::FsKeyStore;
+use learnforge_core::signing::{SigningError, SigningKeyStore};
 
-#[derive(Debug, thiserror::Error)]
-pub enum AchievementError {
-    #[error("database error: {0}")]
-    Db(#[from] rusqlite::Error),
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("pkcs8 / pem error: {0}")]
-    Pkcs8(String),
-    #[error("signature error: {0}")]
-    Signature(String),
-    #[error("json error: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("pdf error: {0}")]
-    Pdf(String),
-    #[error("qr error: {0}")]
-    Qr(String),
-    #[error("validation error: {0}")]
-    Validation(String),
-}
+// ── Mutex-cached key store (preserves the Phase 6 lazy-init pattern) ─────
 
-/// (learner_display, track_topic snapshot per R4, pack_id snapshot).
+/// `SigningKeyStore` impl that consults a process-level
+/// `Mutex<Option<SigningKey>>` cache before falling back to
+/// [`FsKeyStore`] for cold load + first-time generation. Mirrors the
+/// pre-Wave-8 `get_or_load_into_mutex` helper that lived in
+/// `src-tauri/src/achievements/mod.rs:138-158`.
 ///
-/// pack_id provenance (CR-03 fix): Phase 5's `generate_path_from_pack`
-/// stamps `learning_paths.generated_by_model = "topic-pack:<pack_id>"`
-/// for any track whose path was built from a bundled or skill pack.
-/// We resolve the most recent path version for this track, strip the
-/// prefix, and snapshot the pack id into the signed CertPayloadV1 and
-/// the `achievements.pack_id` row. Tracks generated by an LLM (no
-/// prefix) — or legacy tracks predating Phase 5 — return `None`, which
-/// is the documented "AI-generated, no pack provenance" case in
-/// `docs/CERT-PAYLOAD-V1.md`.
-fn lookup_context(
-    conn: &Connection,
-    track_id: &str,
-    learner_id: &str,
-) -> Result<(String, String, Option<String>), AchievementError> {
-    let learner_display: String = conn
-        .query_row(
-            "SELECT COALESCE(display_name, 'Learner') FROM learner_profiles WHERE id = ?1",
-            [learner_id],
-            |r| r.get(0),
-        )
-        .unwrap_or_else(|_| "Learner".to_string());
-    let track_topic: String = conn
-        .query_row(
-            "SELECT topic FROM learning_tracks WHERE id = ?1",
-            [track_id],
-            |r| r.get(0),
-        )
-        .map_err(|e| AchievementError::Validation(format!("track {} not found: {}", track_id, e)))?;
-
-    // CR-03: derive pack_id from the latest learning_paths row for this
-    // track. `.ok()` swallows the no-rows case (legacy tracks created
-    // before Phase 5 may have no learning_paths entry at all) and
-    // `.and_then(strip_prefix)` returns None for any model id that
-    // doesn't start with "topic-pack:" (AI-generated paths).
-    let pack_id: Option<String> = conn
-        .query_row(
-            "SELECT generated_by_model FROM learning_paths \
-             WHERE track_id = ?1 \
-             ORDER BY version DESC LIMIT 1",
-            [track_id],
-            |r| r.get::<_, String>(0),
-        )
-        .ok()
-        .and_then(|m| m.strip_prefix("topic-pack:").map(|s| s.to_string()));
-
-    Ok((learner_display, track_topic, pack_id))
+/// Wave 10 cleanup: callers migrate to `FsKeyStore` directly + a
+/// caching adapter that the IPC layer holds explicitly (instead of this
+/// shim closing over a `&Mutex`).
+struct MutexCachedKeyStore<'a> {
+    cache: &'a Mutex<Option<SigningKey>>,
+    fallback: FsKeyStore,
 }
 
-/// Lazy-init the SigningKey in `Mutex<Option<SigningKey>>` (Pattern 2).
-/// Returns a fresh clone-via-bytes so callers don't hold the mutex while
-/// signing.
-fn get_or_load_into_mutex(
-    state_key: &Mutex<Option<SigningKey>>,
-    key_path: &Path,
-) -> Result<SigningKey, AchievementError> {
-    {
-        let guard = state_key
-            .lock()
-            .map_err(|_| AchievementError::Validation("signing key mutex poisoned".into()))?;
-        if let Some(k) = guard.as_ref() {
-            return Ok(SigningKey::from_bytes(&k.to_bytes()));
+impl<'a> MutexCachedKeyStore<'a> {
+    fn new(cache: &'a Mutex<Option<SigningKey>>, key_dir: &Path) -> Self {
+        Self {
+            cache,
+            fallback: FsKeyStore::new(key_dir.to_path_buf()),
         }
     }
-    let key = signing::get_or_init_key(key_path)?;
-    let mut guard = state_key
-        .lock()
-        .map_err(|_| AchievementError::Validation("signing key mutex poisoned".into()))?;
-    if guard.is_none() {
-        *guard = Some(SigningKey::from_bytes(&key.to_bytes()));
+}
+
+impl<'a> SigningKeyStore for MutexCachedKeyStore<'a> {
+    fn get_or_init(&self) -> Result<SigningKey, SigningError> {
+        // Fast path — return a fresh clone of the cached key.
+        {
+            let guard = self
+                .cache
+                .lock()
+                .map_err(|_| SigningError::Io("signing key mutex poisoned".to_string()))?;
+            if let Some(k) = guard.as_ref() {
+                return Ok(SigningKey::from_bytes(&k.to_bytes()));
+            }
+        }
+        // Cold path — generate or load via FsKeyStore + cache the result.
+        let key = self.fallback.get_or_init()?;
+        {
+            let mut guard = self
+                .cache
+                .lock()
+                .map_err(|_| SigningError::Io("signing key mutex poisoned".to_string()))?;
+            if guard.is_none() {
+                *guard = Some(SigningKey::from_bytes(&key.to_bytes()));
+            }
+        }
+        Ok(SigningKey::from_bytes(&key.to_bytes()))
     }
-    Ok(SigningKey::from_bytes(&key.to_bytes()))
+
+    fn export_public_pem(&self) -> Result<String, SigningError> {
+        self.fallback.export_public_pem()
+    }
 }
 
-/// Build CertPayloadV1 + canonical bytes + signature for one (kind, level).
-#[allow(clippy::too_many_arguments)]
-fn build_signed_achievement(
-    key: &SigningKey,
-    key_fingerprint: &str,
-    learner_display: &str,
-    learner_id: &str,
-    track_topic: &str,
-    track_id: &str,
-    pack_id: Option<&str>,
-    kind: &str,
-    level: &str,
-    mastery_score: f64,
-    issued_at: &str,
-) -> Result<Achievement, AchievementError> {
-    let payload = CertPayloadV1 {
-        learner: learner_display.to_string(),
-        learner_id: learner_id.to_string(),
-        track: track_topic.to_string(),
-        track_id: track_id.to_string(),
-        level: level.to_string(),
-        completion_date: issued_at.to_string(),
-        mastery_score,
-        key_fingerprint: key_fingerprint.to_string(),
-        pack_id: pack_id.map(|s| s.to_string()),
-        payload_version: 1,
-    };
-    let canonical = signing::canonical_json_bytes(&payload)?;
-    let sig = signing::sign_payload(key, &canonical);
-    let sig_hex = hex::encode(sig.to_bytes());
-    let payload_json = String::from_utf8(canonical)
-        .map_err(|_| AchievementError::Validation("non-utf8 canonical".into()))?;
+// ── Legacy maybe_issue wrapper ───────────────────────────────────────────
 
-    Ok(Achievement {
-        id: uuid::Uuid::new_v4().to_string(),
-        learner_id: learner_id.to_string(),
-        track_id: track_id.to_string(),
-        pack_id: pack_id.map(|s| s.to_string()),
-        kind: kind.to_string(),
-        level: level.to_string(),
-        issued_at: issued_at.to_string(),
-        mastery_score,
-        payload_json,
-        signature: sig_hex,
-        key_fingerprint: key_fingerprint.to_string(),
-        track_topic: track_topic.to_string(),
-    })
-}
-
-/// Issuance entry point — called from BKT path after `became_completed`.
-/// Computes the aggregate, determines missing levels, INSERTs OR IGNOREs
-/// freshly-signed rows. Idempotent on repeat (empty Vec). R4 immutability:
-/// existing rows are never updated.
+/// Issue any pending achievements for a learner+track. Legacy signature
+/// preserved for the two pre-Wave-8 callers:
+/// `commands/learning.rs:399` (`submit_quiz`) and the
+/// `commands/learning.rs::tests` + `commands/achievements.rs::tests`
+/// fixtures.
+///
+/// Internally:
+/// - wraps `&Connection` in [`SqliteAchievementStore`] so the
+///   [`AchievementStore`] trait surface is available;
+/// - wraps `(&signing_key_mutex, &key_dir)` in [`MutexCachedKeyStore`]
+///   so the Phase 6 lazy-init + per-process cache semantics survive;
+/// - supplies `Utc::now()` as the A5 clock (the same call site the
+///   pre-Wave-8 body used internally);
+/// - delegates to [`maybe_issue_core`].
+///
+/// Returns the freshly-issued rows (empty `Vec` on the idempotent path).
+/// Wave 10 cleanup rewrites callers to invoke `maybe_issue_core` with
+/// their own clock + their own `SigningKeyStore`.
 pub fn maybe_issue(
     conn: &Connection,
     track_id: &str,
     learner_id: &str,
     signing_key: &Mutex<Option<SigningKey>>,
-    key_path: &Path,
+    key_dir: &Path,
 ) -> Result<Vec<Achievement>, AchievementError> {
-    let agg = threshold::track_mastery_aggregate(conn, track_id, learner_id)?;
-    if agg.modules_total == 0 {
-        return Ok(Vec::new());
-    }
-    let now_met = threshold::levels_met(&agg);
-    if now_met.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Fetch existing levels for this (learner, track).
-    let already: HashSet<String> = {
-        let mut stmt = conn.prepare(
-            "SELECT level FROM achievements WHERE learner_id = ?1 AND track_id = ?2",
-        )?;
-        let rows = stmt
-            .query_map([learner_id, track_id], |r| r.get::<_, String>(0))?
-            .filter_map(Result::ok)
-            .collect();
-        rows
-    };
-
-    // Determine new (kind, level) tuples to insert.
-    let mut to_issue: Vec<(&'static str, &'static str)> = Vec::new();
-    for level in &now_met {
-        if !already.contains(*level) {
-            to_issue.push(("badge", level));
-        }
-    }
-    // Completion certificate when Professional is in now_met AND not
-    // already issued.
-    if now_met.contains(&"Professional") && !already.contains("Completion") {
-        to_issue.push(("certificate", "Completion"));
-    }
-    if to_issue.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let (learner_display, track_topic, pack_id) =
-        lookup_context(conn, track_id, learner_id)?;
-
-    let key = get_or_load_into_mutex(signing_key, key_path)?;
-    let pub_fp = signing::public_key_fingerprint(&key.verifying_key());
-
-    let issued_at = chrono::Utc::now().to_rfc3339();
-    let mut issued: Vec<Achievement> = Vec::new();
-
-    for (kind, level) in to_issue {
-        let ach = build_signed_achievement(
-            &key,
-            &pub_fp,
-            &learner_display,
-            learner_id,
-            &track_topic,
-            track_id,
-            pack_id.as_deref(),
-            kind,
-            level,
-            agg.avg_mastery,
-            &issued_at,
-        )?;
-        let changed = conn.execute(
-            "INSERT OR IGNORE INTO achievements
-                (id, learner_id, track_id, pack_id, kind, level, issued_at,
-                 mastery_score, payload_json, signature, key_fingerprint, track_topic)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            rusqlite::params![
-                ach.id,
-                ach.learner_id,
-                ach.track_id,
-                ach.pack_id,
-                ach.kind,
-                ach.level,
-                ach.issued_at,
-                ach.mastery_score,
-                ach.payload_json,
-                ach.signature,
-                ach.key_fingerprint,
-                ach.track_topic,
-            ],
-        )?;
-        // Only push when the row was actually inserted. INSERT OR IGNORE
-        // returns 0 changes when the UNIQUE constraint suppresses the row.
-        if changed > 0 {
-            issued.push(ach);
-        }
-    }
-    Ok(issued)
+    let store = SqliteAchievementStore(conn);
+    let key_store = MutexCachedKeyStore::new(signing_key, key_dir);
+    maybe_issue_core(&store, &key_store, track_id, learner_id, Utc::now())
 }
 
-/// Look up a single Achievement row by id. `Err(Validation)` on miss.
+// ── Legacy IPC-helper wrappers ───────────────────────────────────────────
+
+/// List the active learner's achievements (`issued_at DESC, id ASC`).
+/// Thin wrapper around [`AchievementStore::list_for_learner`] preserving
+/// the pre-Wave-8 free-fn surface that `commands/achievements.rs:120`
+/// imports.
+pub fn list_for_learner_impl(conn: &Connection) -> Result<Vec<Achievement>, AchievementError> {
+    SqliteAchievementStore(conn).list_for_learner()
+}
+
+/// Look up a single [`Achievement`] row by id. `Err(Validation)` on miss.
+/// Thin wrapper around [`AchievementStore::lookup_achievement`].
 pub fn lookup_achievement_impl(
     conn: &Connection,
     achievement_id: &str,
 ) -> Result<Achievement, AchievementError> {
-    conn.query_row(
-        "SELECT id, learner_id, track_id, pack_id, kind, level, issued_at,
-                mastery_score, payload_json, signature, key_fingerprint, track_topic
-         FROM achievements WHERE id = ?1",
-        [achievement_id],
-        |r| {
-            Ok(Achievement {
-                id: r.get(0)?,
-                learner_id: r.get(1)?,
-                track_id: r.get(2)?,
-                pack_id: r.get(3)?,
-                kind: r.get(4)?,
-                level: r.get(5)?,
-                issued_at: r.get(6)?,
-                mastery_score: r.get(7)?,
-                payload_json: r.get(8)?,
-                signature: r.get(9)?,
-                key_fingerprint: r.get(10)?,
-                track_topic: r.get(11)?,
-            })
-        },
-    )
-    .map_err(|e| {
-        AchievementError::Validation(format!("achievement {} not found: {}", achievement_id, e))
-    })
+    SqliteAchievementStore(conn).lookup_achievement(achievement_id)
 }
 
-/// List the active learner's achievements in `issued_at DESC` order.
+/// Per-track certifications: earned levels + next-level criteria.
 ///
-/// Single-learner desktop: when `learner_profiles` has a single row (the
-/// canonical Phase 6 state), we return every achievement. If multiple
-/// profiles exist (multi-tenant future), the caller is expected to resolve
-/// the active learner upstream and filter via SQL — this impl just streams
-/// the table.
-pub fn list_for_learner_impl(conn: &Connection) -> Result<Vec<Achievement>, AchievementError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, learner_id, track_id, pack_id, kind, level, issued_at,
-                mastery_score, payload_json, signature, key_fingerprint, track_topic
-         FROM achievements
-         ORDER BY issued_at DESC, id ASC",
-    )?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok(Achievement {
-                id: r.get(0)?,
-                learner_id: r.get(1)?,
-                track_id: r.get(2)?,
-                pack_id: r.get(3)?,
-                kind: r.get(4)?,
-                level: r.get(5)?,
-                issued_at: r.get(6)?,
-                mastery_score: r.get(7)?,
-                payload_json: r.get(8)?,
-                signature: r.get(9)?,
-                key_fingerprint: r.get(10)?,
-                track_topic: r.get(11)?,
-            })
-        })?
-        .filter_map(Result::ok)
-        .collect::<Vec<_>>();
-    Ok(rows)
-}
-
-/// Per-track earned-levels + next-level criteria.
-///
-/// Reads only `kind='badge'` rows (the three skill ladder rungs); the
-/// completion certificate is independent. `learner_id` is required to
-/// filter — Phase 6 is single-learner, but the impl stays multi-tenant-ready.
+/// Computes `next_level` + `criteria` from the badge-level set returned
+/// by [`AchievementStore::earned_badge_levels`]. The string template
+/// + the ladder ordering match the pre-Wave-8 body verbatim — frontend
+/// surfaces (Settings / Achievements panel) depend on the exact wording.
 pub fn get_track_certifications_impl(
     conn: &Connection,
     track_id: &str,
     learner_id: &str,
 ) -> Result<TrackCertifications, AchievementError> {
-    let mut stmt = conn.prepare(
-        "SELECT level FROM achievements
-         WHERE learner_id = ?1 AND track_id = ?2 AND kind = 'badge'",
-    )?;
-    let earned_levels: Vec<String> = stmt
-        .query_map([learner_id, track_id], |r| r.get::<_, String>(0))?
-        .filter_map(Result::ok)
-        .collect();
-
+    let store = SqliteAchievementStore(conn);
+    let earned_levels = store.earned_badge_levels(track_id, learner_id)?;
     let has = |name: &str| earned_levels.iter().any(|l| l == name);
 
     let (next_level, criteria) = if !has("Associate") {
-        (Some("Associate".to_string()), "25% of modules mastered".to_string())
+        (
+            Some("Associate".to_string()),
+            "25% of modules mastered".to_string(),
+        )
     } else if !has("Practitioner") {
         (
             Some("Practitioner".to_string()),
@@ -419,8 +225,16 @@ pub fn get_track_certifications_impl(
     })
 }
 
+// ── SQL-touching integration tests (Phase 6 acceptance preserved) ───────
+
 #[cfg(test)]
 mod tests {
+    //! SQL-touching integration tests covering the end-to-end shim
+    //! seam: `&Connection` → `SqliteAchievementStore` →
+    //! `MutexCachedKeyStore` → `learnforge_core::achievements::maybe_issue`.
+    //! Pure-algorithm tests live in
+    //! `learnforge_core::achievements::tests` (run against inline stubs).
+
     use super::*;
     use crate::db::migrations::apply_migrations;
     use crate::db::schema;
@@ -470,8 +284,12 @@ mod tests {
         }
     }
 
-    fn empty_key_slot() -> Mutex<Option<SigningKey>> { Mutex::new(None) }
-    fn fresh_key_dir() -> tempfile::TempDir { tempfile::tempdir().expect("tempdir") }
+    fn empty_key_slot() -> Mutex<Option<SigningKey>> {
+        Mutex::new(None)
+    }
+    fn fresh_key_dir() -> tempfile::TempDir {
+        tempfile::tempdir().expect("tempdir")
+    }
 
     /// 1/4 modules above 0.7 = 25% (Associate only).
     const ONE_OF_FOUR: &[(&str, f64, bool, f64)] = &[
@@ -507,10 +325,13 @@ mod tests {
         let second = maybe_issue(&conn, "trk1", "lp1", &key_slot, key_dir.path()).expect("second");
         assert_eq!(first.len(), 1);
         assert!(second.is_empty(), "second call must be a no-op");
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM achievements WHERE learner_id='lp1' AND track_id='trk1'",
-            [], |r| r.get(0)
-        ).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM achievements WHERE learner_id='lp1' AND track_id='trk1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 1);
     }
 
@@ -518,17 +339,32 @@ mod tests {
     fn professional_emits_badge_and_certificate() {
         let conn = fresh_conn();
         // All 4 mastered; avg 0.9125 >= 0.85; m2 lab passed (0.80).
-        seed_track(&conn, "trk1", "lp1", "Kubernetes", &[
-            ("m1", 0.90, false, 0.0),
-            ("m2", 0.88, true, 0.80),
-            ("m3", 0.95, false, 0.0),
-            ("m4", 0.92, false, 0.0),
-        ]);
-        let issued = maybe_issue(&conn, "trk1", "lp1", &empty_key_slot(), fresh_key_dir().path()).expect("issue");
+        seed_track(
+            &conn,
+            "trk1",
+            "lp1",
+            "Kubernetes",
+            &[
+                ("m1", 0.90, false, 0.0),
+                ("m2", 0.88, true, 0.80),
+                ("m3", 0.95, false, 0.0),
+                ("m4", 0.92, false, 0.0),
+            ],
+        );
+        let issued = maybe_issue(
+            &conn,
+            "trk1",
+            "lp1",
+            &empty_key_slot(),
+            fresh_key_dir().path(),
+        )
+        .expect("issue");
         // 4 rows: 3 badges + 1 certificate.
         assert_eq!(issued.len(), 4);
-        let kinds: std::collections::HashSet<(String, String)> =
-            issued.iter().map(|a| (a.kind.clone(), a.level.clone())).collect();
+        let kinds: std::collections::HashSet<(String, String)> = issued
+            .iter()
+            .map(|a| (a.kind.clone(), a.level.clone()))
+            .collect();
         assert!(kinds.contains(&("badge".into(), "Associate".into())));
         assert!(kinds.contains(&("badge".into(), "Practitioner".into())));
         assert!(kinds.contains(&("badge".into(), "Professional".into())));
@@ -539,16 +375,32 @@ mod tests {
     fn professional_blocked_when_practical_lab_missing() {
         let conn = fresh_conn();
         // m2 practical_required=true but practical_mastery 0.3 < 0.7.
-        seed_track(&conn, "trk1", "lp1", "Kubernetes", &[
-            ("m1", 0.90, false, 0.0),
-            ("m2", 0.88, true, 0.30),
-            ("m3", 0.95, false, 0.0),
-            ("m4", 0.92, false, 0.0),
-        ]);
-        let issued = maybe_issue(&conn, "trk1", "lp1", &empty_key_slot(), fresh_key_dir().path()).expect("issue");
+        seed_track(
+            &conn,
+            "trk1",
+            "lp1",
+            "Kubernetes",
+            &[
+                ("m1", 0.90, false, 0.0),
+                ("m2", 0.88, true, 0.30),
+                ("m3", 0.95, false, 0.0),
+                ("m4", 0.92, false, 0.0),
+            ],
+        );
+        let issued = maybe_issue(
+            &conn,
+            "trk1",
+            "lp1",
+            &empty_key_slot(),
+            fresh_key_dir().path(),
+        )
+        .expect("issue");
         let levels: Vec<&str> = issued.iter().map(|a| a.level.as_str()).collect();
         assert!(levels.contains(&"Associate") && levels.contains(&"Practitioner"));
-        assert!(!levels.contains(&"Professional"), "missing labs blocks Professional");
+        assert!(
+            !levels.contains(&"Professional"),
+            "missing labs blocks Professional"
+        );
         assert!(!levels.contains(&"Completion"));
     }
 
@@ -569,21 +421,31 @@ mod tests {
             [],
         ).unwrap();
 
-        let second = maybe_issue(&conn, "trk1", "lp1", &key_slot, key_dir.path()).expect("re-issue");
+        let second =
+            maybe_issue(&conn, "trk1", "lp1", &key_slot, key_dir.path()).expect("re-issue");
         assert!(second.is_empty(), "decay must NOT trigger re-issuance");
 
-        let row_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM achievements WHERE learner_id='lp1' AND track_id='trk1' AND level='Associate'",
-            [], |r| r.get(0)
-        ).unwrap();
+        let row_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM achievements WHERE learner_id='lp1' AND track_id='trk1' AND level='Associate'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(row_count, 1, "row must remain after decay");
 
-        let (sig_db, score_db): (String, f64) = conn.query_row(
-            "SELECT signature, mastery_score FROM achievements WHERE id = ?1",
-            [&original.id], |r| Ok((r.get(0)?, r.get(1)?))
-        ).unwrap();
+        let (sig_db, score_db): (String, f64) = conn
+            .query_row(
+                "SELECT signature, mastery_score FROM achievements WHERE id = ?1",
+                [&original.id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
         assert_eq!(sig_db, original.signature, "signature unchanged");
-        assert!((score_db - original.mastery_score).abs() < 1e-9, "snapshot unchanged");
+        assert!(
+            (score_db - original.mastery_score).abs() < 1e-9,
+            "snapshot unchanged"
+        );
     }
 
     /// Canonical bytes of payload_json verify against the on-disk public key.
@@ -597,16 +459,28 @@ mod tests {
         assert_eq!(issued.len(), 1);
         let public_pem = signing::read_public_pem(key_dir.path()).expect("public pem");
         let a = &issued[0];
-        assert!(signing::verify_payload(&public_pem, a.payload_json.as_bytes(), &a.signature));
+        assert!(signing::verify_payload(
+            &public_pem,
+            a.payload_json.as_bytes(),
+            &a.signature
+        ));
         let mut tampered = a.payload_json.clone();
         tampered.push(' ');
-        assert!(!signing::verify_payload(&public_pem, tampered.as_bytes(), &a.signature));
+        assert!(!signing::verify_payload(
+            &public_pem,
+            tampered.as_bytes(),
+            &a.signature
+        ));
     }
 
     #[test]
     fn empty_track_returns_no_issuance() {
         let conn = fresh_conn();
-        conn.execute("INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'T')", []).unwrap();
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'T')",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk-empty', 'lp1', 'X', 'd', 'g')",
             []
@@ -615,7 +489,14 @@ mod tests {
             "INSERT INTO learning_paths (id, track_id, version, edges_json, modules_json, generated_by_model) VALUES ('p-empty', 'trk-empty', 1, '[]', '[]', 'test')",
             []
         ).unwrap();
-        let issued = maybe_issue(&conn, "trk-empty", "lp1", &empty_key_slot(), fresh_key_dir().path()).expect("issue");
+        let issued = maybe_issue(
+            &conn,
+            "trk-empty",
+            "lp1",
+            &empty_key_slot(),
+            fresh_key_dir().path(),
+        )
+        .expect("issue");
         assert!(issued.is_empty(), "no modules = no achievements");
     }
 
@@ -628,16 +509,21 @@ mod tests {
         let key_dir = fresh_key_dir();
         let _key_path: PathBuf = key_dir.path().to_path_buf();
         let first = maybe_issue(&conn, "trk-x", "lnr-x", &key_slot, key_dir.path()).expect("first");
-        let second = maybe_issue(&conn, "trk-x", "lnr-x", &key_slot, key_dir.path()).expect("second");
+        let second =
+            maybe_issue(&conn, "trk-x", "lnr-x", &key_slot, key_dir.path()).expect("second");
         assert!(!first.is_empty());
-        assert!(second.is_empty(), "second call must yield no new achievements");
+        assert!(
+            second.is_empty(),
+            "second call must yield no new achievements"
+        );
     }
 
     // ── CR-03 (pack_id provenance) tests ──────────────────────────────
 
     /// Variant of seed_track that lets each test choose the
     /// `learning_paths.generated_by_model` value — the column we now
-    /// parse `topic-pack:<id>` out of inside `lookup_context`.
+    /// parse `topic-pack:<id>` out of inside
+    /// `SqliteAchievementStore::lookup_issuance_context`.
     fn seed_track_with_model(
         conn: &Connection,
         track_id: &str,
@@ -675,9 +561,7 @@ mod tests {
     /// CR-03 — pack-sourced tracks (Phase 5 generate_path_from_pack
     /// writes `learning_paths.generated_by_model = "topic-pack:<id>"`)
     /// must propagate the pack id into the signed CertPayloadV1 AND the
-    /// `achievements.pack_id` column. Before the fix, lookup_context
-    /// hardcoded None, so every cert dropped pack provenance regardless
-    /// of source.
+    /// `achievements.pack_id` column.
     #[test]
     fn pack_sourced_track_writes_pack_id_to_payload_and_row() {
         let conn = fresh_conn();
@@ -723,8 +607,7 @@ mod tests {
     }
 
     /// CR-03 — free-text / AI-generated tracks (no `topic-pack:` prefix)
-    /// still issue achievements with pack_id = None. This is the
-    /// canonical "no provenance" case, NOT an error.
+    /// still issue achievements with pack_id = None.
     #[test]
     fn free_text_track_keeps_pack_id_none() {
         let conn = fresh_conn();
@@ -753,7 +636,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(row.is_none(), "AI-generated tracks must NOT claim pack provenance");
+        assert!(
+            row.is_none(),
+            "AI-generated tracks must NOT claim pack provenance"
+        );
 
         let payload: CertPayloadV1 =
             serde_json::from_str(&issued[0].payload_json).expect("parse v1 payload");
@@ -762,11 +648,13 @@ mod tests {
     }
 
     /// CR-03 edge case — legacy track that predates the Phase 5 column
-    /// regime (no learning_paths row at all). The query returns no rows;
-    /// the fix must gracefully fall back to pack_id = None instead of
-    /// crashing or refusing to issue. We exercise this by inserting a
-    /// learner_profile + learning_track + modules + module_progress
-    /// WITHOUT inserting into learning_paths.
+    /// regime (no learning_paths row at all). Threshold reads
+    /// module_progress by learner+track via the
+    /// modules→learning_paths→learning_tracks chain. The legacy track
+    /// has no learning_paths row, so the aggregate yields 0 modules and
+    /// maybe_issue returns Ok([]) without ever calling
+    /// lookup_issuance_context. That's the safe "no provenance, no
+    /// crash" outcome.
     #[test]
     fn track_without_learning_paths_row_issues_with_pack_id_none() {
         let conn = fresh_conn();
@@ -780,12 +668,8 @@ mod tests {
             [],
         )
         .unwrap();
-        // No learning_paths row — simulating legacy data shape.
-        // Modules need a path_id; insert a path now WITHOUT a model
-        // value (NULL would violate NOT NULL DEFAULT — but the absence
-        // of any matching learning_paths.track_id row is the scenario
-        // we want). Use a separate orphan path linked to a *different*
-        // track to demonstrate the lookup returns no rows for trk-legacy.
+        // Orphan path linked to a *different* track to demonstrate the
+        // lookup returns no rows for trk-legacy.
         conn.execute(
             "INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) VALUES ('trk-other', 'lp1', 'Other', 'devops', 'Cert')",
             [],
@@ -794,9 +678,6 @@ mod tests {
             "INSERT INTO learning_paths (id, track_id, version, edges_json, modules_json, generated_by_model) VALUES ('p-other', 'trk-other', 1, '[]', '[]', 'topic-pack:other')",
             [],
         ).unwrap();
-        // Modules for trk-legacy hang off the orphan path's id — we
-        // only need them so the threshold computation has data; the
-        // achievements lookup_context only cares about the track row.
         for (i, (mid, ml)) in [("ml1", 0.75), ("ml2", 0.40), ("ml3", 0.30), ("ml4", 0.30)]
             .iter()
             .enumerate()
@@ -811,12 +692,6 @@ mod tests {
             ).unwrap();
         }
 
-        // Threshold reads module_progress by learner+track via the
-        // modules→learning_paths→learning_tracks chain. The legacy track
-        // has no learning_paths row, so the aggregate yields 0 modules
-        // and maybe_issue returns Ok([]) without ever calling
-        // lookup_context. That's the safe "no provenance, no crash"
-        // outcome we wanted to verify.
         let issued = maybe_issue(
             &conn,
             "trk-legacy",

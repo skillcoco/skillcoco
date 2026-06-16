@@ -40,28 +40,11 @@ pub use learnforge_core::signing::{
 // reach in through `achievements::signing::*`.
 pub use crate::storage_impl::signing::FsKeyStore;
 
-// ── Error envelope conversions (shim-internal) ─────────────────────────────
-
-impl From<SigningError> for AchievementError {
-    fn from(e: SigningError) -> Self {
-        match e {
-            SigningError::InvalidSignature => {
-                AchievementError::Signature("invalid signature".to_string())
-            }
-            SigningError::KeyEncoding(msg) => AchievementError::Pkcs8(msg),
-            SigningError::Io(msg) => {
-                AchievementError::Io(std::io::Error::new(std::io::ErrorKind::Other, msg))
-            }
-            SigningError::Canonical(c) => AchievementError::Validation(c.to_string()),
-        }
-    }
-}
-
-impl From<CanonicalJsonError> for AchievementError {
-    fn from(e: CanonicalJsonError) -> Self {
-        AchievementError::Validation(e.to_string())
-    }
-}
+// ── Error envelope conversions ─────────────────────────────────────────────
+//
+// `From<SigningError> for AchievementError` and `From<CanonicalJsonError>
+// for AchievementError` now live in `learnforge_core::achievements`
+// (Wave 8). They moved with the type. This file imports + uses them.
 
 // ── Legacy FS-backed wrappers (delegate to FsKeyStore) ─────────────────────
 

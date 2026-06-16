@@ -147,6 +147,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`src-tauri/src/achievements/mod.rs` is now a transitional shim**
+  (Phase 7 Wave 8 / 07-08) — re-exports `Achievement`, `CertPayloadV1`,
+  `AchievementError`, `TrackCertifications`, `IssuanceContext`,
+  `CertificatePdfInput`, `BadgePngInput`, `AchievementStore` from
+  `learnforge_core::achievements`. The pre-Wave-8 `maybe_issue` body
+  (lines 213-307) and the four SQL helpers (`lookup_context`,
+  `list_for_learner_impl`, `lookup_achievement_impl`,
+  `get_track_certifications_impl`) are deleted from this file; the
+  algorithm now lives in core and the SQL bodies in
+  `src-tauri/src/storage_impl/achievements.rs`. The shim preserves the
+  pre-Wave-8 `maybe_issue(conn, track_id, learner_id, signing_key_mutex,
+  key_dir)` signature for `commands/learning.rs:399` (`submit_quiz`)
+  via a `MutexCachedKeyStore` adapter that closes over the existing
+  `Mutex<Option<SigningKey>>` cache + delegates cold-path key loading
+  to `FsKeyStore`. `list_for_learner_impl`, `lookup_achievement_impl`,
+  and `get_track_certifications_impl` are kept as thin wrappers around
+  the `AchievementStore` trait methods so the
+  `commands/achievements.rs:17-21` imports compile unchanged. **D-03
+  amendment confirmed:** `pub mod artifacts;` is preserved — the PDF /
+  PNG / QR renderers stay here verbatim because `printpdf` / `image` /
+  `qrcode` are not WASM-portable. The 12 SQL-touching Phase 6
+  acceptance tests stay in this file (they need a real
+  `rusqlite::Connection`); pure-algorithm tests moved with the
+  algorithm to `learnforge_core::achievements::tests`. No
+  `#[deprecated]` on re-exports — Wave 10 grep-and-rewrite is the
+  cleanup target.
+- **`src-tauri/src/storage_impl/achievements.rs` lands the rusqlite
+  `AchievementStore` impl** (Phase 7 Wave 8 / 07-08) —
+  `SqliteAchievementStore<'a>(pub &'a Connection)` newtype implements
+  the seven trait methods. Six SQL bodies are lifted **verbatim** from
+  the pre-Wave-8 `src-tauri/src/achievements/mod.rs` free fns; the
+  seventh (`track_mastery_aggregate`) delegates to the Wave 4 parked
+  free fn in `crate::storage_impl::threshold::track_mastery_aggregate`
+  — **closing the Wave-4 forward-declared seam**. `rusqlite::Error` is
+  stringified at the trust boundary via a local `db_err` helper
+  (orphan-rule mitigation — same pattern as `BktError::Db` /
+  `SrError::Db` / `PackError::Loader` in earlier waves). Eighth and
+  final application of the orphan-rule newtype pattern.
+- **`src-tauri/src/storage_impl/threshold.rs` seam closed** (Phase 7
+  Wave 8 / 07-08) — module docstring rewritten to record that the
+  Wave-4 forward-declared seam is now CLOSED:
+  `SqliteAchievementStore::track_mastery_aggregate` delegates to
+  `track_mastery_aggregate` here. The SQL body is unchanged; only the
+  call shape moved (free fn → trait method dispatch through a
+  newtype-wrapped `&Connection`). The free fn still exists because the
+  Wave-4 transitional shim at `src-tauri/src/achievements/threshold.rs`
+  re-exports it. Wave 10 grep-and-rewrite switches every callsite to
+  the trait method via `SqliteAchievementStore(&conn)` and deletes the
+  file. Error envelope shifted from `?` (via deleted shim
+  `impl From<rusqlite::Error> for AchievementError`) to
+  `.map_err(|e| AchievementError::Db(e.to_string()))` — same string
+  rendering, explicit at the trust boundary.
+- **`src-tauri/src/achievements/signing.rs` simplified** (Phase 7
+  Wave 8 / 07-08) — the local `impl From<SigningError> for
+  AchievementError` and `impl From<CanonicalJsonError> for
+  AchievementError` blocks are deleted because Wave 8 added those
+  impls to `learnforge_core::achievements::AchievementError` via
+  `#[from]`. The signing shim now only re-exports core's pure surface
+  plus the `FsKeyStore`-backed FS wrappers (`get_or_init_key`,
+  `read_public_pem`) and the `canonical_json_bytes` adapter.
 - **`src-tauri/src/topic_packs/*` is now a transitional shim group**
   (Phase 7 Wave 7 / 07-07) — `mod.rs`, `error.rs`, `model.rs`,
   `schema.rs`, `registry.rs` re-export from `learnforge_core::packs::*`.

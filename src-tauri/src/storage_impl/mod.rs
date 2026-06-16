@@ -6,8 +6,9 @@
 //!
 //! - [`bkt`] — `SqliteBktStore<'a>(&'a Connection)` (Phase 7 Wave 2).
 //! - [`sr`] — `SqliteSrStore<'a>(&'a Connection)` (Phase 7 Wave 3).
-//! - [`threshold`] — parked `track_mastery_aggregate` free fn (Phase 7
-//!   Wave 4); Wave 8 will promote it to an `AchievementStore` trait method.
+//! - [`threshold`] — `track_mastery_aggregate` free fn (Phase 7 Wave 4);
+//!   Wave 8 closes the seam — the [`AchievementStore::track_mastery_aggregate`]
+//!   trait method delegates here.
 //! - [`microlearning`] — `SqliteMicrolearningStore<'a>(&'a Connection)`
 //!   (Phase 7 Wave 4).
 //! - [`signing`] — `FsKeyStore { key_dir: PathBuf }` (Phase 7 Wave 5);
@@ -18,12 +19,18 @@
 //! - [`packs`] — `SqlitePackStore<'a>(&'a Connection)` (Phase 7 Wave 7);
 //!   `topic_packs` table CRUD honoring D-09 enabled-on-conflict +
 //!   CR-02 source-column stickiness.
+//! - [`achievements`] — `SqliteAchievementStore<'a>(&'a Connection)`
+//!   (Phase 7 Wave 8 — eighth and final application of the per-module
+//!   storage-trait recipe). `track_mastery_aggregate` method body
+//!   delegates to the [`threshold`] free fn (Wave 4 seam closed).
 //!
-//! Later waves add `achievements`.
-//!
-//! Both adapters use the local-newtype pattern to satisfy Rust's orphan rule
+//! All adapters use the local-newtype pattern to satisfy Rust's orphan rule
 //! (E0117) — see each module's "Orphan-rule note" for details.
+//!
+//! [`AchievementStore::track_mastery_aggregate`]:
+//!   learnforge_core::achievements::AchievementStore::track_mastery_aggregate
 
+pub mod achievements;
 pub mod bkt;
 pub mod blocks;
 pub mod microlearning;

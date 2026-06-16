@@ -1,16 +1,34 @@
-//! Wave 4 parking spot — `track_mastery_aggregate` stays in src-tauri
-//! because it issues raw SQL via `rusqlite`. The pure predicates
-//! (`TrackAggregate`, `which_level_just_crossed`, `levels_met`) moved to
-//! `learnforge_core::threshold` during Wave 4.
+//! `track_mastery_aggregate` — rusqlite-backed SQL aggregate computing a
+//! [`TrackAggregate`] from `module_progress` rows. The pure predicates
+//! (`which_level_just_crossed`, `levels_met`) live in
+//! `learnforge_core::threshold`.
 //!
-//! Wave 8 (`07-08-PLAN.md`) lands the `AchievementStore` trait next to
-//! the achievements algorithm in `learnforge-core::achievements`. At
-//! that point this free function becomes the body of an
-//! `AchievementStore::track_mastery_aggregate` method — the SQL is
-//! unchanged; only the call seam moves.
+//! ## Wave 4 ↔ Wave 8 seam (CLOSED)
+//!
+//! Wave 4 (07-04) parked this free function here pending Wave 8's
+//! [`AchievementStore`] trait declaration. Wave 8 (07-08) closed the seam:
+//! [`AchievementStore::track_mastery_aggregate`] on
+//! [`SqliteAchievementStore`] delegates to the body below — the SQL string
+//! is unchanged; only the call shape moved from "free fn called by
+//! src-tauri" to "trait method dispatched through a newtype-wrapped
+//! `&Connection`".
+//!
+//! Why the free fn still exists: Wave 4's transitional shim at
+//! `src-tauri/src/achievements/threshold.rs` re-exports it (`pub use
+//! crate::storage_impl::threshold::track_mastery_aggregate`) and the
+//! single intra-crate callsite reaches it through that path. Wave 10
+//! grep-and-rewrite will switch every callsite to invoke the trait method
+//! through `SqliteAchievementStore(&conn)` and delete this file.
 //!
 //! No cross-wave dependency violation: this file lives in `src-tauri`
-//! only; `learnforge_core::threshold` imports nothing from it.
+//! only; `learnforge_core::threshold` imports nothing from it. The
+//! trait-method delegation is intra-`src-tauri` (storage_impl →
+//! storage_impl).
+//!
+//! [`AchievementStore`]: learnforge_core::achievements::AchievementStore
+//! [`AchievementStore::track_mastery_aggregate`]:
+//!   learnforge_core::achievements::AchievementStore::track_mastery_aggregate
+//! [`SqliteAchievementStore`]: crate::storage_impl::achievements::SqliteAchievementStore
 
 use crate::achievements::AchievementError;
 use learnforge_core::threshold::TrackAggregate;
@@ -24,9 +42,12 @@ use rusqlite::Connection;
 /// `json_extract`, and checks practical_mastery >= 0.7 for each
 /// practical-required module.
 ///
-/// Wave 4 move (07-04): body lifted verbatim from
-/// `src-tauri/src/achievements/threshold.rs:99-159` (pre-Wave-4
-/// snapshot). Wave 8 will promote this to a trait method.
+/// Body lifted verbatim from `src-tauri/src/achievements/threshold.rs:99-159`
+/// (pre-Wave-4 snapshot). Phase 7 Wave 8 closed the seam:
+/// [`SqliteAchievementStore::track_mastery_aggregate`] delegates here.
+///
+/// [`SqliteAchievementStore::track_mastery_aggregate`]:
+///   crate::storage_impl::achievements::SqliteAchievementStore
 pub fn track_mastery_aggregate(
     conn: &Connection,
     track_id: &str,
@@ -72,7 +93,7 @@ pub fn track_mastery_aggregate(
         "#,
         rusqlite::params![track_id, learner_id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-    )?;
+    ).map_err(|e| AchievementError::Db(e.to_string()))?;
 
     let modules_total = row.0 as usize;
     let modules_mastered = row.1 as usize;
