@@ -30,7 +30,7 @@
 //!   learnforge_core::achievements::AchievementStore::track_mastery_aggregate
 //! [`SqliteAchievementStore`]: crate::storage_impl::achievements::SqliteAchievementStore
 
-use crate::achievements::AchievementError;
+use learnforge_core::achievements::AchievementError;
 use learnforge_core::threshold::TrackAggregate;
 use rusqlite::Connection;
 

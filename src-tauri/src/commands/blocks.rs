@@ -1,12 +1,63 @@
 use crate::auth::AuthState;
-use crate::db::blocks::{
-    count_blocks_by_module, delete_blocks_by_module, get_block, insert_block,
-    list_blocks_by_module, update_block_payload, BlockStatus, ModuleBlock,
-};
+use crate::storage_impl::blocks::SqliteBlockStore;
 use crate::AppState;
+use learnforge_core::blocks::{BlockStatus, BlockStore, BlocksError, ModuleBlock};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::State;
+
+// ── Local thin wrappers around `SqliteBlockStore` ─────────────────────────
+//
+// Wave 10 cleanup: pre-Wave-6 src-tauri exposed free-fn facades
+// (`insert_block`, `list_blocks_by_module`, etc.) on top of the rusqlite
+// adapter. Wave 6 (Plan 07-06) moved the trait declaration into
+// `learnforge_core::blocks::BlockStore` and the rusqlite impl into
+// `crate::storage_impl::blocks::SqliteBlockStore`. Wave 10 deletes the
+// transitional `src-tauri/src/db/blocks.rs` re-export shim; these local
+// wrappers preserve the dense `commands/blocks.rs` callsite shape against
+// the trait-bound API without forcing every callsite to construct a fresh
+// `SqliteBlockStore` adapter.
+//
+// They are deliberately scoped to this module — no `pub`, no re-export —
+// so the boundary check "src-tauri must not depend on the deleted shim
+// paths" stays satisfied even as the same surface is wrapped here for
+// ergonomics.
+
+fn insert_block(conn: &Connection, b: &ModuleBlock) -> Result<(), BlocksError> {
+    SqliteBlockStore(conn).insert(b)
+}
+
+fn list_blocks_by_module(
+    conn: &Connection,
+    module_id: &str,
+) -> Result<Vec<ModuleBlock>, BlocksError> {
+    SqliteBlockStore(conn).list_for_module(module_id)
+}
+
+fn get_block(
+    conn: &Connection,
+    block_id: &str,
+) -> Result<Option<ModuleBlock>, BlocksError> {
+    SqliteBlockStore(conn).get_by_id(block_id)
+}
+
+fn update_block_payload(
+    conn: &Connection,
+    id: &str,
+    status: BlockStatus,
+    payload_json: &str,
+) -> Result<(), BlocksError> {
+    SqliteBlockStore(conn).update_payload(id, status, payload_json)
+}
+
+fn count_blocks_by_module(conn: &Connection, module_id: &str) -> Result<i64, BlocksError> {
+    SqliteBlockStore(conn).count_for_module(module_id)
+}
+
+fn delete_blocks_by_module(conn: &Connection, module_id: &str) -> Result<usize, BlocksError> {
+    SqliteBlockStore(conn).delete_for_module(module_id)
+}
 
 // ── IPC Request / Response structs ──
 // All structs cross the Tauri IPC boundary and MUST use camelCase serde.
@@ -1346,7 +1397,13 @@ pub async fn regenerate_module(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::blocks::{insert_block, BlockStatus};
+    // Wave 10 cleanup: `insert_block` + `BlockStatus` are now brought into
+    // scope from the parent module (the local wrappers defined at the top
+    // of `commands/blocks.rs` + the `learnforge_core::blocks::BlockStatus`
+    // re-export the parent already pulls in). The pre-Wave-10 import lived
+    // at `crate::db::blocks::{insert_block, BlockStatus}` — both have been
+    // re-rooted; no test-body changes required.
+    use super::{insert_block, BlockStatus};
     use crate::db::migrations::apply_migrations;
     use crate::db::schema;
     use rusqlite::Connection;

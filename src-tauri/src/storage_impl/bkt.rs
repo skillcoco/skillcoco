@@ -16,9 +16,11 @@
 //! [`SqliteBktStore`], which owns a `&Connection` and carries the impl.
 //!
 //! The wrapper is zero-cost (single-field tuple struct around a reference)
-//! and the call-site ergonomics are preserved by the
-//! `crate::learning::path::all_prerequisites_mastered` shim that wraps the
-//! connection on the caller's behalf.
+//! and the call-site ergonomics are preserved by callers constructing
+//! `SqliteBktStore(&conn)` and invoking
+//! `learnforge_core::path::all_prerequisites_mastered(&store, …)` directly
+//! (Wave 10 cleanup; the pre-Wave-10 `crate::learning::path::*` shim was
+//! deleted).
 //!
 //! ## Trust boundary (T-07-05)
 //!

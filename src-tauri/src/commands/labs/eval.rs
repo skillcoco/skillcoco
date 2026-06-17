@@ -265,9 +265,13 @@ fn read_lab_spec_from_db(
         .lock()
         .map_err(|e| format!("db lock: {}", e))?;
     let conn = &db.conn;
-    let block = crate::db::blocks::get_block(conn, block_id)
-        .map_err(|e| format!("get_block: {}", e))?
-        .ok_or_else(|| format!("block not found: {}", block_id))?;
+    let block = {
+        use learnforge_core::blocks::BlockStore;
+        crate::storage_impl::blocks::SqliteBlockStore(conn)
+            .get_by_id(block_id)
+            .map_err(|e| format!("get_block: {}", e))?
+            .ok_or_else(|| format!("block not found: {}", block_id))?
+    };
 
     if !block.payload_json.trim().is_empty() && block.payload_json != "{}" {
         if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&block.payload_json) {

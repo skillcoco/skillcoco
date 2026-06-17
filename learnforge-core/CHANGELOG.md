@@ -234,11 +234,29 @@ _(empty — Phase 8 will populate when publishing.)_
 
 _(src-tauri-side transitional shims and refactors required to keep the
 existing Tauri binary compiling while each algorithm moved into
-`learnforge-core`. Wave 10 will retire the shims by rewriting call
-sites to invoke the core modules directly. Some Wave 5+ "new core
-module" entries are listed here rather than under `### Added` because
-they also implied a src-tauri-side shim swap; the algorithm-side
+`learnforge-core`. Wave 10 retired every shim by rewriting call sites
+to invoke the core modules directly. Some Wave 5+ "new core module"
+entries are listed here rather than under `### Added` because they
+also implied a src-tauri-side shim swap; the algorithm-side
 introduction is documented in the Added section above.)_
+
+- **Wave 10 cleanup (Phase 7 / 07-10)** — all transitional re-export
+  shims in `src-tauri/src/{learning,achievements,topic_packs,db}/` have
+  been removed; call sites now import directly from
+  `learnforge_core::*`. The `MutexCachedKeyStore` adapter (Phase 6
+  lazy-init helper) was lifted from the deleted `achievements/mod.rs`
+  shim into `crate::storage_impl::signing` where it lives next to
+  `FsKeyStore` as a production-only `SigningKeyStore` impl. Six
+  deleted-shim integration-test modules were retired alongside the
+  shim files (the underlying behaviour stays covered by the
+  `learnforge-core` pure tests + the `crate::storage_impl::*` SQL-
+  touching tests). Boundary grep gates verified: `rg "use
+  crate::learning::(adaptive|spaced_repetition|microlearning_selection|path)" src-tauri/src/`,
+  `rg "use crate::achievements::(signing|threshold)" src-tauri/src/`,
+  `rg "use crate::topic_packs::(error|model|schema|registry|persistence)" src-tauri/src/`,
+  and `rg "use crate::db::blocks::" src-tauri/src/` all return 0
+  hits. `cargo test --workspace` is GREEN (the only failures are the
+  pre-existing v003 SQLite migration tests, unchanged by this wave).
 
 - **`src-tauri/src/achievements/mod.rs` is now a transitional shim**
   (Phase 7 Wave 8 / 07-08) — re-exports `Achievement`, `CertPayloadV1`,

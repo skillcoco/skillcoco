@@ -35,9 +35,10 @@ use learnforge_core::packs::loader::PackSource as PackSourceTrait;
 use learnforge_core::packs::{LoadedPack, PackError, PackRegistry, PackSource, ValidationStatus};
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::topic_packs::persistence;
+use crate::storage_impl::packs::SqlitePackStore;
+use learnforge_core::packs::PackStore;
 
 /// Env var that tests use to redirect the skills root to a tempdir.
 /// Production code never sets this — only `#[cfg(test)]` paths do.
@@ -270,7 +271,7 @@ pub fn load_all_with<S: PackSourceTrait>(
             Ok((pack, soft_warnings)) => {
                 let id = pack.id.clone();
                 registry.bundled_ids.insert(id.clone());
-                let enabled = persistence::read_enabled(conn, &id)
+                let enabled = SqlitePackStore(conn).read_enabled(&id)
                     .ok()
                     .flatten()
                     .unwrap_or(true);
@@ -287,7 +288,7 @@ pub fn load_all_with<S: PackSourceTrait>(
                     validation_messages: soft_warnings,
                     last_loaded_at: now_rfc3339(),
                 };
-                let _ = persistence::upsert_pack(conn, &lp);
+                let _ = SqlitePackStore(conn).upsert_pack(&lp);
                 registry.packs.insert(id, lp);
             }
             Err(e) => {
@@ -296,8 +297,7 @@ pub fn load_all_with<S: PackSourceTrait>(
                     dir.path(),
                     e
                 );
-                let _ = persistence::upsert_pack(
-                    conn,
+                let _ = SqlitePackStore(conn).upsert_pack(
                     &sentinel_pack(&id_guess, PackSource::Bundled, &e.to_string()),
                 );
             }
@@ -322,7 +322,7 @@ pub fn reload_skills_with<S: PackSourceTrait>(
         .packs
         .retain(|_, p| p.source != PackSource::Skill);
 
-    if let Err(e) = persistence::delete_skill_rows(conn) {
+    if let Err(e) = SqlitePackStore(conn).delete_skill_rows() {
         log::warn!("Failed to delete skill rows on reload: {}", e);
     }
 
@@ -353,8 +353,7 @@ fn load_skills_via_source<S: PackSourceTrait>(
         // Empty bytes → FsPackSource flagged an oversized file (T-05-06).
         // Treat as a parse failure and persist a sentinel.
         if bytes.is_empty() {
-            let _ = persistence::upsert_pack(
-                conn,
+            let _ = SqlitePackStore(conn).upsert_pack(
                 &sentinel_pack(
                     &id_guess,
                     PackSource::Skill,
@@ -368,8 +367,7 @@ fn load_skills_via_source<S: PackSourceTrait>(
             Ok(s) => s,
             Err(e) => {
                 log::warn!("Skill pack {:?} is not valid UTF-8: {}", id_guess, e);
-                let _ = persistence::upsert_pack(
-                    conn,
+                let _ = SqlitePackStore(conn).upsert_pack(
                     &sentinel_pack(
                         &id_guess,
                         PackSource::Skill,
@@ -390,7 +388,7 @@ fn load_skills_via_source<S: PackSourceTrait>(
                     );
                     continue;
                 }
-                let enabled = persistence::read_enabled(conn, &id)
+                let enabled = SqlitePackStore(conn).read_enabled(&id)
                     .ok()
                     .flatten()
                     .unwrap_or(true);
@@ -407,7 +405,7 @@ fn load_skills_via_source<S: PackSourceTrait>(
                     validation_messages: soft_warnings,
                     last_loaded_at: now_rfc3339(),
                 };
-                let _ = persistence::upsert_pack(conn, &lp);
+                let _ = SqlitePackStore(conn).upsert_pack(&lp);
                 registry.packs.insert(id, lp);
             }
             Err(e) => {
@@ -416,8 +414,7 @@ fn load_skills_via_source<S: PackSourceTrait>(
                     id_guess,
                     e
                 );
-                let _ = persistence::upsert_pack(
-                    conn,
+                let _ = SqlitePackStore(conn).upsert_pack(
                     &sentinel_pack(&id_guess, PackSource::Skill, &e.to_string()),
                 );
             }
@@ -736,7 +733,7 @@ mod tests {
             PackSource::Bundled,
             "schema violation: missing required field `title`",
         );
-        persistence::upsert_pack(&conn, &sentinel)
+        SqlitePackStore(&conn).upsert_pack(&sentinel)
             .expect("seed sentinel bundled row");
 
         let mut bundled_ids: HashSet<String> = HashSet::new();

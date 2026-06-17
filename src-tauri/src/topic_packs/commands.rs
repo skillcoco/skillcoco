@@ -21,10 +21,9 @@ use rusqlite::Connection;
 use tauri::State;
 
 use super::loader;
-use super::model::{LoadedPack, PackEdge, PackModule};
-use super::persistence;
-use super::registry::PackRegistry;
+use crate::storage_impl::packs::SqlitePackStore;
 use crate::AppState;
+use learnforge_core::packs::{LoadedPack, PackEdge, PackModule, PackRegistry, PackStore};
 
 // ── Request / Response types ─────────────────────────────────────────────
 
@@ -87,8 +86,9 @@ pub fn set_enabled_impl(
         return Err(format!("Unknown pack id: {}", req.pack_id));
     }
     // DB first: if this fails, neither persistence nor registry mutates.
-    persistence::write_enabled(conn, &req.pack_id, req.enabled)
-        .map_err(|e| format!("persistence::write_enabled failed: {}", e))?;
+    SqlitePackStore(conn)
+        .write_enabled(&req.pack_id, req.enabled)
+        .map_err(|e| format!("SqlitePackStore::write_enabled failed: {}", e))?;
     // Mirror to the registry; infallible because we just verified the id
     // exists (and `set_enabled` is a no-op for unknown ids anyway).
     reg.set_enabled(&req.pack_id, req.enabled);
@@ -179,9 +179,7 @@ mod tests {
     use super::*;
     use crate::db::migrations::apply_migrations;
     use crate::db::schema as db_schema;
-    use crate::topic_packs::model::{
-        LoadedPack, Pack, PackEdge, PackModule, PackSource, ValidationStatus,
-    };
+    use learnforge_core::packs::{Pack, PackSource, ValidationStatus};
 
     fn fresh_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -286,7 +284,7 @@ mod tests {
         let conn = fresh_db();
 
         // Seed the DB row so write_enabled has a target.
-        persistence::upsert_pack(&conn, reg.get("alpha").unwrap()).unwrap();
+        SqlitePackStore(&conn).upsert_pack(reg.get("alpha").unwrap()).unwrap();
 
         // Disable via the impl.
         set_enabled_impl(
@@ -303,7 +301,7 @@ mod tests {
         assert!(!reg.get("alpha").unwrap().enabled, "registry must be updated");
 
         // SQLite: column reflects the change.
-        let persisted = persistence::read_enabled(&conn, "alpha").unwrap();
+        let persisted = SqlitePackStore(&conn).read_enabled("alpha").unwrap();
         assert_eq!(persisted, Some(false), "SQLite enabled column must be 0");
 
         // Subsequent list_enabled_impl must EXCLUDE the disabled pack.

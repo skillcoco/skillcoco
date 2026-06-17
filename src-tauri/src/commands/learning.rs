@@ -1,7 +1,11 @@
 use crate::db::models::{LearningPath, ModuleProgress, SRCard};
-use crate::learning::adaptive::{update_mastery, BKTParams, MASTERY_THRESHOLD};
-use crate::learning::path::{all_prerequisites_mastered, parse_edges_json};
+use crate::storage_impl::bkt::SqliteBktStore;
 use crate::AppState;
+use learnforge_core::bkt::{update_mastery, BKTParams, MASTERY_THRESHOLD};
+use learnforge_core::path::{
+    all_prerequisites_mastered as core_all_prerequisites_mastered,
+    parse_edges_json as core_parse_edges_json,
+};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -56,7 +60,7 @@ pub struct SubmitQuizResult {
     /// when `module_completed == false` (R2 short-circuit) or when
     /// issuance failed (log-and-continue).
     #[serde(default)]
-    pub newly_issued_achievements: Vec<crate::achievements::Achievement>,
+    pub newly_issued_achievements: Vec<learnforge_core::achievements::Achievement>,
 }
 
 /// Request to rate a flash card (SM-2 quality signal + optional BKT reinforcement).
@@ -306,9 +310,13 @@ pub async fn submit_quiz(
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // 1. Load the quiz block — reject if not found or wrong type
-    let block = crate::db::blocks::get_block(&db.conn, &req.block_id)
-        .map_err(|e| format!("submit_quiz: DB error loading block: {}", e))?
-        .ok_or_else(|| format!("submit_quiz: block not found: {}", req.block_id))?;
+    let block = {
+        use learnforge_core::blocks::BlockStore;
+        crate::storage_impl::blocks::SqliteBlockStore(&db.conn)
+            .get_by_id(&req.block_id)
+            .map_err(|e| format!("submit_quiz: DB error loading block: {}", e))?
+            .ok_or_else(|| format!("submit_quiz: block not found: {}", req.block_id))?
+    };
 
     if block.block_type != "quiz" {
         return Err(format!(
@@ -360,7 +368,7 @@ pub async fn submit_quiz(
     // Phase 6 (Plan 06-02 Task 3) — sentinel for the post-completion
     // achievement issuance. R2 short-circuit: we only populate this
     // inside the `became_completed` branch.
-    let mut newly_issued_achievements: Vec<crate::achievements::Achievement> = Vec::new();
+    let mut newly_issued_achievements: Vec<learnforge_core::achievements::Achievement> = Vec::new();
 
     if transition.became_completed {
         // 6. Find path_id for this track so check_unlock_modules can load edges_json
@@ -396,13 +404,20 @@ pub async fn submit_quiz(
         // Log-and-continue on error per RESEARCH.md Pattern 4: an achievement
         // failure must never block quiz completion. R2 short-circuit lives
         // here (we are inside `if became_completed`).
-        newly_issued_achievements = crate::achievements::maybe_issue(
-            &db.conn,
-            &req.track_id,
-            &learner_id,
-            &state.signing_key,
-            &state.signing_key_path,
-        )
+        newly_issued_achievements = {
+            let store = crate::storage_impl::achievements::SqliteAchievementStore(&db.conn);
+            let key_store = crate::storage_impl::signing::MutexCachedKeyStore::new(
+                &state.signing_key,
+                &state.signing_key_path,
+            );
+            learnforge_core::achievements::maybe_issue(
+                &store,
+                &key_store,
+                &req.track_id,
+                &learner_id,
+                chrono::Utc::now(),
+            )
+        }
         .unwrap_or_else(|e| {
             log::warn!(
                 "submit_quiz: achievements::maybe_issue failed for track {}: {}",
@@ -894,7 +909,7 @@ pub fn check_unlock_modules(
         )
         .map_err(|e| format!("check_unlock_modules: failed to load path {}: {}", path_id, e))?;
 
-    let edges = parse_edges_json(&edges_json)?;
+    let edges = core_parse_edges_json(&edges_json).map_err(|e| e.to_string())?;
 
     // Find candidate modules that just_completed_module_id points to
     let candidates: Vec<String> = edges
@@ -907,7 +922,10 @@ pub fn check_unlock_modules(
 
     for candidate_id in &candidates {
         // Check all prerequisites of the candidate
-        if !all_prerequisites_mastered(conn, learner_id, candidate_id, &edges)? {
+        let store = SqliteBktStore(conn);
+        if !core_all_prerequisites_mastered(&store, learner_id, candidate_id, &edges)
+            .map_err(|e| e.to_string())?
+        {
             continue;
         }
 
@@ -1339,7 +1357,7 @@ pub fn submit_review(
         .map_err(|e| e.to_string())?;
 
     // Calculate new SM-2 values
-    let sm2_result = crate::learning::spaced_repetition::sm2_calculate(
+    let sm2_result = learnforge_core::sm2::sm2_calculate(
         quality,
         card.repetitions,
         card.ease_factor,
@@ -1472,7 +1490,7 @@ mod tests {
                 became_completed = true;
             }
             prior = t.new_mastery;
-            if prior >= crate::learning::adaptive::MASTERY_THRESHOLD {
+            if prior >= MASTERY_THRESHOLD {
                 break;
             }
         }
@@ -2602,12 +2620,17 @@ mod phase3_tests {
         // Hook under test — same code path as `submit_quiz` after Plan 06-02.
         let key_slot: std::sync::Mutex<Option<ed25519_dalek::SigningKey>> = std::sync::Mutex::new(None);
         let key_dir = tempfile::tempdir().expect("tempdir");
-        let newly_issued = crate::achievements::maybe_issue(
-            &conn,
-            "trk1",
-            "lp1",
+        let store = crate::storage_impl::achievements::SqliteAchievementStore(&conn);
+        let key_store = crate::storage_impl::signing::MutexCachedKeyStore::new(
             &key_slot,
             key_dir.path(),
+        );
+        let newly_issued = learnforge_core::achievements::maybe_issue(
+            &store,
+            &key_store,
+            "trk1",
+            "lp1",
+            chrono::Utc::now(),
         ).expect("maybe_issue");
 
         // 1 of 4 modules mastered = 25% — Associate (only).
@@ -2671,12 +2694,17 @@ mod phase3_tests {
 
         // The hook in submit_quiz wraps in unwrap_or_else(|e| Vec::new()).
         // Replicate that wrap here and assert it produces an empty Vec.
-        let newly_issued = crate::achievements::maybe_issue(
-            &conn,
-            "trk1",
-            "lp1",
+        let store = crate::storage_impl::achievements::SqliteAchievementStore(&conn);
+        let key_store = crate::storage_impl::signing::MutexCachedKeyStore::new(
             &key_slot,
             &blocking_file,
+        );
+        let newly_issued = learnforge_core::achievements::maybe_issue(
+            &store,
+            &key_store,
+            "trk1",
+            "lp1",
+            chrono::Utc::now(),
         )
         .unwrap_or_else(|_| Vec::new());
 

@@ -186,7 +186,7 @@ pub async fn generate_learning_path(
 
     // Validate DAG structure
     {
-        use crate::learning::path::{PathNode, PathEdge};
+        use learnforge_core::path::{validate_dag, PathEdge, PathNode};
         let nodes: Vec<PathNode> = modules_arr
             .iter()
             .map(|m| PathNode {
@@ -210,7 +210,7 @@ pub async fn generate_learning_path(
                 })
             })
             .collect();
-        crate::learning::path::validate_dag(&nodes, &path_edges)
+        validate_dag(&nodes, &path_edges)
             .map_err(|e| format!("AI generated invalid learning path: {}", e))?;
     }
 
@@ -283,7 +283,7 @@ pub async fn generate_learning_path(
 /// - DAG validation / SQLite errors — surface verbatim
 pub fn generate_path_from_pack_impl(
     conn: &rusqlite::Connection,
-    registry: &crate::topic_packs::PackRegistry,
+    registry: &learnforge_core::packs::PackRegistry,
     request: &GeneratePathRequest,
     pack_id: &str,
 ) -> Result<serde_json::Value, String> {
@@ -322,7 +322,7 @@ pub fn generate_path_from_pack_impl(
     // (T-05-20 mitigation — packs SHOULD be DAGs by authoring convention,
     // but we never trust on-disk authoring blindly).
     {
-        use crate::learning::path::{PathEdge, PathNode};
+        use learnforge_core::path::{validate_dag, PathEdge, PathNode};
         let nodes: Vec<PathNode> = modules_arr
             .iter()
             .map(|m| PathNode {
@@ -346,7 +346,7 @@ pub fn generate_path_from_pack_impl(
                 })
             })
             .collect();
-        crate::learning::path::validate_dag(&nodes, &path_edges)
+        validate_dag(&nodes, &path_edges)
             .map_err(|e| format!("Topic pack has invalid DAG: {}", e))?;
     }
 
@@ -499,7 +499,11 @@ fn build_tutor_system_prompt(ctx: Option<&ExerciseContext>, fallback: &str) -> S
 /// Returns None on any failure (block not found, not a section, missing markdown) — caller falls back.
 /// Truncates to TUTOR_CONTENT_EXCERPT_MAX to avoid oversized system prompts.
 fn load_section_excerpt(conn: &rusqlite::Connection, section_id: &str) -> Option<String> {
-    let block = crate::db::blocks::get_block(conn, section_id).ok().flatten()?;
+    use learnforge_core::blocks::BlockStore;
+    let block = crate::storage_impl::blocks::SqliteBlockStore(conn)
+        .get_by_id(section_id)
+        .ok()
+        .flatten()?;
     if block.block_type != "section" {
         return None;
     }
@@ -991,7 +995,7 @@ pub async fn evaluate_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::learning::adaptive::{BKTParams, update_mastery};
+    use learnforge_core::bkt::{update_mastery, BKTParams};
 
     #[test]
     fn test_bkt_mastery_update_logic() {
@@ -1343,12 +1347,11 @@ mod tests {
 
     // ── Phase 5 Q3 — pack_id short-circuit tests ──
 
-    use crate::topic_packs::model::{
+    use learnforge_core::packs::{
         LoadedPack as TpLoadedPack, Pack as TpPack, PackEdge as TpPackEdge,
-        PackModule as TpPackModule, PackSource as TpPackSource,
+        PackModule as TpPackModule, PackRegistry as TpPackRegistry, PackSource as TpPackSource,
         ValidationStatus as TpValidationStatus,
     };
-    use crate::topic_packs::registry::PackRegistry as TpPackRegistry;
 
     fn make_pack_fixture(id: &str, enabled: bool) -> TpLoadedPack {
         TpLoadedPack {

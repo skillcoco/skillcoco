@@ -14,11 +14,13 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::achievements::{
-    artifacts::{self, BadgePngInput, CertificatePdfInput},
-    list_for_learner_impl, get_track_certifications_impl, lookup_achievement_impl, signing,
-    Achievement, AchievementError, TrackCertifications,
+use crate::achievements::artifacts::{self, BadgePngInput, CertificatePdfInput};
+use crate::storage_impl::achievements::SqliteAchievementStore;
+use crate::storage_impl::signing::FsKeyStore;
+use learnforge_core::achievements::{
+    Achievement, AchievementError, AchievementStore, TrackCertifications,
 };
+use learnforge_core::signing::{self as signing, SigningKeyStore};
 
 // ── Request / Result types ────────────────────────────────────────────────
 
@@ -117,7 +119,9 @@ pub fn list_achievements_for_learner(
     state: State<'_, crate::AppState>,
 ) -> Result<Vec<Achievement>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    list_for_learner_impl(&db.conn).map_err(|e| e.to_string())
+    SqliteAchievementStore(&db.conn)
+        .list_for_learner()
+        .map_err(|e| e.to_string())
 }
 
 /// Per-track certifications: earned levels + next-level criteria.
@@ -132,6 +136,51 @@ pub fn get_track_certifications(
         .map_err(|e| e.to_string())
 }
 
+/// Per-track certifications inner helper. Computes `next_level` + `criteria`
+/// from the badge-level set returned by [`AchievementStore::earned_badge_levels`].
+/// The string template + the ladder ordering match the pre-Wave-10 body
+/// verbatim — frontend surfaces (Settings / Achievements panel) depend on
+/// the exact wording.
+///
+/// Lifted verbatim from the pre-Wave-10 `src-tauri/src/achievements/mod.rs`
+/// shim (Wave 10 cleanup target). Lives in the commands module because it
+/// composes pure Rust over the `AchievementStore` trait — no SQL of its own.
+pub fn get_track_certifications_impl(
+    conn: &rusqlite::Connection,
+    track_id: &str,
+    learner_id: &str,
+) -> Result<TrackCertifications, AchievementError> {
+    let store = SqliteAchievementStore(conn);
+    let earned_levels = store.earned_badge_levels(track_id, learner_id)?;
+    let has = |name: &str| earned_levels.iter().any(|l| l == name);
+
+    let (next_level, criteria) = if !has("Associate") {
+        (
+            Some("Associate".to_string()),
+            "25% of modules mastered".to_string(),
+        )
+    } else if !has("Practitioner") {
+        (
+            Some("Practitioner".to_string()),
+            "60% of modules mastered".to_string(),
+        )
+    } else if !has("Professional") {
+        (
+            Some("Professional".to_string()),
+            "100% of modules mastered, average mastery >= 0.85, plus all practical labs if required"
+                .to_string(),
+        )
+    } else {
+        (None, String::new())
+    };
+
+    Ok(TrackCertifications {
+        earned_levels,
+        next_level,
+        criteria,
+    })
+}
+
 /// Render the certificate PDF for a given achievement id. Returns raw
 /// bytes; the frontend (`exportCertificate` wrapper) routes through the
 /// Tauri dialog plugin to write the bytes to disk.
@@ -141,7 +190,8 @@ pub fn export_certificate(
     state: State<'_, crate::AppState>,
 ) -> Result<Vec<u8>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    let ach = lookup_achievement_impl(&db.conn, &request.achievement_id)
+    let ach = SqliteAchievementStore(&db.conn)
+        .lookup_achievement(&request.achievement_id)
         .map_err(|e| e.to_string())?;
     if ach.kind != "certificate" {
         return Err("Only completion certificates can be exported as PDF".to_string());
@@ -169,7 +219,8 @@ pub fn export_badge(
     state: State<'_, crate::AppState>,
 ) -> Result<Vec<u8>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    let ach = lookup_achievement_impl(&db.conn, &request.achievement_id)
+    let ach = SqliteAchievementStore(&db.conn)
+        .lookup_achievement(&request.achievement_id)
         .map_err(|e| e.to_string())?;
     let qr_payload = encode_qr_payload(&ach.payload_json, &ach.signature);
     let badge_input = BadgePngInput {
@@ -212,7 +263,7 @@ pub fn verify_signature(
     // ── Resolve which public PEM to verify against ─────────────────────
     let public_pem = match request.public_key_pem_override {
         Some(pem) => pem,
-        None => match signing::read_public_pem(&state.signing_key_path) {
+        None => match FsKeyStore::new(state.signing_key_path.clone()).export_public_pem() {
             Ok(pem) => pem,
             Err(_) => {
                 return Ok(VerifySignatureResult {
@@ -326,7 +377,9 @@ pub fn verify_signature(
 /// the untrusted-signer warning is suppressed until a key exists.
 #[tauri::command]
 pub fn get_signing_public_key(state: State<'_, crate::AppState>) -> Result<String, String> {
-    signing::read_public_pem(&state.signing_key_path).map_err(|e| e.to_string())
+    FsKeyStore::new(state.signing_key_path.clone())
+        .export_public_pem()
+        .map_err(|e| e.to_string())
 }
 
 /// Phase 6 Wave 5 — derive the 8-hex SHA-256 fingerprint from a PEM
@@ -348,11 +401,12 @@ pub fn fingerprint_from_public_pem(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::achievements::{self, signing as sig_mod};
     use crate::db::migrations::apply_migrations;
     use crate::db::schema;
     use ed25519_dalek::pkcs8::EncodePublicKey;
     use ed25519_dalek::SigningKey;
+    use learnforge_core::achievements as core_achievements;
+    use learnforge_core::signing as sig_mod;
     use rand::rngs::OsRng;
     use rusqlite::Connection;
 
@@ -426,7 +480,7 @@ mod tests {
             "2026-06-15T10:00:00Z", "{}", "sig3", "deadbeef", "Kubernetes",
         );
 
-        let rows = list_for_learner_impl(&conn).expect("list");
+        let rows = SqliteAchievementStore(&conn).list_for_learner().expect("list");
         assert_eq!(rows.len(), 3);
         // issued_at DESC.
         assert_eq!(rows[0].id, "a3");
@@ -518,8 +572,16 @@ mod tests {
             ).unwrap();
         }
         let key_slot: Mutex<Option<SigningKey>> = Mutex::new(None);
-        let issued = achievements::maybe_issue(conn, "trk1", "lp1", &key_slot, key_dir)
-            .expect("issue");
+        let store = SqliteAchievementStore(conn);
+        let key_store = crate::storage_impl::signing::MutexCachedKeyStore::new(&key_slot, key_dir);
+        let issued = core_achievements::maybe_issue(
+            &store,
+            &key_store,
+            "trk1",
+            "lp1",
+            chrono::Utc::now(),
+        )
+        .expect("issue");
         // certificate row (kind="certificate", level="Completion").
         issued
             .into_iter()
@@ -533,7 +595,7 @@ mod tests {
         let conn = fresh_conn();
         let key_dir = fresh_key_dir();
         let cert_id = seed_signed_completion(&conn, key_dir.path());
-        let ach = lookup_achievement_impl(&conn, &cert_id).expect("lookup");
+        let ach = SqliteAchievementStore(&conn).lookup_achievement(&cert_id).expect("lookup");
         assert_eq!(ach.kind, "certificate");
 
         // Reproduce what export_certificate does internally (the IPC
@@ -568,7 +630,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        let ach = lookup_achievement_impl(&conn, &badge_id).expect("lookup");
+        let ach = SqliteAchievementStore(&conn).lookup_achievement(&badge_id).expect("lookup");
         assert_eq!(ach.kind, "badge");
         // The handler asserts: badges cannot be exported as PDF. We replicate
         // the predicate here (the State-bound handler test would require a
@@ -591,7 +653,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        let ach = lookup_achievement_impl(&conn, &badge_id).expect("lookup");
+        let ach = SqliteAchievementStore(&conn).lookup_achievement(&badge_id).expect("lookup");
         let qr_payload = encode_qr_payload(&ach.payload_json, &ach.signature);
         let badge_input = BadgePngInput {
             level: ach.level,
@@ -701,7 +763,7 @@ mod tests {
     fn build_signed_payload(key: &SigningKey, learner: &str, track: &str, level: &str) -> String {
         use pkcs8::LineEnding;
         let _ = key.verifying_key().to_public_key_pem(LineEnding::LF); // sanity
-        let payload = achievements::CertPayloadV1 {
+        let payload = core_achievements::CertPayloadV1 {
             learner: learner.to_string(),
             learner_id: "lp1".to_string(),
             track: track.to_string(),
@@ -713,7 +775,7 @@ mod tests {
             pack_id: None,
             payload_version: 1,
         };
-        let canonical = sig_mod::canonical_json_bytes(&payload).unwrap();
+        let canonical = learnforge_core::canonical_json::canonical_json_bytes(&payload).unwrap();
         let sig = sig_mod::sign_payload(key, &canonical);
         let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&canonical);
         format!("{}.{}", b64, hex::encode(sig.to_bytes()))
@@ -875,9 +937,10 @@ mod tests {
     #[test]
     fn get_signing_public_key_returns_pem() {
         let key_dir = fresh_key_dir();
-        // Pre-generate a keypair so `read_public_pem` has a file.
-        let _key = sig_mod::get_or_init_key(key_dir.path()).expect("init key");
-        let pem = sig_mod::read_public_pem(key_dir.path()).expect("read public pem");
+        // Pre-generate a keypair so `export_public_pem` has a file.
+        let store = FsKeyStore::new(key_dir.path().to_path_buf());
+        let _key = store.get_or_init().expect("init key");
+        let pem = store.export_public_pem().expect("read public pem");
         assert!(
             pem.starts_with("-----BEGIN PUBLIC KEY-----"),
             "must be PEM-encoded, got: {:?}",
@@ -892,12 +955,12 @@ mod tests {
     #[test]
     fn get_signing_public_key_errors_when_no_key_yet() {
         // Fresh dir, no key generated — the on-disk file is absent.
-        // `signing::read_public_pem` returns Err (Io kind) and the IPC
+        // `FsKeyStore::export_public_pem` returns Err (Io kind) and the IPC
         // handler maps to String. The frontend interprets this as the
         // "no signing key yet" case (Phase 6 generates lazily on first
         // issuance) and silently degrades to localFingerprint=null.
         let key_dir = fresh_key_dir();
-        let result = sig_mod::read_public_pem(key_dir.path());
+        let result = FsKeyStore::new(key_dir.path().to_path_buf()).export_public_pem();
         assert!(result.is_err(), "no key file → error");
         let msg = format!("{:?}", result.unwrap_err()).to_lowercase();
         assert!(

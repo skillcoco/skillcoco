@@ -1,4 +1,3 @@
-pub mod blocks;
 pub mod microlearning;
 pub mod migrations;
 pub mod models;

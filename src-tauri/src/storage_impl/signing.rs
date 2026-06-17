@@ -29,6 +29,7 @@ use learnforge_core::signing::{SigningError, SigningKeyStore};
 use pkcs8::LineEnding;
 use rand::rngs::OsRng;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 /// File name (relative to the keys directory) for the private signing key.
 const PRIV_FILE: &str = "cert_signing_private.pem";
@@ -148,6 +149,87 @@ pub fn priv_path(key_dir: &Path) -> PathBuf {
 /// counterpart of [`priv_path`].
 pub fn pub_path(key_dir: &Path) -> PathBuf {
     key_dir.join(PUB_FILE)
+}
+
+// ── Process-level mutex-cached key store ─────────────────────────────────
+//
+// The Tauri runtime stores the lazy-loaded `SigningKey` in
+// `AppState.signing_key: Arc<Mutex<Option<SigningKey>>>`. Phase 6's
+// pre-Wave-7 implementation handled the lazy-init dance in a
+// `get_or_load_into_mutex` helper inside `src-tauri/src/achievements/mod.rs`.
+// Wave 7 wrapped that helper in a `MutexCachedKeyStore` newtype living in
+// the `achievements/mod.rs` shim so the legacy `maybe_issue(conn, track,
+// learner, &Mutex, &Path)` callsite kept its pre-Wave-5 shape.
+//
+// Wave 10 deletes the `achievements/mod.rs` shim and lifts the
+// `MutexCachedKeyStore` into this module. It is the production
+// `SigningKeyStore` impl for the Tauri binary: every IPC handler that
+// triggers `maybe_issue` constructs one with the `AppState`-owned cache +
+// the on-disk key directory and passes it as the `key_store: &dyn
+// SigningKeyStore` argument to the core algorithm.
+
+/// `SigningKeyStore` adapter that consults a process-level
+/// `Mutex<Option<SigningKey>>` cache before falling back to [`FsKeyStore`]
+/// for cold load + first-time generation.
+///
+/// Mirrors the pre-Wave-8 `get_or_load_into_mutex` helper that lived in
+/// `src-tauri/src/achievements/mod.rs:138-158` (lifted verbatim to the
+/// Wave 7 shim, then promoted here in Wave 10 cleanup).
+///
+/// Behavior:
+/// * **Fast path** — if the mutex already holds `Some(key)`, returns a
+///   fresh clone of the cached key without touching the filesystem.
+/// * **Cold path** — calls [`FsKeyStore::get_or_init`] (which reads or
+///   generates+writes the PEMs), then populates the cache with a clone of
+///   the result so subsequent calls hit the fast path.
+///
+/// `export_public_pem` always defers to [`FsKeyStore`] — there's no
+/// in-memory cache for the public PEM string.
+pub struct MutexCachedKeyStore<'a> {
+    cache: &'a Mutex<Option<SigningKey>>,
+    fallback: FsKeyStore,
+}
+
+impl<'a> MutexCachedKeyStore<'a> {
+    /// Construct from an `AppState`-owned cache + the on-disk keys
+    /// directory.
+    pub fn new(cache: &'a Mutex<Option<SigningKey>>, key_dir: &Path) -> Self {
+        Self {
+            cache,
+            fallback: FsKeyStore::new(key_dir.to_path_buf()),
+        }
+    }
+}
+
+impl<'a> SigningKeyStore for MutexCachedKeyStore<'a> {
+    fn get_or_init(&self) -> Result<SigningKey, SigningError> {
+        // Fast path — return a fresh clone of the cached key.
+        {
+            let guard = self
+                .cache
+                .lock()
+                .map_err(|_| SigningError::Io("signing key mutex poisoned".to_string()))?;
+            if let Some(k) = guard.as_ref() {
+                return Ok(SigningKey::from_bytes(&k.to_bytes()));
+            }
+        }
+        // Cold path — generate or load via FsKeyStore + cache the result.
+        let key = self.fallback.get_or_init()?;
+        {
+            let mut guard = self
+                .cache
+                .lock()
+                .map_err(|_| SigningError::Io("signing key mutex poisoned".to_string()))?;
+            if guard.is_none() {
+                *guard = Some(SigningKey::from_bytes(&key.to_bytes()));
+            }
+        }
+        Ok(SigningKey::from_bytes(&key.to_bytes()))
+    }
+
+    fn export_public_pem(&self) -> Result<String, SigningError> {
+        self.fallback.export_public_pem()
+    }
 }
 
 #[cfg(test)]

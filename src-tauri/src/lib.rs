@@ -4,7 +4,6 @@ pub mod auth;
 pub mod commands;
 pub mod db;
 pub mod labs;
-pub mod learning;
 pub mod licensing;
 // Phase 7 Wave 2 (Plan 07-02) — rusqlite-backed impls of learnforge_core
 // per-module storage traits. The trait `impl BktStore for &Connection`
@@ -57,7 +56,7 @@ pub struct AppState {
     /// file I/O and IPC handlers must see a populated registry on first
     /// call). Uses `std::sync::Mutex` because pack-reads in IPC handlers
     /// don't await.
-    pub topic_packs: Arc<Mutex<topic_packs::PackRegistry>>,
+    pub topic_packs: Arc<Mutex<learnforge_core::packs::PackRegistry>>,
     /// Phase 6 (Certification) — lazy-loaded Ed25519 signing key for cert
     /// issuance. `None` until the first `achievements::maybe_issue` call,
     /// which loads-or-generates via `signing::get_or_init_key`. Avoids
@@ -354,7 +353,7 @@ mod build_app_tests {
                 signing_key,
                 signing_key_path,
             } = s;
-            let _typed: Arc<Mutex<topic_packs::PackRegistry>> = topic_packs;
+            let _typed: Arc<Mutex<learnforge_core::packs::PackRegistry>> = topic_packs;
             let _key: Arc<Mutex<Option<ed25519_dalek::SigningKey>>> = signing_key;
             let _path: PathBuf = signing_key_path;
         }

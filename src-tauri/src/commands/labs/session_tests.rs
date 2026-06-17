@@ -24,7 +24,7 @@ fn test_app_state() -> Arc<AppState> {
         lab_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         // Phase 5 — empty registry; lab tests never touch topic_packs.
         topic_packs: Arc::new(Mutex::new(
-            crate::topic_packs::PackRegistry::default(),
+            learnforge_core::packs::PackRegistry::default(),
         )),
         // Phase 6 — lazy signing key; lab tests never trigger maybe_issue.
         signing_key: Arc::new(Mutex::new(None)),
@@ -100,9 +100,13 @@ async fn open_session_for_test(
     let (spec, _) = {
         let db = state.db.lock().unwrap();
         let conn = &db.conn;
-        let block = crate::db::blocks::get_block(conn, &request.block_id)
-            .map_err(|e| format!("get_block: {}", e))?
-            .ok_or_else(|| "block not found".to_string())?;
+        let block = {
+            use learnforge_core::blocks::BlockStore;
+            crate::storage_impl::blocks::SqliteBlockStore(conn)
+                .get_by_id(&request.block_id)
+                .map_err(|e| format!("get_block: {}", e))?
+                .ok_or_else(|| "block not found".to_string())?
+        };
         let params: serde_json::Value = serde_json::from_str(&block.params_json).unwrap();
         let md = params["labMd"].as_str().unwrap();
         crate::labs::spec::parse_lab_md(md).map_err(|e| format!("parse_lab_md: {}", e))?

@@ -363,9 +363,13 @@ pub(crate) fn read_lab_spec(
         .lock()
         .map_err(|e| format!("db lock poisoned: {}", e))?;
     let conn = &db.conn;
-    let block = crate::db::blocks::get_block(conn, block_id)
-        .map_err(|e| format!("get_block: {}", e))?
-        .ok_or_else(|| format!("block not found: {}", block_id))?;
+    let block = {
+        use learnforge_core::blocks::BlockStore;
+        crate::storage_impl::blocks::SqliteBlockStore(conn)
+            .get_by_id(block_id)
+            .map_err(|e| format!("get_block: {}", e))?
+            .ok_or_else(|| format!("block not found: {}", block_id))?
+    };
 
     // Try payload_json.spec first.
     if !block.payload_json.trim().is_empty() && block.payload_json != "{}" {

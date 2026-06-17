@@ -29,8 +29,10 @@ use crate::db::microlearning::{
     mark_daily_challenge_completed, mark_daily_challenge_started, update_global_streak,
     DailyChallengeRow,
 };
-use crate::learning::microlearning_selection::select_daily_challenge;
+use crate::storage_impl::microlearning::SqliteMicrolearningStore;
 use crate::AppState;
+use chrono::Utc;
+use learnforge_core::microlearning::select_daily_challenge as core_select_daily_challenge;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -106,9 +108,14 @@ fn get_daily_challenge_inner(conn: &Connection) -> Result<GetDailyChallengeResul
     }
 
     // No row yet — run selection algorithm.
-    let candidate = match select_daily_challenge(conn, &learner_id)? {
-        Some(c) => c,
-        None => return Ok(GetDailyChallengeResult { challenge: None }),
+    let candidate = {
+        let store = SqliteMicrolearningStore(conn);
+        match core_select_daily_challenge(&store, &learner_id, Utc::now())
+            .map_err(|e| e.to_string())?
+        {
+            Some(c) => c,
+            None => return Ok(GetDailyChallengeResult { challenge: None }),
+        }
     };
 
     let row = DailyChallengeRow {
