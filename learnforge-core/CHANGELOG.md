@@ -13,6 +13,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Whitepapers, strict rustdoc, doctests, examples (Phase 7 Wave 9 / 07-09)** —
+  ship the publish-ready documentation surface for the 0.1.0 crates.io drop.
+  - **Whitepapers** (CC BY 4.0, in `docs/`):
+    - `BKT.md` — Bayesian Knowledge Tracing whitepaper (>400 lines):
+      model intuition, four-parameter calibration (`P(L_0)` /
+      `P(T)` / `P(G)` / `P(S)`), Bayesian update equation with worked
+      example, mastery-threshold derivation (why 0.7), decay considerations
+      and microlearning intersection, implementation notes
+      (pure-functional, deterministic, WASM-portable), limitations, and
+      references to Corbett & Anderson 1995 plus follow-up ITS literature.
+    - `SM2.md` — SuperMemo 2 whitepaper (>400 lines): SM-2 origin
+      (Wozniak 1990), the 0-5 quality scale, interval growth, ease-factor
+      decay equation `EF' = EF + (0.1 - (5-q)·(0.08 + (5-q)·0.02))` with
+      worked example, failure-reset semantics, comparison with FSRS-rs
+      (future-work footnote), implementation notes, references.
+    - Tone matches D-07 (CONTEXT 07): "professional, deeply technical,
+      accessible to ML/CS undergrad". Phase 8 OSS launch will repurpose
+      these as marketing content.
+  - **Strict rustdoc** — `#![deny(missing_docs)]` enforced at the crate
+    root (`src/lib.rs`). Every `pub` item (struct / enum / fn / trait /
+    trait method / const / module) carries a `///` doc comment.
+    `cargo doc -p learnforge-core --no-deps 2>&1 | grep -iE '^(warning|error)'`
+    is empty (D-07 + T-07-28 mitigation).
+  - **Runnable doctests** — `cargo test --doc -p learnforge-core` runs
+    27 passing doctests across `bkt` (5), `blocks` (4), `canonical_json`
+    (2), `microlearning` (1), `path` (4), `sm2` (4), `threshold` (4),
+    `signing` (2), and a verifier rustdoc reference. Each algorithm
+    module has at least one doctest exercising the public surface, so
+    type-signature drift in v1 surfaces fails the test snippet (T-07-29
+    mitigation).
+  - **Examples** (`learnforge-core/examples/`):
+    - `bkt_update.rs` — synthetic correct / incorrect observation
+      sequence; prints mastery trajectory + crossed-threshold step.
+    - `sm2_schedule.rs` — 10 successive reviews including one injected
+      failure to show the reset rule; prints `(repetitions, EF,
+      interval)` after each.
+    - `verify_payload.rs` — Ed25519 sign/verify round-trip against a
+      canonical JSON payload with a key-reorder byte-stability proof and
+      a tampered-payload negative case.
+    - `pack_validate.rs` — minimal-valid pack + deliberately-broken pack
+      against the Draft 2020-12 schema, prints the error-list shape.
+    Each example runs to completion (`cargo run -p learnforge-core
+    --example <name>` exits 0).
+  - **README updates** — new "Algorithms" + "Examples" sections link
+    each whitepaper and document the four `cargo run --example`
+    commands.
+
 - **`achievements` module (Phase 7 Wave 8 / 07-08)** — achievement-issuance
   algorithm moved from `src-tauri/src/achievements/mod.rs`. This is the
   **final algorithmic move wave**; after Wave 8 every algorithm in the
