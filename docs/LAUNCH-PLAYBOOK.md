@@ -156,11 +156,17 @@ token in `~/.cargo/credentials.toml`).
 ```bash
 # 1. List tokens at https://crates.io/settings/tokens
 # 2. Revoke the token used for the bootstrap publish.
-# 3. Remove it from local credentials store:
+# 3. Remove it from local credentials store. `cargo logout` is the
+#    canonical approach (cargo 1.70+) — it removes the
+#    [registry.crates-io] block plus its token = "..." line from
+#    ~/.cargo/credentials.toml. (Earlier playbook revisions paired
+#    this with a sed fallback that did NOT match the actual TOML
+#    format and would have left the token in place — removed.)
 cargo logout
-# OR (equivalently)
-sed -i.bak '/learnforge/d' ~/.cargo/credentials.toml
-rm ~/.cargo/credentials.toml.bak
+
+# 4. Verify the token is gone:
+grep -A2 '^\[registry\.crates-io\]' ~/.cargo/credentials.toml || \
+  echo "OK: [registry.crates-io] block removed"
 ```
 
 **After this step, manual `cargo publish` will fail with auth errors —
