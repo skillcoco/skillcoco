@@ -1,0 +1,113 @@
+# Source: composite of v2.tauri.app/distribute/pipelines/github/
+#         + tauri-apps/tauri-action README (v0.6.2, 2024-03-14)
+#
+# Trigger: push of a semver tag matching v*.*.* (e.g. v0.1.0).
+#   NOTE: the sibling workflow `core-publish.yml` triggers on the
+#   distinct `core-v*.*.*` namespace — desktop releases here, crate
+#   publishes there. See docs/VERSIONING.md for the tag-ordering
+#   rule (O-8): when a release includes a learnforge-core API
+#   change, push `core-vX.Y.Z` FIRST and confirm the new version
+#   is live on crates.io BEFORE pushing `vX.Y.Z` here.
+#
+# This workflow exists in DRAFT MODE until Wave 6 populates the
+# Apple-signing secrets and Wave 7 actually pushes a tag. Until then
+# the Apple-signing env vars resolve to empty strings and tauri-action
+# silently skips the signing/notarization step — that is the intended
+# pre-Wave-6 behaviour. Wave 6 enrols Apple Developer ($99/year) and
+# fills `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+# `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`,
+# `APPLE_TEAM_ID` in repo Settings → Secrets and variables → Actions.
+#
+# Auto-updater is explicitly OUT OF SCOPE for 0.1.0 (Phase 8 locked
+# O-3). The `TAURI_SIGNING_PRIVATE_KEY` env var (Tauri 2 name; NOT
+# `TAURI_PRIVATE_KEY` — that is the deprecated Tauri 1 name, per
+# RESEARCH Pitfall 7 / R3 fix) is included below as a commented-out
+# placeholder so 0.2.0 can enable it with zero structural churn.
+
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-latest'
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      # Pin tauri-action to an exact version (per RESEARCH A3): the
+      # floating `@v0` tag could shift to v0.7 without notice. v0.6.2
+      # is the latest verified 0.6.x as of 2026-06-17.
+      - name: Build, sign, and upload to GitHub Releases
+        uses: tauri-apps/tauri-action@v0.6.2
+        env:
+          # macOS signing + notarization (Apple ID variant — 6 secrets).
+          # These resolve to empty strings pre-Wave-6; tauri-action
+          # detects that and skips the signing step.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # GitHub Release upload — built-in token, no setup needed.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # FUTURE: enable when auto-updater ships in 0.2.0 (locked O-3).
+          # Tauri 2 env var name — NOT TAURI_PRIVATE_KEY (Tauri 1 name).
+          # TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'LearnForge ${{ github.ref_name }}'
+          # Draft = true: maintainer reviews artifacts before publish.
+          # Per locked O-7, release notes are curated — generateReleaseNotes
+          # populates the PR-list scaffold; the maintainer edits the
+          # CHANGELOG section excerpt in by hand before publishing.
+          releaseDraft: true
+          prerelease: false
+          generateReleaseNotes: true
+          args: ${{ matrix.args }}
