@@ -77,3 +77,28 @@ getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
+
+# ---------------------------------------------------------------------------
+# docs.rs metadata (R7 / 08-RESEARCH Pitfall 5).
+#
+# Required as of 2026-05-01: docs.rs reduced its default-target set to a
+# single host target (x86_64-unknown-linux-gnu). Without this block our
+# wasm32-unknown-unknown portability story — and the per-target getrandom
+# wiring above — would not render in the published docs.
+#
+# `all-features = true` ensures any future feature-gated items (cfg(feature
+# = "...")) appear. `--cfg docsrs` enables the standard `#[cfg(docsrs)]`
+# rustdoc gate for items that should only appear in docs.rs output (e.g.
+# `#[cfg_attr(docsrs, doc(cfg(...)))]` annotations).
+#
+# Source: docs.rs/about/metadata + blog.rust-lang.org/2026/04/04/docsrs-only-default-targets
+# ---------------------------------------------------------------------------
+[package.metadata.docs.rs]
+all-features = true
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+rustdoc-args = ["--cfg", "docsrs"]
