@@ -182,7 +182,7 @@ cargo build --tests --target wasm32-unknown-unknown -p learnforge-core
 
 ## Algorithms
 
-The two flagship algorithms in this crate ship with whitepaper-style
+The five core algorithms in this crate ship with whitepaper-style
 explainers under [`docs/`](./docs/):
 
 - [`docs/BKT.md`](./docs/BKT.md) — Bayesian Knowledge Tracing model,
@@ -195,8 +195,27 @@ explainers under [`docs/`](./docs/):
   interval growth rules, failure-reset behavior, comparison with FSRS,
   worked examples, limitations, references to Wozniak 1990 and the
   testing-effect / spacing-effect literature.
+- [`docs/THRESHOLD.md`](./docs/THRESHOLD.md) — track-level achievement
+  threshold predicates that aggregate per-module BKT mastery into the
+  three skill tiers (Associate 25% / Practitioner 60% / Professional
+  100% + 0.85 avg + practical labs), calibration rationale, edge
+  cases (decay-vs-mastery, threshold-vs-mastery), references to
+  Bloom 1968 mastery learning and AWS / CNCF cert ladders.
+- [`docs/MICROLEARNING.md`](./docs/MICROLEARNING.md) — daily-challenge
+  selection scoring formula (`W_DECAY` + `W_SR_DUE` + `W_RECENCY`),
+  the `[0.3, 0.7)` desirable-difficulty zone (Vygotsky ZPD, Bjork
+  desirable difficulty), 48h recency window, 3-day decay half-life,
+  empty-zone fallback, references to spacing-effect and testing-effect
+  literature.
+- [`docs/SIGNING.md`](./docs/SIGNING.md) — Ed25519 + canonical JSON
+  byte-stable certificate signing pipeline, `payloadVersion: u32`
+  forward-compat dispatch (Phase 14 hosted-verifier contract from
+  [`docs/CERT-PAYLOAD-V1.md`](../docs/CERT-PAYLOAD-V1.md)), 8-character
+  SHA-256 DER fingerprint, threat model (replay / tampering / untrusted
+  signer), references to RFC 8032 (EdDSA), RFC 8785 (JCS), RFC 7515
+  (JWS), and Bernstein et al. 2012.
 
-Both whitepapers are licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+All five whitepapers are licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 so they may be reused with attribution. Rustdoc on every algorithm
 module cross-references the relevant whitepaper for the underlying
 mathematics.
