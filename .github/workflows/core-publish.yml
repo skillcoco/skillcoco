@@ -1,0 +1,89 @@
+# Source: rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html
+#       + github.com/rust-lang/crates-io-auth-action README (v1.0.5, 2026-06-16)
+#
+# Trigger: push of a `core-v*.*.*` tag (e.g. core-v0.1.0). This is a
+#   DIFFERENT tag namespace from the desktop app's `v*.*.*` tags — see
+#   docs/VERSIONING.md for the tag-ordering rule (locked O-8).
+#
+# BOOTSTRAP CAVEAT (per locked O-5 / RESEARCH Pitfall 3):
+#   Trusted Publishing requires the crate to ALREADY EXIST on crates.io
+#   before the OIDC config can be added. The FIRST `learnforge-core`
+#   publish must be done MANUALLY from a maintainer's authenticated
+#   machine:
+#
+#     cd learnforge-core
+#     cargo login                # paste personal API token
+#     cargo publish --dry-run    # validate
+#     cargo publish              # real upload
+#     # Then in crates.io UI → learnforge-core → Settings → Trusted
+#     # Publishers, add: owner=agentixgarage, repo=learnforge,
+#     # workflow=core-publish.yml, environment=release. Revoke the
+#     # personal token afterwards.
+#
+#   ALL SUBSEQUENT publishes (0.1.1, 0.2.0, ...) flow through this
+#   workflow — push a `core-vX.Y.Z` tag and CI takes over.
+#
+#   If this workflow fires on the very first `core-v0.1.0` tag BEFORE
+#   the manual bootstrap above is done, the publish step will fail
+#   with "crate `learnforge-core` does not exist." That failure is
+#   loud-but-harmless (no partial state on crates.io): re-run after
+#   the manual bootstrap completes. This is intentional per
+#   planner R-new-03 (no skip guard — failure is the signal).
+#
+# Trusted Publishing eliminates the static `CARGO_REGISTRY_TOKEN`
+# secret at rest: the workflow exchanges an OIDC token for a
+# short-lived (30-min) registry token via the rust-lang action.
+
+name: Publish learnforge-core to crates.io
+
+on:
+  push:
+    tags:
+      - 'core-v*.*.*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # `environment: release` adds an optional human-approval gate in
+    # repo Settings → Environments → release. Recommended per
+    # RESEARCH Pattern 2; the gate is configured in the UI, not here.
+    environment: release
+    permissions:
+      # OIDC token exchange requires id-token: write. Without this,
+      # rust-lang/crates-io-auth-action@v1 cannot mint the registry token.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Tag-vs-manifest version guard. Prevents accidentally pushing
+      # `core-v0.2.0` while learnforge-core/Cargo.toml still says
+      # 0.1.0 (would publish 0.1.0 as 0.2.0, an unrecoverable error).
+      - name: Validate tag matches Cargo.toml version
+        run: |
+          VERSION=$(grep '^version' learnforge-core/Cargo.toml | head -1 | cut -d'"' -f2)
+          TAG="${GITHUB_REF_NAME#core-v}"
+          if [ "$VERSION" != "$TAG" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $VERSION"
+            exit 1
+          fi
+          echo "Tag $GITHUB_REF_NAME matches Cargo.toml version $VERSION"
+
+      # Dry-run catches packaging errors (missing files, unresolved
+      # path dependencies, license-file issues) BEFORE the real publish.
+      # Phase 7 already proved this passes for 0.1.0.
+      - name: Cargo publish dry-run
+        run: cargo publish --dry-run -p learnforge-core
+
+      # OIDC token exchange — pinned to v1 (latest 1.0.5 as of 2026-06-16).
+      - name: Mint crates.io token via OIDC
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish -p learnforge-core
