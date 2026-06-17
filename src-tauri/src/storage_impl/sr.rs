@@ -117,15 +117,24 @@ impl<'a> SrStore for SqliteSrStore<'a> {
         result: &SM2Result,
     ) -> Result<String, SrError> {
         // Update SM-2 columns + advance next_review and stamp last_review.
-        // SQL preserved verbatim from commands/learning.rs::submit_review (pre-Wave-3).
+        //
+        // CR-01 (Phase 7 code review) — `result.interval` is `f64`. SM-2
+        // legitimately produces fractional intervals (e.g. `6.0 * 2.6 =
+        // 15.6`) after the third successful review. Previously the
+        // `datetime('now', '+' || ?N || ' days')` modifier was bound to
+        // `result.interval as i64`, truncating 15.6 → 15 and silently
+        // drifting `next_review` by ~14h24m per fractional review.
+        // SQLite accepts fractional day modifiers natively, so we now bind
+        // `result.interval` (f64) to BOTH the column AND the modifier via
+        // a single positional slot (?1 referenced twice).
+        // Regression: `apply_review_update_preserves_fractional_interval`.
         self.0
             .execute(
-                "UPDATE sr_cards SET interval_days = ?1, ease_factor = ?2, repetitions = ?3, next_review = datetime('now', '+' || ?4 || ' days'), last_review = datetime('now') WHERE id = ?5",
+                "UPDATE sr_cards SET interval_days = ?1, ease_factor = ?2, repetitions = ?3, next_review = datetime('now', '+' || ?1 || ' days'), last_review = datetime('now') WHERE id = ?4",
                 rusqlite::params![
                     result.interval,
                     result.ease_factor,
                     result.repetitions,
-                    result.interval as i64,
                     card_id,
                 ],
             )
@@ -287,5 +296,73 @@ mod tests {
         assert_eq!(row.repetitions, 2);
         assert_eq!(row.next_review, next_review);
         assert!(row.last_review.is_some());
+    }
+
+    /// CR-01 regression — SM-2 intervals are `f64` and legitimately
+    /// fractional (e.g. `6.0 * 2.6 = 15.6`). Before the fix, the SQL bound
+    /// `result.interval as i64` to the `datetime('now', '+?N days')`
+    /// modifier, truncating 15.6 → 15 and silently drifting `next_review`
+    /// by ~14h24m per fractional review. SQLite's `datetime` modifier
+    /// accepts fractional days, so the fix passes `result.interval` (f64)
+    /// directly to the modifier as well.
+    ///
+    /// Strategy: apply a review with `interval = 15.6`, then assert the
+    /// persisted `next_review` lands within a small window of
+    /// `datetime('now', '+15.6 days')` (which SQLite computes server-side
+    /// at the same instant we read it back, so the delta is the difference
+    /// between the two `datetime('now')` calls — bounded by a few seconds).
+    #[test]
+    fn apply_review_update_preserves_fractional_interval() {
+        let conn = setup_test_db();
+        seed_card(&conn, "c1", "mod-a", -60);
+
+        let store = SqliteSrStore(&conn);
+        let result = SM2Result {
+            interval: 15.6, // 6.0 * 2.6 — typical SM-2 mid-card value
+            ease_factor: 2.6,
+            repetitions: 3,
+        };
+        let next_review = store.apply_review_update("c1", &result).unwrap();
+
+        // Column stores the full f64.
+        let row = store.read_card_by_id("c1").unwrap();
+        assert!(
+            (row.interval_days - 15.6).abs() < 1e-9,
+            "interval_days column must preserve 15.6 exactly, got {}",
+            row.interval_days
+        );
+
+        // The persisted next_review must match what SQLite computes from
+        // the SAME fractional interval. The two `datetime('now')` calls
+        // (one inside apply_review_update, one in this query) are seconds
+        // apart, so the SQL-level delta is the test bound.
+        let expected: String = conn
+            .query_row(
+                "SELECT datetime('now', '+' || ?1 || ' days')",
+                rusqlite::params![15.6_f64],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap();
+
+        // Compare via SQLite's julianday() (returns f64 fractional days).
+        let delta_days: f64 = conn
+            .query_row(
+                "SELECT ABS(julianday(?1) - julianday(?2))",
+                rusqlite::params![next_review, expected],
+                |row| row.get::<_, f64>(0),
+            )
+            .unwrap();
+
+        // Pre-fix: delta_days ≈ 0.6 (the truncated 15 vs full 15.6).
+        // Post-fix: delta_days < 1 second (the inter-statement gap).
+        // 60 seconds is a generous CI ceiling; 14h24m would explode it.
+        assert!(
+            delta_days < 60.0 / 86_400.0,
+            "next_review drift exceeds 60s — fractional interval truncated? \
+             got {} expected {} delta_days={}",
+            next_review,
+            expected,
+            delta_days
+        );
     }
 }
