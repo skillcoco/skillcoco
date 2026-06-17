@@ -1,0 +1,40 @@
+# Source: docs.github.com/en/discussions/managing-discussions-for-your-community/syntax-for-discussion-category-forms
+# Filename "show-and-tell.yml" matches the auto-generated category slug for "Show & Tell".
+# See .planning/phases/08-publishing/08-RESEARCH.md Pitfall 4.
+title: "[Show & Tell] "
+labels: ["community"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share what you built with LearnForge. Skill packs, screenshots,
+        integrations, forks, blog posts -- all welcome.
+
+        Self-promotion is fine. Spam is not. Mention how the work relates
+        to LearnForge so readers know why they should click.
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you build?
+      description: A short description of the work and what makes it interesting.
+    validations:
+      required: true
+  - type: textarea
+    id: link
+    attributes:
+      label: Link to a screenshot, gist, repo, or pack
+      description: A URL or markdown image makes this much easier to read.
+    validations:
+      required: false
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of work
+      options:
+        - skill pack
+        - integration
+        - blog post
+        - fork
+        - other
+    validations:
+      required: true

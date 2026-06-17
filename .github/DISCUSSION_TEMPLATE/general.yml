@@ -1,0 +1,30 @@
+# Source: docs.github.com/en/discussions/managing-discussions-for-your-community/syntax-for-discussion-category-forms
+# Filename "general.yml" matches the auto-generated category slug for "General".
+# See .planning/phases/08-publishing/08-RESEARCH.md Pitfall 4.
+title: "[General] "
+labels: ["discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Anything that does not fit Q&A, Ideas, or Show & Tell goes here.
+
+        Examples: roadmap chatter, ecosystem comparisons, governance
+        questions, open-ended design conversations.
+
+        If your topic is a usage question, the Q&A category will get you
+        an answer faster.
+  - type: textarea
+    id: topic
+    attributes:
+      label: What would you like to discuss?
+      description: One paragraph framing the conversation is plenty.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Background or links (optional)
+      description: References, prior threads, or external reading.
+    validations:
+      required: false

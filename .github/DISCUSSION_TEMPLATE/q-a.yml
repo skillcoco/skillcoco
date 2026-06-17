@@ -1,0 +1,46 @@
+# Source: docs.github.com/en/discussions/managing-discussions-for-your-community/syntax-for-discussion-category-forms
+# Filename "q-a.yml" matches the auto-generated category slug for "Q&A".
+# See .planning/phases/08-publishing/08-RESEARCH.md Pitfall 4.
+title: "[Q&A] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for asking. Please give us enough context to help you quickly.
+
+        If you have hit a defect rather than a usage question, open a
+        bug report under Issues instead. For private security reports, see
+        SECURITY.md.
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: One paragraph is fine. Skip if it is obvious from the title.
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Commands you ran, settings you changed, error messages you saw.
+    validations:
+      required: false
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Not platform-specific
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: LearnForge version
+      description: 'From Help -> About, or your `learnforge-core` crate version.'
+    validations:
+      required: false

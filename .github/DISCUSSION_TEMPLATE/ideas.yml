@@ -1,0 +1,48 @@
+# Source: docs.github.com/en/discussions/managing-discussions-for-your-community/syntax-for-discussion-category-forms
+# Filename "ideas.yml" matches the auto-generated category slug for "Ideas".
+# See .planning/phases/08-publishing/08-RESEARCH.md Pitfall 4.
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests live here. Please describe the problem first and
+        the proposed solution second. Concrete user-facing scenarios get
+        triaged faster than abstract wishes.
+
+        If you already have a precise spec in mind, an Issue under the
+        Feature Request template is a better fit.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Who is affected? What does the current experience feel like?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like LearnForge to do differently?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other shapes you thought about, and why this one won.
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - learnforge-core crate
+        - desktop app
+        - topic packs
+        - docs
+        - community-infrastructure
+    validations:
+      required: true
