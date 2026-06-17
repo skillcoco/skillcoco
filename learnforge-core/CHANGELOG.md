@@ -11,7 +11,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_(empty — Phase 8 will populate when publishing.)_
+
+## [0.1.0] - 2026-06-17
+
 ### Added
+
+- **Crate scaffold (Phase 7 Wave 1 / 07-01)** — `learnforge-core`
+  published as a new workspace member alongside `src-tauri`,
+  `pro/src-tauri-pro`, and `pro/src-tauri-pro/licensing`. Decisions
+  D-01 / D-09.
+- **Workspace dependency block (Phase 7 Wave 1 / 07-01)** — root
+  `Cargo.toml` carries a `[workspace.dependencies]` section declaring
+  the shared dep set (serde, serde_json, thiserror, chrono w/
+  `wasmbind`, ed25519-dalek, pkcs8, sha2, hex, base64, rand, uuid w/
+  `js`, jsonschema w/ `default-features = false`, include_dir, log,
+  tempfile). All wave crates reference these via `serde = { workspace
+  = true }` to prevent version drift between core and src-tauri (Open
+  Q A2 = YES lock).
+- **WASM target wiring (Phase 7 Wave 1 / 07-01)** —
+  `[target.'cfg(target_arch = "wasm32")']` block in
+  `learnforge-core/Cargo.toml` declares `getrandom 0.3` with the
+  `wasm_js` feature AND `getrandom 0.2` (renamed package) with the
+  `js` feature, since `ed25519-dalek 2.x` pulls both major versions
+  transitively. `wasm-bindgen-test 0.3` is wired as a wasm-only
+  dev-dep for the smoke test infrastructure (preps Wave 5 + Wave 9
+  per decision D-04). `cargo build --target wasm32-unknown-unknown
+  -p learnforge-core` returns exit 0 at every wave gate.
+- **Publish artifacts (Phase 7 Wave 1 / 07-01 + Wave 9 / 07-09)** —
+  `README.md` (API-unstable callout, architecture diagram, WASM build
+  instructions, whitepaper pointers, examples), `CHANGELOG.md` (this
+  file, Keep-a-Changelog format), and `LICENSE` (MIT) shipped at the
+  crate root for the Phase 8 crates.io publish gate.
+- **Standard Stack dependencies (Phase 7 Wave 1 / 07-01)** — `serde`,
+  `serde_json`, `thiserror`, `chrono` (w/ `wasmbind`), `log`, `uuid`
+  (w/ `js`), `ed25519-dalek`, `pkcs8`, `sha2`, `hex`, `base64`,
+  `rand`, `jsonschema` (w/ `default-features = false`), `include_dir`.
+  No `rusqlite`, no `tauri`, no `printpdf` / `image` / `qrcode`, no
+  `reqwest`, no `tokio`, no `async-trait` (decision D-02 anti-leakage
+  boundary; CI guardrail enforced in src-tauri).
 
 - **Whitepapers, strict rustdoc, doctests, examples (Phase 7 Wave 9 / 07-09)** —
   ship the publish-ready documentation surface for the 0.1.0 crates.io drop.
@@ -193,6 +231,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the tests via `wasm-pack test`.
 
 ### Changed
+
+_(src-tauri-side transitional shims and refactors required to keep the
+existing Tauri binary compiling while each algorithm moved into
+`learnforge-core`. Wave 10 will retire the shims by rewriting call
+sites to invoke the core modules directly. Some Wave 5+ "new core
+module" entries are listed here rather than under `### Added` because
+they also implied a src-tauri-side shim swap; the algorithm-side
+introduction is documented in the Added section above.)_
 
 - **`src-tauri/src/achievements/mod.rs` is now a transitional shim**
   (Phase 7 Wave 8 / 07-08) — re-exports `Achievement`, `CertPayloadV1`,
@@ -474,9 +520,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   threshold constant, `BKTParams::default`, `update_mastery`,
   `should_adapt`, `BktStore`. WASM-portable (no rusqlite leak; D-02 +
   T-07-05 mitigated by stringified `BktError::Db`).
-- Per-Phase-7-wave deliverables continue to append here.
-
-### Changed
 
 - **`src-tauri/src/learning/microlearning_selection.rs` is now a
   transitional shim** (Phase 7 Wave 4 / 07-04) — re-exports the algorithm
@@ -535,52 +578,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (learnforge_core) and the target type (rusqlite) are foreign — the
   zero-cost newtype wrapper satisfies the local-type requirement.
 
-## [0.1.0] - 2026-06-16
-
-### Added
-
-- **Crate scaffold** — `learnforge-core` published as a new workspace
-  member alongside `src-tauri`, `pro/src-tauri-pro`, and
-  `pro/src-tauri-pro/licensing`. Phase 7 Wave 1 (`07-01-PLAN.md`,
-  decisions D-01 / D-09).
-- **`verifier` module stub** — `VerifyResult` struct with `camelCase`
-  serde renaming for IPC compatibility + `VerifyResult::not_implemented()`
-  + `verify(_payload: &[u8]) -> VerifyResult` returning the
-  not-implemented sentinel. Locks the Phase 14 hosted-verifier interface
-  contract (decision D-08).
-- **Workspace dependency block** — root `Cargo.toml` carries a
-  `[workspace.dependencies]` section declaring the shared dep set
-  (serde, serde_json, thiserror, chrono w/ `wasmbind`, ed25519-dalek,
-  pkcs8, sha2, hex, base64, rand, uuid w/ `js`, jsonschema w/
-  `default-features = false`, include_dir, log, tempfile). Future waves
-  reference these via `serde = { workspace = true }` to prevent version
-  drift between core and src-tauri (Open Q A2 = YES lock).
-- **WASM target wiring** — `[target.'cfg(target_arch = "wasm32")']`
-  block in `learnforge-core/Cargo.toml` declares `getrandom 0.3` with
-  the `wasm_js` feature AND `getrandom 0.2` (renamed package) with the
-  `js` feature, since `ed25519-dalek 2.x` pulls both major versions
-  transitively. `wasm-bindgen-test 0.3` is wired as a wasm-only
-  dev-dep for the smoke test infrastructure (preps Wave 5 + Wave 9
-  per decision D-04). `cargo build --target wasm32-unknown-unknown -p
-  learnforge-core` returns exit 0.
-- **Publish artifacts** — `README.md` (API-unstable callout, architecture
-  diagram, WASM build instructions, whitepaper pointers), `CHANGELOG.md`
-  (this file), and `LICENSE` (MIT) shipped at the crate root for the
-  Phase 8 crates.io publish gate.
-- **Standard Stack dependencies** — `serde`, `serde_json`, `thiserror`,
-  `chrono` (w/ `wasmbind`), `log`, `uuid` (w/ `js`), `ed25519-dalek`,
-  `pkcs8`, `sha2`, `hex`, `base64`, `rand`, `jsonschema`
-  (w/ `default-features = false`), `include_dir`. No `rusqlite`, no
-  `tauri`, no `printpdf` / `image` / `qrcode`, no `reqwest`, no
-  `tokio`, no `async-trait` (decision D-02 anti-leakage boundary).
-
 ### Notes
 
-- This release ships **no algorithm code**. The BKT / SM-2 / threshold /
-  microlearning / signing / packs / blocks / achievements modules land
-  in Waves 2-8 (per decision D-05).
+- This is the **end-of-Phase-7 acceptance release**. Every algorithmic
+  primitive in the LearnForge adaptive-learning loop now lives in
+  `learnforge-core`: BKT (Wave 2), SM-2 (Wave 3), threshold +
+  microlearning selection (Wave 4), canonical JSON + Ed25519 signing
+  (Wave 5), block taxonomy (Wave 6), topic packs (Wave 7), achievements
+  (Wave 8), and verifier stub (Wave 1, locked in Wave 9). The
+  `wasm32-unknown-unknown` build target compiles cleanly without ever
+  pulling `rusqlite` / `printpdf` / `image` / `qrcode` / `tauri` into
+  the dependency graph (D-02 anti-leakage boundary).
 - Crate is **not yet published** to crates.io. Phase 8 (Publishing &
-  OSS Launch) will publish 0.1.x after Phase 7 lands fully.
+  OSS Launch) decides publish timing and the 1.0.0 commitment. The
+  `cargo publish --dry-run -p learnforge-core` gate succeeded in Wave 9
+  (07-09).
+- **API UNSTABLE** — every 0.x release may break public surface. Pin
+  to a specific minor (`learnforge-core = "0.1"`) and re-read this
+  changelog before upgrading.
 
 [Unreleased]: https://github.com/schoolofdevops/learnforge/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/schoolofdevops/learnforge/releases/tag/v0.1.0

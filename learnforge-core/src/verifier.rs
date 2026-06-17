@@ -72,6 +72,22 @@ impl VerifyResult {
 /// The signature is byte-stable: `&[u8]` (canonical JSON bytes) → owned
 /// [`VerifyResult`]. No async, no I/O, no allocations beyond the result
 /// struct's error string.
+///
+/// # Example
+///
+/// During Phases 7-13 the stub return value lets consumers wire UI / IPC
+/// plumbing today and observe a clear "not implemented" surface at
+/// runtime. Phase 14 will fill in the real verification logic; the
+/// signature does not change.
+///
+/// ```
+/// use learnforge_core::verifier::verify;
+///
+/// let result = verify(b"placeholder-canonical-json-payload");
+/// assert!(!result.valid);
+/// assert_eq!(result.payload_version, 0);
+/// assert!(result.error.is_some());
+/// ```
 pub fn verify(_payload: &[u8]) -> VerifyResult {
     VerifyResult::not_implemented()
 }
