@@ -1,0 +1,50 @@
+# Source: docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms
+# Created from scratch per R2 fix (Phase 03.2 D-07c claimed templates existed; verified absent).
+name: Feature request
+description: Suggest an enhancement to LearnForge.
+title: "[Feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an improvement. Please describe the problem
+        before the solution -- shipping the right thing depends on
+        understanding who is affected and what the current experience
+        feels like.
+
+        Early-stage brainstorming fits better in the Ideas Discussion
+        category. Use this Issue template when you already have a
+        relatively concrete proposal in mind.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Who is affected? What is hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What should LearnForge do differently? Be concrete.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about and why this one won.
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - learnforge-core
+        - desktop app
+        - topic packs
+        - docs
+    validations:
+      required: true

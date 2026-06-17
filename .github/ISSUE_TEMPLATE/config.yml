@@ -1,0 +1,17 @@
+# Source: docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+# Forces templated intake (no blank issues) and routes off-template
+# requests to better channels:
+#   - usage questions -> Discussions Q&A
+#   - community showcase -> Discussions Show & Tell
+#   - security vulnerabilities -> private vulnerability reporting
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a usage question
+    url: https://github.com/agentixgarage/learnforge/discussions/categories/q-a
+    about: Usage and install help -- answered by maintainers and community.
+  - name: Share what you built
+    url: https://github.com/agentixgarage/learnforge/discussions/categories/show-and-tell
+    about: Skill packs, screenshots, integrations, and forks.
+  - name: Report a security vulnerability
+    url: https://github.com/agentixgarage/learnforge/security
+    about: Private vulnerability reporting per SECURITY.md -- NOT a public issue.

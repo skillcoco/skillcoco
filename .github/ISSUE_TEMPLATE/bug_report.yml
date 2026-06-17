@@ -1,0 +1,71 @@
+# Source: docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms
+# Created from scratch per R2 fix (Phase 03.2 D-07c claimed templates existed; verified absent).
+name: Bug report
+description: Report a defect in the desktop app or the learnforge-core crate.
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please give us enough
+        context to reproduce the problem locally. Vague reports get
+        triaged last; specific reports get fixed first.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: One paragraph describing the observed behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered list. Include sample input where relevant.
+      placeholder: |
+        1. Open the desktop app
+        2. ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: LearnForge version
+      description: 'From Help -> About, or `cargo pkgid learnforge-core`.'
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS arm64
+        - macOS x86_64
+        - Windows
+        - Linux
+        - learnforge-core crate only
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / error output
+      description: Paste console output, stack traces, or panic messages.
+      render: shell
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: |
+        Important: do NOT include credentials, API keys, access tokens,
+        or personally identifying data in this report. Redact before
+        pasting. For security-sensitive defects, use the security
+        reporting flow linked on the New Issue picker instead.
