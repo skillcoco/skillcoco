@@ -249,7 +249,7 @@ This is where we are at the moment of the 0.1.0 publish:
 
 - **Phase 8 — Publishing & Open Source Launch** (current). `learnforge-core`
   0.1.0 on crates.io, signed macOS binaries on GitHub Releases, three
-  whitepapers in `docs/whitepapers/` (THRESHOLD, MICROLEARNING, SIGNING),
+  whitepapers in `learnforge-core/docs/` (THRESHOLD, MICROLEARNING, SIGNING),
   the three launch articles you are currently in the middle of (BKT
   explainer, the opinion piece, this retrospective), `SECURITY.md`,
   GitHub Discussions, the versioning policy. Quality-first slow-burn. No

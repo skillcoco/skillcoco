@@ -44,9 +44,9 @@ minor bump per D-08c.
   unsigned with install docs (D-02b).
 - `learnforge-core` Rust crate published to crates.io for embedders
   and the future web platform (Phase 8 D-01; Phase 9 consumer).
-- Three algorithm whitepapers in `learnforge-core/docs/` plus three
-  more in `docs/whitepapers/` (Phase 8 D-05): threshold calibration,
-  microlearning selection, signing.
+- Five algorithm whitepapers in `learnforge-core/docs/` (Phase 8
+  D-05): BKT, SM2, threshold calibration, microlearning selection,
+  signing.
 - Repo-root `SECURITY.md` (Phase 8 Wave 1) with 90-day coordinated
   disclosure policy and GitHub Private Vulnerability Reporting
   intake.
