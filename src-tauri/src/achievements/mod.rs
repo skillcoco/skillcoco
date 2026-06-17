@@ -12,9 +12,13 @@
 //!
 //! - [`artifacts`] — PDF certificate + PNG badge + QR renderer + share
 //!   text. **Stays in src-tauri** because `printpdf` / `image` / `qrcode`
-//!   are not WASM-portable. Only `CertificatePdfInput` /
-//!   `BadgePngInput` data structs + `share_text()` (pure string fn)
-//!   moved into core (`learnforge_core::signing::share_text`).
+//!   are not WASM-portable. The `CertificatePdfInput` / `BadgePngInput`
+//!   renderer input shapes also live here (next to the renderers); only
+//!   `share_text()` (pure string fn) moved into core
+//!   (`learnforge_core::signing::share_text`). WR-01 (Phase 7 review)
+//!   removed an earlier duplicate copy of the input shapes from
+//!   `learnforge_core::achievements` — they had no external callers and
+//!   were freezing 0.1.0 public API.
 //!
 //! Everything else (algorithm, types, trait, errors) lives in
 //! `learnforge_core::achievements` after Wave 8. The rusqlite-backed

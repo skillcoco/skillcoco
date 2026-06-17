@@ -12,13 +12,18 @@
 //! - Data structs that cross IPC (`Achievement`, `CertPayloadV1`,
 //!   `TrackCertifications`, `IssuanceContext`) — `#[serde(rename_all =
 //!   "camelCase")]` preserved because the frontend round-trips them.
-//! - PDF / PNG **input shapes** (`CertificatePdfInput`, `BadgePngInput`)
-//!   — pure data. **The renderers stay in `src-tauri`** per D-03
-//!   amendment + R-7 mitigation because printpdf, qrcode, and image
-//!   are not WASM-portable.
 //! - The [`AchievementStore`] trait (A3 lock — per-module storage
 //!   location). The rusqlite-backed impl lives in
 //!   `src-tauri/src/storage_impl/achievements.rs`.
+//!
+//! **Note (WR-01):** PDF / PNG renderer input shapes
+//! (`CertificatePdfInput`, `BadgePngInput`) intentionally do NOT live
+//! here. They sit next to the renderers in
+//! `src-tauri/src/achievements/artifacts.rs` because the renderers stay
+//! in `src-tauri` per D-03 amendment + R-7 (printpdf / qrcode / image
+//! are not WASM-portable). Phase 7 review found the previous core copies
+//! had zero external callers — they were dead code freezing public API
+//! at 0.1.0 and were removed in the review-fix pass.
 //! - The [`maybe_issue`] free function — generic over `<S:
 //!   AchievementStore, K: SigningKeyStore>` plus an explicit
 //!   `now: chrono::DateTime<chrono::Utc>` parameter (A5 clock injection;
@@ -217,53 +222,25 @@ pub struct IssuanceContext {
     pub pack_id: Option<String>,
 }
 
-// ── Artifact input shapes (D-03 amendment — INPUTS only, no renderers) ──
-
-/// Input shape for the certificate PDF renderer (whose implementation
-/// lives in `src-tauri/src/achievements/artifacts.rs` because printpdf
-/// is not WASM-portable — D-03 amendment).
-///
-/// Moved to core during Wave 8 so cross-platform callers (web verifier,
-/// future WASM SDK) can construct the input without pulling the src-tauri
-/// crate. Callers pre-render the QR PNG so the PDF renderer stays
-/// decoupled from the QR pipeline.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CertificatePdfInput {
-    /// Learner display name for the "Awarded to" line.
-    pub learner_name: String,
-    /// Track topic subtitle.
-    pub track_topic: String,
-    /// RFC-3339 issuance timestamp printed on the certificate.
-    pub issued_at: String,
-    /// Aggregate mastery score at issuance.
-    pub mastery_score: f64,
-    /// First 8 hex chars of the signing public-key fingerprint.
-    pub key_fingerprint_short: String,
-    /// Certification level (`Completion` for certificates).
-    pub level: String,
-    /// Pre-rendered QR PNG bytes the renderer embeds as an XObject.
-    pub qr_png_bytes: Vec<u8>,
-}
-
-/// Input shape for the PNG badge renderer (D-06 amendment: QR + optional
-/// vector brand mark only — text labels deferred to Phase 14, no TTF
-/// embed per A5). Renderer lives in `src-tauri/src/achievements/artifacts.rs`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BadgePngInput {
-    /// Certification level for the badge.
-    pub level: String,
-    /// Track topic for the QR payload metadata.
-    pub track_topic: String,
-    /// RFC-3339 issuance timestamp.
-    pub issued_at: String,
-    /// First 8 hex chars of the signing public-key fingerprint.
-    pub key_fingerprint_short: String,
-    /// The full QR payload string (`base64url(canonical).sig_hex`).
-    pub qr_payload: String,
-}
-
+// ── Artifact input shapes — DELIBERATELY ABSENT ──────────────────────────
+//
+// WR-01 (Phase 7 code review) — the `CertificatePdfInput` /
+// `BadgePngInput` data structs previously lived here AND in
+// `src-tauri/src/achievements/artifacts.rs`. Both were declared with
+// identical fields + `#[serde(rename_all = "camelCase")]`, and the core
+// versions had ZERO external callers — every src-tauri call site (PDF
+// renderer, PNG renderer, IPC handler, tests) uses the src-tauri-local
+// copies. The core types were dead code freezing public API at 0.1.0;
+// a future field add to one would silently diverge from the other.
+//
+// Since the renderers stay in `src-tauri` per D-03 amendment + R-7
+// (printpdf / qrcode / image are not WASM-portable), the renderer-input
+// shapes belong next to the renderer. Cross-platform consumers that need
+// to construct the inputs without pulling the src-tauri crate can
+// either redeclare the (small, stable) shapes locally or import them
+// when/if a follow-up wave promotes them back to core with a real
+// caller in tow.
+//
 // ── Storage trait (A3 lock — 8th and final application) ──────────────────
 
 /// Abstract storage surface for the achievements algorithm.

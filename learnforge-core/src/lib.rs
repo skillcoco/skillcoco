@@ -37,8 +37,11 @@
 //!
 //! All algorithmic modules have now moved to `learnforge-core`. PDF/PNG
 //! rendering (printpdf/qrcode/image) STAYS in `src-tauri` per D-03
-//! amendment because those crates are not WASM-portable; only the data
-//! `CertificatePdfInput` / `BadgePngInput` input shapes live here.
+//! amendment because those crates are not WASM-portable. The renderer
+//! input shapes (`CertificatePdfInput` / `BadgePngInput`) live next to
+//! the renderers in `src-tauri/src/achievements/artifacts.rs`; they were
+//! removed from core in the Phase 7 review-fix pass (WR-01 — the core
+//! copies had zero external callers and froze 0.1.0 public API).
 //!
 //! ## License
 //!
