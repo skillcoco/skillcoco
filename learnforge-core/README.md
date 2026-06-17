@@ -66,7 +66,7 @@ Explicit non-goals for `learnforge-core`:
 - **Not a hosted verifier.** The `verifier` module is a Phase 14 contract
   stub; the real implementation ships with the hosted verifier service.
 
-[lf-tauri]: https://github.com/schoolofdevops/learnforge/tree/main/src-tauri
+[lf-tauri]: https://github.com/agentixgarage/learnforge/tree/main/src-tauri
 
 ## Architecture
 
@@ -278,6 +278,6 @@ Wave-by-wave migration is in progress; see the repository's
 summaries.
 
 Contributions are welcome via the LearnForge monorepo. See
-[CONTRIBUTING.md](https://github.com/schoolofdevops/learnforge/blob/main/CONTRIBUTING.md)
-and [CLA.md](https://github.com/schoolofdevops/learnforge/blob/main/CLA.md)
+[CONTRIBUTING.md](https://github.com/agentixgarage/learnforge/blob/main/CONTRIBUTING.md)
+and [CLA.md](https://github.com/agentixgarage/learnforge/blob/main/CLA.md)
 at the repo root.

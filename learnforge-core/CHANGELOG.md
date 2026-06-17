@@ -615,5 +615,5 @@ introduction is documented in the Added section above.)_
   to a specific minor (`learnforge-core = "0.1"`) and re-read this
   changelog before upgrading.
 
-[Unreleased]: https://github.com/schoolofdevops/learnforge/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/schoolofdevops/learnforge/releases/tag/v0.1.0
+[Unreleased]: https://github.com/agentixgarage/learnforge/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/agentixgarage/learnforge/releases/tag/v0.1.0

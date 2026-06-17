@@ -7,7 +7,7 @@
 //! [`SigningKeyStore`] trait. The FS-backed key lifecycle
 //! (`get_or_init_key`, `read_public_pem`, 0o600 file mode) STAYS in
 //! `src-tauri/src/storage_impl/signing.rs` as the [`SigningKeyStore`] impl
-//! ([`FsKeyStore`](https://github.com/schoolofdevops/learnforge)) — D-03
+//! ([`FsKeyStore`](https://github.com/agentixgarage/learnforge)) — D-03
 //! amendment + Pitfall 4 (FS-backed key loading is not WASM-portable).
 //!
 //! ## Invariants preserved from Phase 6
