@@ -22,6 +22,6 @@
       "@pro/*": ["./src/features/_pro_placeholder/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "pro/src"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
