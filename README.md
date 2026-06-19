@@ -101,7 +101,40 @@ LearnForge is a Tauri 2 desktop application: a Rust backend (`src-tauri`) commun
 
 ## Open core
 
-LearnForge (this repository) is MIT licensed. A separate commercial product — **LearnForge Studio** — adds multi-tenant web infrastructure, cohort management, manager dashboards, and enterprise integrations on top of the same `learnforge-core` Rust crate. The algorithms and the desktop engine remain open.
+This single repository hosts **two products**:
+
+| | LearnForge | LearnForge Studio |
+|--|------------|-------------------|
+| **License** | MIT (`LICENSE`) | Proprietary (`LICENSE-STUDIO`) |
+| **Audience** | Individual learners | Engineering teams + L&D departments |
+| **Code path** | Everything outside `pro/` | `pro/` subtree |
+| **Build** | `pnpm tauri dev` | `LEARNFORGE_PRO=1 pnpm tauri dev` |
+| **Distribution** | GitHub Releases + crates.io | Direct sales (Phase 14+) |
+| **Pricing** | Free | Per-seat $79 / $59 / $39 (see `docs/pricing-tiers.md`) |
+
+The OSS desktop app is the full single-user experience — BKT mastery,
+SM-2 spaced repetition, hands-on terminal labs, topic packs, daily
+microlearning, achievement badges, exportable certificates. No
+crippling. Free OSS = real product.
+
+LearnForge Studio adds the enterprise tier on top of the same code:
+multi-tenant web infrastructure, cohort management, manager dashboards,
+managed AI billing, org-branded + cryptographically-verifiable
+certificates, SSO/SAML, audit logging, SOC 2 readiness, and
+LMS integrations.
+
+Both binaries share the same git repository and consume the same
+`learnforge-core` Rust crate (published to crates.io). The Studio
+overlay registers additional Tauri commands + React components via
+the `LearnForgePlugin` trait + Vite `@pro` alias.
+
+**Why public source for the proprietary product?** Audit-friendliness.
+Customers and security reviewers can read every line of Studio code
+before they buy. Trust scales when there's nothing to hide.
+
+See [`docs/OSS-VS-STUDIO.md`](docs/OSS-VS-STUDIO.md) for the full
+feature placement matrix and [`LICENSING.md`](LICENSING.md) for the
+license boundary.
 
 ---
 
@@ -109,11 +142,23 @@ LearnForge (this repository) is MIT licensed. A separate commercial product — 
 
 Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request. All contributors must sign the [Contributor License Agreement](./CLA.md) on their first PR.
 
+Pull requests touching the `pro/` subtree are subject to a separate
+proprietary contribution agreement — see
+[`docs/CONTRIBUTING-STUDIO.md`](docs/CONTRIBUTING-STUDIO.md). External
+PRs that touch `pro/` are auto-closed by maintainers.
+
 ---
 
 ## License
 
-**Code** MIT · **Docs & algorithms** CC BY 4.0 · **Third-party attributions** [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
+| What | License |
+|------|---------|
+| Code outside `pro/` | **MIT** (`LICENSE`) |
+| Code inside `pro/` | **Proprietary** (`LICENSE-STUDIO`) |
+| Whitepapers (`learnforge-core/docs/*.md`) | **CC BY 4.0** |
+| Third-party attributions | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
+
+See [`LICENSING.md`](LICENSING.md) for the full boundary explanation.
 
 Adaptive learning algorithms should be open, auditable, and patent-free. That is the design.
 
