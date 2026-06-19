@@ -11,7 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_(empty — Phase 8 will populate when publishing.)_
+### Changed (consumer split — no crate API change)
+
+- **Phase 08.1 (Cert Split)** — the `learnforge-core::achievements`,
+  `learnforge-core::signing`, `learnforge-core::canonical_json`, and
+  `learnforge-core::verifier` modules continue to ship as 0.1.0 library
+  primitives, but the OSS `learnforge` desktop binary no longer
+  invokes the signing / verify code paths. The LearnForge Studio
+  overlay (`learnforge-studio`) consumes the signing primitives
+  directly via its `pro/src-tauri-pro/src/commands/achievements.rs`
+  module. OSS consumers retain access to
+  `achievements::{Achievement, AchievementStore, threshold, maybe_issue}`
+  for badge / cert issuance; the Ed25519 signature + QR overlay
+  surface ships only in the Studio binary per
+  `docs/OSS-VS-STUDIO.md` §"Certification (Phase 6 — split)". No
+  source code in `learnforge-core` changed; this is purely a
+  consumer-side refactor.
 
 ## [0.1.0] - 2026-06-17
 
