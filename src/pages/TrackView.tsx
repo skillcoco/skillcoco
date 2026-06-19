@@ -461,7 +461,7 @@ export function TrackView() {
           </div>
           <div className="text-right">
             <div className="text-2xl font-bold text-foreground">
-              {currentTrack.progressPercent}%
+              {Math.round(currentTrack.progressPercent)}%
             </div>
             <div className="text-xs text-muted-foreground">complete</div>
           </div>
@@ -472,7 +472,7 @@ export function TrackView() {
           <div
             className="h-2 rounded-full transition-all"
             style={{
-              width: `${currentTrack.progressPercent}%`,
+              width: `${Math.round(currentTrack.progressPercent)}%`,
               backgroundColor: accentColor,
             }}
           />

@@ -109,13 +109,13 @@ export function TrackCard({
           {/* Progress bar */}
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{track.progressPercent}% complete</span>
+              <span>{Math.round(track.progressPercent)}% complete</span>
               <span>{formatDuration(track.totalTimeSpent)}</span>
             </div>
             <div className="h-2 rounded-full bg-secondary">
               <div
                 className="h-2 rounded-full transition-all"
-                style={{ width: `${track.progressPercent}%`, backgroundColor: color }}
+                style={{ width: `${Math.round(track.progressPercent)}%`, backgroundColor: color }}
               />
             </div>
           </div>

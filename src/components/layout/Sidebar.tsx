@@ -2,7 +2,6 @@ import { NavLink, Link } from "react-router-dom";
 import {
   LayoutDashboard,
   RotateCcw,
-  BarChart3,
   Plus,
   Settings,
   Sun,
@@ -141,29 +140,6 @@ export function Sidebar() {
           )}
         </NavLink>
 
-        <NavLink
-          to="/analytics"
-          className={({ isActive }) =>
-            cn(
-              "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-              isActive
-                ? "bg-white/10 font-medium text-foreground"
-                : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-              collapsed && "justify-center"
-            )
-          }
-        >
-          {({ isActive }) => (
-            <>
-              {isActive && (
-                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
-              )}
-              <BarChart3 size={18} />
-              {!collapsed && <span>Analytics</span>}
-            </>
-          )}
-        </NavLink>
-
         {/* Learning Tracks Section */}
         {!collapsed && (
           <div className="mt-6">
@@ -212,13 +188,13 @@ export function Sidebar() {
                           <span className="truncate">{track.topic}</span>
                           <div className="ml-auto flex shrink-0 items-center gap-1.5">
                             <span className="text-[11px] tabular-nums text-muted-foreground">
-                              {track.progressPercent}%
+                              {Math.round(track.progressPercent)}%
                             </span>
                             <div className="h-1 w-8 overflow-hidden rounded-full bg-white/10">
                               <div
                                 className="h-full rounded-full transition-all duration-300"
                                 style={{
-                                  width: `${track.progressPercent}%`,
+                                  width: `${Math.round(track.progressPercent)}%`,
                                   backgroundColor: color,
                                 }}
                               />
@@ -254,7 +230,7 @@ export function Sidebar() {
                 key={track.id}
                 to={`/track/${track.id}`}
                 className="rounded-md p-1.5 transition-colors hover:bg-white/10"
-                title={`${track.topic} (${track.progressPercent}%)`}
+                title={`${track.topic} (${Math.round(track.progressPercent)}%)`}
               >
                 <span
                   className="block h-2.5 w-2.5 rounded-full"
