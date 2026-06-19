@@ -1,8 +1,9 @@
-// Phase 6 (Certification) — Plan 06-04 (Wave 3 GREEN) /achievements page.
+// Phase 08.2 (Cert Simplification + Gamification) — /achievements page tests.
 //
-// D-09 fully closes when the Dashboard "View all" link routes to this page
-// instead of 404'ing. The page reuses AchievementCard from Wave 3 and
-// renders EVERY achievement (no 6-card cap), sorted by issuedAt DESC.
+// Updated for the new grouped layout (D-22):
+//   - Certificates section (kind=certificate)
+//   - Milestones section (kind=badge)
+// Empty state copy + on-mount load + DESC sort preserved.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -38,12 +39,12 @@ function makeAchievement(overrides: Partial<Achievement> = {}): Achievement {
     trackId: "trk-1",
     packId: null,
     kind: "badge",
-    level: "Associate",
-    issuedAt: "2026-06-16T00:00:00Z",
+    level: "Milestone25",
+    issuedAt: "2026-06-19T00:00:00Z",
     masteryScore: 0.75,
     payloadJson: "",
     signature: "",
-    keyFingerprint: "deadbeef",
+    keyFingerprint: "",
     trackTopic: "Kubernetes",
     ...overrides,
   };
@@ -67,7 +68,7 @@ function renderAt() {
   );
 }
 
-describe("Achievements page — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
+describe("Achievements page — Phase 08.2 (Cert Simplification)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState = makeState();
@@ -82,11 +83,28 @@ describe("Achievements page — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/no achievements yet/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/complete modules to earn your first badge/i),
+      screen.getByText(/complete modules to earn your first milestone/i),
     ).toBeInTheDocument();
   });
 
-  it("renders_all_achievements_when_store_has_more_than_six", () => {
+  it("groups_certificates_and_milestones_into_separate_sections", () => {
+    mockState = makeState({
+      achievements: [
+        makeAchievement({ id: "cert-1", kind: "certificate", level: "Completion" }),
+        makeAchievement({ id: "m25", level: "Milestone25" }),
+      ],
+    });
+    renderAt();
+
+    expect(
+      screen.getByTestId("achievements-page-certificates"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("achievements-page-milestones"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders_all_achievements_no_cap", () => {
     const eight = Array.from({ length: 8 }, (_, i) =>
       makeAchievement({
         id: `a-${i}`,
@@ -100,11 +118,11 @@ describe("Achievements page — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
     expect(cards).toHaveLength(8);
   });
 
-  it("sorts_by_issuedAt_desc_by_default", () => {
+  it("sorts_by_issuedAt_desc_within_group", () => {
+    // All same kind (badge) → all in the milestones section.
     const a = makeAchievement({ id: "old", issuedAt: "2026-06-01T00:00:00Z" });
     const b = makeAchievement({ id: "mid", issuedAt: "2026-06-10T00:00:00Z" });
     const c = makeAchievement({ id: "new", issuedAt: "2026-06-20T00:00:00Z" });
-    // Insert in "wrong" order so the page must sort itself.
     mockState = makeState({ achievements: [a, b, c] });
     renderAt();
 

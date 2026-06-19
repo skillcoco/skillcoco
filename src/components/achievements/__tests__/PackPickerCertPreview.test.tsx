@@ -1,10 +1,11 @@
-// Phase 6 (Certification) — Plan 06-05 (Wave 4) PackPickerCertPreview tests.
+// Phase 08.2 (Cert Simplification) — PackPickerCertPreview tests.
 //
-// Per D-10 + CERT-10: static "3 certifications available" preview on each
-// PackPicker tile. Expandable to show Associate / Practitioner /
-// Professional names + criteria from D-02 hardcoded constants. NO IPC
-// call (D-02 thresholds are uniform; criteria text is constant). No
-// emojis (D-10 explicit no-emoji clause).
+// Updated for the new model (D-19):
+//   - "1 completion certificate available" (not "3 certifications")
+//   - "Progress milestones at 25/50/75/100%" subline
+//   - Expandable rationale paragraph (replaces the 3-level list)
+//   - No emojis (D-10 preserved)
+//   - No IPC call (D-02 — static text)
 
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -25,74 +26,96 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import { PackPickerCertPreview } from "@/components/achievements/PackPickerCertPreview";
 
-describe("PackPickerCertPreview — Phase 6 Plan 06-05 (Wave 4)", () => {
-  it("renders_static_count_text", () => {
+describe("PackPickerCertPreview — Phase 08.2 (Cert Simplification)", () => {
+  it("renders_completion_certificate_headline", () => {
     render(<PackPickerCertPreview moduleCount={12} />);
-    expect(screen.getByText(/3 certifications available/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 completion certificate available/i),
+    ).toBeInTheDocument();
   });
 
-  it("collapsed_by_default", () => {
+  it("renders_milestones_subline", () => {
     render(<PackPickerCertPreview moduleCount={12} />);
-    expect(screen.queryByText(/master 25% of modules/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/master 60% of modules/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/master 100% of modules/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/progress milestones at 25\/50\/75\/100%/i),
+    ).toBeInTheDocument();
   });
 
-  it("expand_button_reveals_three_levels_with_criteria", async () => {
+  it("rationale_collapsed_by_default", () => {
+    render(<PackPickerCertPreview moduleCount={12} />);
+    expect(
+      screen.queryByTestId("pack-picker-cert-preview-rationale"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("expand_button_reveals_rationale_paragraph", async () => {
     const user = userEvent.setup();
     render(<PackPickerCertPreview moduleCount={12} />);
 
-    const toggle = screen.getByRole("button", { name: /certifications/i });
+    const toggle = screen.getByRole("button", {
+      name: /1 completion certificate available/i,
+    });
     await user.click(toggle);
 
-    expect(screen.getByText(/Associate/)).toBeInTheDocument();
-    expect(screen.getByText(/Practitioner/)).toBeInTheDocument();
-    expect(screen.getByText(/Professional/)).toBeInTheDocument();
-    expect(screen.getByText(/master 25% of modules/i)).toBeInTheDocument();
-    expect(screen.getByText(/master 60% of modules/i)).toBeInTheDocument();
-    expect(screen.getByText(/master 100% of modules/i)).toBeInTheDocument();
+    const rationale = screen.getByTestId("pack-picker-cert-preview-rationale");
+    expect(rationale).toBeInTheDocument();
+    // Rationale references the 100% mastery + 0.85 avg + labs gates (D-01).
+    expect(rationale.textContent ?? "").toMatch(/100% of modules/i);
+    expect(rationale.textContent ?? "").toMatch(/0\.85/);
+    expect(rationale.textContent ?? "").toMatch(/lab/i);
   });
 
-  it("expand_button_is_keyboard_accessible", async () => {
+  it("expand_button_is_keyboard_accessible", () => {
     render(<PackPickerCertPreview moduleCount={12} />);
-    const toggle = screen.getByRole("button", { name: /certifications/i });
+    const toggle = screen.getByRole("button", {
+      name: /completion certificate/i,
+    });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
 
     // Enter key opens
     fireEvent.keyDown(toggle, { key: "Enter" });
-    // Re-query in case React rerendered the node identity
     expect(
-      screen.getByRole("button", { name: /certifications/i }),
+      screen.getByRole("button", { name: /completion certificate/i }),
     ).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText(/master 25% of modules/i)).toBeInTheDocument();
+    expect(
+      screen.getByTestId("pack-picker-cert-preview-rationale"),
+    ).toBeInTheDocument();
 
     // Space key closes
     fireEvent.keyDown(
-      screen.getByRole("button", { name: /certifications/i }),
+      screen.getByRole("button", { name: /completion certificate/i }),
       { key: " " },
     );
     expect(
-      screen.getByRole("button", { name: /certifications/i }),
+      screen.getByRole("button", { name: /completion certificate/i }),
     ).toHaveAttribute("aria-expanded", "false");
   });
 
   it("collapse_after_expand", async () => {
     const user = userEvent.setup();
     render(<PackPickerCertPreview moduleCount={12} />);
-    const toggle = screen.getByRole("button", { name: /certifications/i });
+    const toggle = screen.getByRole("button", {
+      name: /completion certificate/i,
+    });
 
     await user.click(toggle);
-    expect(screen.getByText(/master 25% of modules/i)).toBeInTheDocument();
+    expect(
+      screen.getByTestId("pack-picker-cert-preview-rationale"),
+    ).toBeInTheDocument();
 
     await user.click(toggle);
-    expect(screen.queryByText(/master 25% of modules/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("pack-picker-cert-preview-rationale"),
+    ).not.toBeInTheDocument();
   });
 
   it("no_emoji_in_rendered_output", async () => {
     const user = userEvent.setup();
     const { container } = render(<PackPickerCertPreview moduleCount={12} />);
-    // Expand so the level details are also in the DOM and get scanned.
-    await user.click(screen.getByRole("button", { name: /certifications/i }));
+    // Expand so the rationale text is also in the DOM and gets scanned.
+    await user.click(
+      screen.getByRole("button", { name: /completion certificate/i }),
+    );
 
     const text = container.textContent ?? "";
     const emojiRegex = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
@@ -102,8 +125,9 @@ describe("PackPickerCertPreview — Phase 6 Plan 06-05 (Wave 4)", () => {
   it("no_ipc_call_made", async () => {
     const user = userEvent.setup();
     render(<PackPickerCertPreview moduleCount={12} />);
-    // Click expand to ensure even the on-toggle path doesn't trigger IPC.
-    await user.click(screen.getByRole("button", { name: /certifications/i }));
+    await user.click(
+      screen.getByRole("button", { name: /completion certificate/i }),
+    );
 
     expect(tauriSpies.getTrackCertifications).not.toHaveBeenCalled();
     expect(tauriSpies.invoke).not.toHaveBeenCalled();

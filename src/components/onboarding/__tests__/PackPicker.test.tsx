@@ -173,9 +173,10 @@ describe("PackPicker", () => {
     // Two tiles → two preview components in the DOM.
     const previews = screen.getAllByTestId("pack-picker-cert-preview");
     expect(previews).toHaveLength(2);
-    // Each preview shows the static count text per D-02 thresholds.
+    // Phase 08.2 — each preview shows the new "1 completion certificate
+    // available" headline (D-19 — replaced the 3-tier copy).
     expect(
-      screen.getAllByText(/3 certifications available/i).length,
+      screen.getAllByText(/1 completion certificate available/i).length,
     ).toBeGreaterThanOrEqual(2);
   });
 });

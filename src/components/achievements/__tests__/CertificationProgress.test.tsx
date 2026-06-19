@@ -1,23 +1,18 @@
-// Phase 6 (Certification) — Plan 06-05 (Wave 4) CertificationProgress tests.
+// Phase 08.2 (Cert Simplification) — CertificationProgress tests.
 //
-// Per D-11 + CERT-11: three-row progress indicator on TrackView. Reads
-// `getTrackCertifications(trackId)` once on mount, re-fetches when newly
-// issued achievements arrive in the store for the same track, and shows
-// a Completion-certificate download link when Professional is earned.
-// No emojis (D-08); lucide icons only.
+// Updated for the new model (D-20):
+//   - 4-segment progress bar (instead of 3 rows)
+//   - Milestone markers at 25/50/75 (earned vs locked icon state)
+//   - Completion certificate badge + Download PDF button at 100%
 //
 // Mocking strategy: only `@/lib/tauri-commands` is mocked. The real
-// useAchievementsStore (a Zustand store) is used directly via setState
-// so the selector subscription in the component fires on store updates.
-// The store's exportCertificate is replaced by a spy via setState for the
-// completion-cert download assertion.
+// useAchievementsStore (Zustand) is driven via setState so the
+// component's store-subscription path fires on updates.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Achievement, TrackCertifications } from "@/types/achievements";
-
-// ── Mocks ────────────────────────────────────────────────────────────
 
 const { getTrackCertificationsMock } = vi.hoisted(() => ({
   getTrackCertificationsMock: vi.fn(),
@@ -25,9 +20,6 @@ const { getTrackCertificationsMock } = vi.hoisted(() => ({
 
 vi.mock("@/lib/tauri-commands", () => ({
   getTrackCertifications: getTrackCertificationsMock,
-  // exportCertificate / exportBadge are reached only via the real store
-  // for the download-PDF test. We swap exportCertificate via setState
-  // instead — see the test below.
   exportCertificate: vi.fn(),
   exportBadge: vi.fn(),
   listAchievements: vi.fn().mockResolvedValue([]),
@@ -36,14 +28,13 @@ vi.mock("@/lib/tauri-commands", () => ({
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
 import { useAchievementsStore } from "@/stores/useAchievementsStore";
 
-// Snapshot the initial state so each test gets a clean store.
 const INITIAL_STATE = useAchievementsStore.getState();
 
 function makeCerts(overrides: Partial<TrackCertifications> = {}): TrackCertifications {
   return {
     earnedLevels: [],
-    nextLevel: "Associate",
-    criteria: "Master 25% of modules",
+    nextLevel: null,
+    criteria: "",
     ...overrides,
   };
 }
@@ -55,12 +46,12 @@ function makeAchievement(overrides: Partial<Achievement> = {}): Achievement {
     trackId: "track-1",
     packId: null,
     kind: "badge",
-    level: "Associate",
-    issuedAt: "2026-06-16T12:00:00Z",
+    level: "Milestone25",
+    issuedAt: "2026-06-19T12:00:00Z",
     masteryScore: 0.75,
     payloadJson: "",
     signature: "",
-    keyFingerprint: "deadbeef",
+    keyFingerprint: "",
     trackTopic: "Kubernetes",
     ...overrides,
   };
@@ -68,7 +59,6 @@ function makeAchievement(overrides: Partial<Achievement> = {}): Achievement {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Reset the real store between tests.
   useAchievementsStore.setState({
     ...INITIAL_STATE,
     achievements: [],
@@ -78,7 +68,7 @@ beforeEach(() => {
   });
 });
 
-describe("CertificationProgress — Phase 6 Plan 06-05 (Wave 4)", () => {
+describe("CertificationProgress — Phase 08.2 (Cert Simplification)", () => {
   it("loads_on_mount_with_trackId", async () => {
     getTrackCertificationsMock.mockResolvedValue(makeCerts());
     render(<CertificationProgress trackId="track-1" />);
@@ -89,89 +79,60 @@ describe("CertificationProgress — Phase 6 Plan 06-05 (Wave 4)", () => {
     expect(getTrackCertificationsMock).toHaveBeenCalledWith({ trackId: "track-1" });
   });
 
-  it("renders_three_level_rows", async () => {
+  it("renders_four_segment_progress_bar", async () => {
     getTrackCertificationsMock.mockResolvedValue(makeCerts());
     render(<CertificationProgress trackId="track-1" />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("cert-row-Associate")).toBeInTheDocument();
+      expect(screen.getByTestId("cert-progress-bar")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("cert-row-Practitioner")).toBeInTheDocument();
-    expect(screen.getByTestId("cert-row-Professional")).toBeInTheDocument();
+    expect(screen.getByTestId("cert-progress-bar-fill")).toBeInTheDocument();
+    expect(screen.getByTestId("cert-progress-tick-25")).toBeInTheDocument();
+    expect(screen.getByTestId("cert-progress-tick-50")).toBeInTheDocument();
+    expect(screen.getByTestId("cert-progress-tick-75")).toBeInTheDocument();
   });
 
-  it("earned_rows_show_check_icon", async () => {
-    getTrackCertificationsMock.mockResolvedValue(
-      makeCerts({
-        earnedLevels: ["Associate"],
-        nextLevel: "Practitioner",
-        criteria: "Master 60% of modules",
-      }),
-    );
+  it("renders_milestone_markers_locked_by_default", async () => {
+    getTrackCertificationsMock.mockResolvedValue(makeCerts());
     render(<CertificationProgress trackId="track-1" />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("cert-row-Associate-icon-check")).toBeInTheDocument();
+      expect(screen.getByTestId("milestone-row-Milestone25")).toBeInTheDocument();
     });
+    expect(
+      screen.getByTestId("milestone-icon-Milestone25-locked"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("milestone-icon-Milestone50-locked"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("milestone-icon-Milestone75-locked"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("milestone-icon-Completion-locked"),
+    ).toBeInTheDocument();
   });
 
-  it("next_level_shows_in_progress_icon_and_criteria", async () => {
-    getTrackCertificationsMock.mockResolvedValue(
-      makeCerts({
-        earnedLevels: ["Associate"],
-        nextLevel: "Practitioner",
-        criteria: "Master 60% of modules",
-      }),
-    );
+  it("milestone_25_shows_earned_when_milestone25_achievement_present", async () => {
+    getTrackCertificationsMock.mockResolvedValue(makeCerts());
+    useAchievementsStore.setState({
+      achievements: [makeAchievement({ id: "m25", level: "Milestone25" })],
+    });
     render(<CertificationProgress trackId="track-1" />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("cert-row-Practitioner-icon-progress")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("milestone-icon-Milestone25-earned"),
+      ).toBeInTheDocument();
     });
-    expect(screen.getByText(/master 60%/i)).toBeInTheDocument();
+    // Higher milestones still locked.
+    expect(
+      screen.getByTestId("milestone-icon-Milestone50-locked"),
+    ).toBeInTheDocument();
   });
 
-  it("future_levels_show_lock_icon", async () => {
-    getTrackCertificationsMock.mockResolvedValue(
-      makeCerts({
-        earnedLevels: ["Associate"],
-        nextLevel: "Practitioner",
-        criteria: "Master 60% of modules",
-      }),
-    );
-    render(<CertificationProgress trackId="track-1" />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("cert-row-Professional-icon-lock")).toBeInTheDocument();
-    });
-  });
-
-  it("no_emoji_in_rendered_output", async () => {
-    getTrackCertificationsMock.mockResolvedValue(
-      makeCerts({
-        earnedLevels: ["Associate", "Practitioner"],
-        nextLevel: "Professional",
-        criteria: "Master 100% of modules + 0.85 average mastery",
-      }),
-    );
-    const { container } = render(<CertificationProgress trackId="track-1" />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("certification-progress")).toBeInTheDocument();
-    });
-    const text = container.textContent ?? "";
-    const emojiRegex = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
-    expect(text).not.toMatch(emojiRegex);
-  });
-
-  it("shows_completion_certificate_note_when_professional_earned", async () => {
-    getTrackCertificationsMock.mockResolvedValue(
-      makeCerts({
-        earnedLevels: ["Associate", "Practitioner", "Professional"],
-        nextLevel: null,
-        criteria: "",
-      }),
-    );
+  it("shows_completion_certificate_badge_when_completion_earned", async () => {
+    getTrackCertificationsMock.mockResolvedValue(makeCerts());
     const completionCert = makeAchievement({
       id: "cert-completion-1",
       kind: "certificate",
@@ -181,9 +142,6 @@ describe("CertificationProgress — Phase 6 Plan 06-05 (Wave 4)", () => {
     const exportCertSpy = vi
       .fn()
       .mockResolvedValue({ saved: true, path: "/p.pdf" });
-    // Pre-populate the store with the completion cert achievement, and
-    // swap exportCertificate with a spy so we can assert the click wires
-    // through to the store action.
     useAchievementsStore.setState({
       achievements: [completionCert],
       exportCertificate: exportCertSpy,
@@ -194,10 +152,33 @@ describe("CertificationProgress — Phase 6 Plan 06-05 (Wave 4)", () => {
     await waitFor(() => {
       expect(screen.getByText(/completion certificate earned/i)).toBeInTheDocument();
     });
+    expect(
+      screen.getByTestId("milestone-icon-Completion-earned"),
+    ).toBeInTheDocument();
     const dlBtn = screen.getByRole("button", { name: /download pdf/i });
     expect(dlBtn).toBeInTheDocument();
     await userEvent.click(dlBtn);
     expect(exportCertSpy).toHaveBeenCalledWith(completionCert);
+  });
+
+  it("does_not_show_download_pdf_when_only_milestones_earned", async () => {
+    getTrackCertificationsMock.mockResolvedValue(makeCerts());
+    useAchievementsStore.setState({
+      achievements: [
+        makeAchievement({ id: "m25", level: "Milestone25" }),
+        makeAchievement({ id: "m50", level: "Milestone50" }),
+        makeAchievement({ id: "m75", level: "Milestone75" }),
+      ],
+    });
+    render(<CertificationProgress trackId="track-1" />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("milestone-icon-Milestone75-earned"),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/completion certificate earned/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /download pdf/i })).toBeNull();
   });
 
   it("refetches_when_new_achievement_for_track_arrives", async () => {
@@ -208,18 +189,12 @@ describe("CertificationProgress — Phase 6 Plan 06-05 (Wave 4)", () => {
       expect(getTrackCertificationsMock).toHaveBeenCalledTimes(1);
     });
 
-    // Newly issued achievement for the same track arrives in the store —
-    // component should re-fetch.
     getTrackCertificationsMock.mockResolvedValue(
-      makeCerts({
-        earnedLevels: ["Associate"],
-        nextLevel: "Practitioner",
-        criteria: "Master 60% of modules",
-      }),
+      makeCerts({ earnedLevels: ["Milestone25"] }),
     );
     await act(async () => {
       useAchievementsStore.setState({
-        achievements: [makeAchievement({ id: "ach-2", trackId: "track-1" })],
+        achievements: [makeAchievement({ id: "ach-2", level: "Milestone25" })],
       });
     });
 
@@ -236,5 +211,27 @@ describe("CertificationProgress — Phase 6 Plan 06-05 (Wave 4)", () => {
       expect(screen.getByTestId("cert-progress-error")).toBeInTheDocument();
     });
     expect(screen.getByText(/could not load certifications/i)).toBeInTheDocument();
+  });
+
+  it("no_emoji_in_rendered_output", async () => {
+    getTrackCertificationsMock.mockResolvedValue(makeCerts());
+    useAchievementsStore.setState({
+      achievements: [
+        makeAchievement({ id: "m25", level: "Milestone25" }),
+        makeAchievement({
+          id: "cert",
+          kind: "certificate",
+          level: "Completion",
+        }),
+      ],
+    });
+    const { container } = render(<CertificationProgress trackId="track-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("certification-progress")).toBeInTheDocument();
+    });
+    const text = container.textContent ?? "";
+    const emojiRegex = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+    expect(text).not.toMatch(emojiRegex);
   });
 });

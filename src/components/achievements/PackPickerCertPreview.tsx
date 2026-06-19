@@ -1,38 +1,29 @@
-// Phase 6 (Certification) — Plan 06-05 (Wave 4) PackPicker preview.
+// Phase 08.2 (Cert Simplification + Gamification) — PackPicker preview.
 //
-// Per D-10 + CERT-10: tiny "3 certifications available" preview shown on
-// each PackPicker tile. Click to expand and reveal Associate /
-// Practitioner / Professional names + criteria text. The text is STATIC
-// — Phase 6 thresholds are uniform per D-02 so the component does no
-// data fetching at all (no IPC, no network, no pack-specific lookups).
-// No emojis per D-10. Lucide icons + plain text only.
+// Replaces the Phase 6 "3 certifications available" preview (Associate /
+// Practitioner / Professional) with the new model (D-19):
+//   - "1 completion certificate available" headline
+//   - "Progress milestones at 25/50/75/100%" subline
+//   - Expandable rationale paragraph explaining how to earn the cert
+//
+// Static — no data fetching (D-02 thresholds are uniform across packs).
+// Lucide icons + plain text. No emojis (D-10 preserved).
 
 import { useState, type KeyboardEvent } from "react";
 import { ChevronDown, ChevronUp, Trophy } from "lucide-react";
 
 interface Props {
-  /// Optional — kept for future "track size" surface (e.g. "5 modules,
-  /// 3 certifications available"). Currently the count is fixed at 3
-  /// because D-02 thresholds are uniform across all packs.
+  /// Kept for future "track size" surface (e.g. "5 modules") but no longer
+  /// drives the certifications count — that is always 1 (D-01 + D-19).
   moduleCount?: number;
 }
 
-interface LevelSpec {
-  name: "Associate" | "Practitioner" | "Professional";
-  criteria: string;
-}
-
-// D-02 hardcoded criteria — uniform across all packs. Per-pack
-// configurability is deferred per 06-CONTEXT.md.
-const LEVELS: LevelSpec[] = [
-  { name: "Associate", criteria: "Master 25% of modules" },
-  { name: "Practitioner", criteria: "Master 60% of modules" },
-  {
-    name: "Professional",
-    criteria:
-      "Master 100% of modules + 0.85 average mastery (and any required practical labs)",
-  },
-];
+const RATIONALE =
+  "Earn a certificate by mastering 100% of modules (BKT mastery >= 0.7), " +
+  "reaching an average mastery of 0.85 across the track, and passing every " +
+  "lab marked as practically required. Progress milestones at 25/50/75% are " +
+  "in-app badges that mark progress; the certificate is the formal " +
+  "credential awarded at 100%.";
 
 export function PackPickerCertPreview(_props: Props) {
   const [open, setOpen] = useState(false);
@@ -51,33 +42,31 @@ export function PackPickerCertPreview(_props: Props) {
       <button
         type="button"
         aria-expanded={open}
-        aria-controls="cert-preview-list"
-        aria-label="3 certifications available"
+        aria-controls="cert-preview-rationale"
+        aria-label="1 completion certificate available"
         onClick={toggle}
         onKeyDown={onKeyDown}
         className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
       >
         <Trophy className="h-3 w-3" aria-hidden />
-        <span>3 certifications available</span>
+        <span>1 completion certificate available</span>
         {open ? (
           <ChevronUp className="h-3 w-3" aria-hidden />
         ) : (
           <ChevronDown className="h-3 w-3" aria-hidden />
         )}
       </button>
+      <div className="mt-1 text-muted-foreground">
+        Progress milestones at 25/50/75/100%
+      </div>
       {open && (
-        <ul
-          id="cert-preview-list"
-          data-testid="pack-picker-cert-preview-list"
-          className="mt-2 space-y-1 pl-4"
+        <p
+          id="cert-preview-rationale"
+          data-testid="pack-picker-cert-preview-rationale"
+          className="mt-2 pl-4 text-muted-foreground"
         >
-          {LEVELS.map((l) => (
-            <li key={l.name} className="text-muted-foreground">
-              <span className="font-medium text-foreground">{l.name}</span>{" "}
-              — {l.criteria}
-            </li>
-          ))}
-        </ul>
+          {RATIONALE}
+        </p>
       )}
     </div>
   );

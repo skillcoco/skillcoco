@@ -11,6 +11,13 @@ export interface LearnerProfile {
   preferencesJson: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Phase 08.2 — gamification points accumulator. Default 0. Awarded:
+   * +10/quiz-pass, +50/module-completion, +100/milestone, +500/track-cert.
+   * Optional in the type so older Rust shapes (pre-v010 migration)
+   * still deserialize without crashing the frontend.
+   */
+  points?: number;
 }
 
 export type LearningStyle = "visual" | "textual" | "practical" | "theoretical" | "mixed";

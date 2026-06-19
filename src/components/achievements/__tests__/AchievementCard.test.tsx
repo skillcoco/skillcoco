@@ -1,16 +1,15 @@
-// Phase 6 (Certification) — Plan 06-04 (Wave 3 GREEN) AchievementCard tests.
+// Phase 08.2 (Cert Simplification + Gamification) — AchievementCard tests.
 //
-// Card renders one Achievement row: level + track topic + issued date + a
-// kind-aware Export button (PDF for certificate / PNG for badge). No
-// emojis — lucide icons + text only (D-08 + D-10).
+// Updated for the new visual variants (D-21):
+//   - certificate kind → large card with Download PDF button
+//   - badge kind → compact pill, no export button (D-05 — milestones in-app only)
+//
+// Legacy 3-tier badges still render via the badge variant (D-02). No
+// emojis — lucide icons + text only (D-10).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-// vi.hoisted runs before module imports are evaluated, so the mock
-// factory closing over { exportCertificateMock, exportBadgeMock } never
-// hits the "top-level variable" hoisting error. Without hoisted(), the
-// vi.mock factory body executes BEFORE the consts below are initialized.
 const { exportCertificateMock, exportBadgeMock } = vi.hoisted(() => ({
   exportCertificateMock: vi.fn().mockResolvedValue({ saved: true, path: "/p.pdf" }),
   exportBadgeMock: vi.fn().mockResolvedValue({ saved: true, path: "/p.png" }),
@@ -38,34 +37,59 @@ function makeAchievement(overrides: Partial<Achievement> = {}): Achievement {
     trackId: "trk-1",
     packId: null,
     kind: "badge",
-    level: "Associate",
-    issuedAt: "2026-06-16T12:00:00Z",
+    level: "Milestone25",
+    issuedAt: "2026-06-19T12:00:00Z",
     masteryScore: 0.75,
     payloadJson: "",
     signature: "",
-    keyFingerprint: "deadbeef",
+    keyFingerprint: "",
     trackTopic: "Kubernetes",
     ...overrides,
   };
 }
 
-describe("AchievementCard — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
+describe("AchievementCard — Phase 08.2 (Cert Simplification)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("shows_level_track_date_export_button", () => {
-    const a = makeAchievement({ level: "Practitioner", trackTopic: "Kubernetes" });
+  it("milestone_badge_renders_pill_variant_with_readable_label", () => {
+    const a = makeAchievement({ level: "Milestone25", trackTopic: "Kubernetes" });
     render(<AchievementCard achievement={a} />);
 
-    // Level + track topic rendered
-    expect(screen.getByText(/Practitioner/)).toBeInTheDocument();
+    const card = screen.getByTestId(`achievement-card-${a.id}`);
+    expect(card.getAttribute("data-variant")).toBe("badge");
+    expect(screen.getByText(/25% Milestone/)).toBeInTheDocument();
     expect(screen.getByText(/Kubernetes/)).toBeInTheDocument();
-    // Export button rendered
-    expect(screen.getByRole("button", { name: /export/i })).toBeInTheDocument();
   });
 
-  it("export_button_routes_pdf_for_certificate_kind", async () => {
+  it("milestone_pill_does_not_show_download_button", () => {
+    const a = makeAchievement({ level: "Milestone50" });
+    render(<AchievementCard achievement={a} />);
+
+    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
+  });
+
+  it("completion_certificate_renders_large_card_with_download_button", () => {
+    const cert = makeAchievement({
+      id: "cert-1",
+      kind: "certificate",
+      level: "Completion",
+      trackTopic: "Kubernetes",
+    });
+    render(<AchievementCard achievement={cert} />);
+
+    const card = screen.getByTestId(`achievement-card-${cert.id}`);
+    expect(card.getAttribute("data-variant")).toBe("certificate");
+    // Title and subtitle both contain "Completion" — assert via getAllByText.
+    expect(screen.getAllByText(/Completion/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Kubernetes/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /download/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("download_button_calls_exportCertificate_for_completion_cert", () => {
     const cert = makeAchievement({
       id: "cert-1",
       kind: "certificate",
@@ -73,35 +97,43 @@ describe("AchievementCard — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
     });
     render(<AchievementCard achievement={cert} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /export/i }));
+    fireEvent.click(screen.getByRole("button", { name: /download/i }));
 
     expect(exportCertificateMock).toHaveBeenCalledTimes(1);
     expect(exportCertificateMock).toHaveBeenCalledWith(cert);
     expect(exportBadgeMock).not.toHaveBeenCalled();
   });
 
-  it("export_button_routes_png_for_badge_kind", async () => {
-    const badge = makeAchievement({
-      id: "badge-1",
+  it("legacy_3tier_badge_still_renders_via_badge_variant", () => {
+    // Pre-08.2 testing-data row: kind=badge, level=Practitioner.
+    const legacy = makeAchievement({
+      id: "legacy-1",
       kind: "badge",
-      level: "Associate",
+      level: "Practitioner",
     });
-    render(<AchievementCard achievement={badge} />);
+    render(<AchievementCard achievement={legacy} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /export/i }));
+    const card = screen.getByTestId(`achievement-card-${legacy.id}`);
+    expect(card.getAttribute("data-variant")).toBe("badge");
+    expect(screen.getByText(/Practitioner/)).toBeInTheDocument();
+    // No download button for badges.
+    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
+  });
 
-    expect(exportBadgeMock).toHaveBeenCalledTimes(1);
-    expect(exportBadgeMock).toHaveBeenCalledWith(badge);
-    expect(exportCertificateMock).not.toHaveBeenCalled();
+  it("milestone75_label_is_human_readable", () => {
+    const a = makeAchievement({ level: "Milestone75" });
+    render(<AchievementCard achievement={a} />);
+    expect(screen.getByText(/75% Milestone/)).toBeInTheDocument();
   });
 
   it("no_emoji_in_rendered_output", () => {
-    const a = makeAchievement({ level: "Professional", trackTopic: "Rust" });
-    const { container } = render(<AchievementCard achievement={a} />);
+    const cert = makeAchievement({
+      kind: "certificate",
+      level: "Completion",
+      trackTopic: "Rust",
+    });
+    const { container } = render(<AchievementCard achievement={cert} />);
 
-    // Strip any text node content + attribute values + check for
-    // pictographic emoji code points (a coarse net: U+1F300-U+1FAFF,
-    // U+2600-U+27BF for older emoji blocks).
     const text = container.textContent ?? "";
     const emojiRegex = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
     expect(text).not.toMatch(emojiRegex);

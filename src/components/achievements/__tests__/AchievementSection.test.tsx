@@ -1,8 +1,10 @@
-// Phase 6 (Certification) — Plan 06-04 (Wave 3 GREEN) AchievementSection tests.
+// Phase 08.2 (Cert Simplification + Gamification) — Dashboard section tests.
 //
-// Wave 0 shipped a RED skip for the empty-state copy; Wave 3 flips it
-// GREEN AND adds the View-all link, 6-card cap, on-mount load, and the
-// non-modal 5-second celebration banner.
+// Updated for the new grouped layout (D-21):
+//   - Certificates section (kind=certificate, large cards)
+//   - Milestones section (kind=badge, compact pills)
+// Empty state + on-mount load + non-modal celebration banner all
+// preserved from Phase 6.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
@@ -41,12 +43,12 @@ function makeAchievement(overrides: Partial<Achievement> = {}): Achievement {
     trackId: "trk-1",
     packId: null,
     kind: "badge",
-    level: "Associate",
-    issuedAt: "2026-06-16T12:00:00Z",
+    level: "Milestone25",
+    issuedAt: "2026-06-19T12:00:00Z",
     masteryScore: 0.75,
     payloadJson: "",
     signature: "",
-    keyFingerprint: "deadbeef",
+    keyFingerprint: "",
     trackTopic: "Kubernetes",
     ...overrides,
   };
@@ -72,45 +74,100 @@ function makeState(overrides: Partial<SliceShape> = {}): SliceShape {
   };
 }
 
-describe("AchievementSection — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
+describe("AchievementSection — Phase 08.2 (Cert Simplification)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState = makeState();
   });
 
-  it("renders_empty_state_when_no_achievements (Wave 0 RED → GREEN)", () => {
+  it("renders_empty_state_when_no_achievements", () => {
     mockState = makeState({ achievements: [] });
     renderWithRouter();
     expect(screen.getByText(/no achievements yet/i)).toBeInTheDocument();
   });
 
-  it("renders_six_most_recent_achievements", () => {
+  it("groups_certificates_and_milestones_separately", () => {
+    mockState = makeState({
+      achievements: [
+        makeAchievement({ id: "cert-1", kind: "certificate", level: "Completion" }),
+        makeAchievement({ id: "m25", level: "Milestone25" }),
+        makeAchievement({ id: "m50", level: "Milestone50" }),
+      ],
+    });
+    renderWithRouter();
+
+    expect(screen.getByTestId("achievements-certificates")).toBeInTheDocument();
+    expect(screen.getByTestId("achievements-milestones")).toBeInTheDocument();
+  });
+
+  it("certificates_section_omits_when_no_certificates", () => {
+    mockState = makeState({
+      achievements: [
+        makeAchievement({ id: "m25", level: "Milestone25" }),
+      ],
+    });
+    renderWithRouter();
+
+    expect(screen.queryByTestId("achievements-certificates")).toBeNull();
+    expect(screen.getByTestId("achievements-milestones")).toBeInTheDocument();
+  });
+
+  it("milestones_section_omits_when_no_milestones", () => {
+    mockState = makeState({
+      achievements: [
+        makeAchievement({ id: "cert-1", kind: "certificate", level: "Completion" }),
+      ],
+    });
+    renderWithRouter();
+
+    expect(screen.getByTestId("achievements-certificates")).toBeInTheDocument();
+    expect(screen.queryByTestId("achievements-milestones")).toBeNull();
+  });
+
+  it("certificates_section_caps_at_six_cards", () => {
     const eight = Array.from({ length: 8 }, (_, i) =>
       makeAchievement({
-        id: `a-${i}`,
+        id: `cert-${i}`,
+        kind: "certificate",
+        level: "Completion",
+        trackId: `t${i}`,
         issuedAt: `2026-06-${String(10 + i).padStart(2, "0")}T00:00:00Z`,
-        trackTopic: `Track ${i}`,
       }),
     );
-    // Newest first ordering — appendNewlyIssued prepends, so we sort DESC
-    // here too so the test mirrors the store contract.
-    const sorted = [...eight].sort((a, b) =>
-      b.issuedAt.localeCompare(a.issuedAt),
-    );
-    mockState = makeState({ achievements: sorted });
+    mockState = makeState({ achievements: eight });
     renderWithRouter();
 
     const cards = screen.getAllByTestId(/^achievement-card-/);
     expect(cards).toHaveLength(6);
-    // Newest first — Track 7 is highest-numbered (latest date)
-    expect(cards[0].textContent).toMatch(/Track 7/);
   });
 
-  it("renders_view_all_link_when_more_than_six", () => {
+  it("milestones_section_caps_at_six_pills", () => {
     const eight = Array.from({ length: 8 }, (_, i) =>
-      makeAchievement({ id: `a-${i}`, issuedAt: `2026-06-${String(10 + i).padStart(2, "0")}T00:00:00Z` }),
+      makeAchievement({
+        id: `m-${i}`,
+        kind: "badge",
+        level: "Milestone25",
+        trackId: `t${i}`,
+        issuedAt: `2026-06-${String(10 + i).padStart(2, "0")}T00:00:00Z`,
+      }),
     );
     mockState = makeState({ achievements: eight });
+    renderWithRouter();
+
+    const cards = screen.getAllByTestId(/^achievement-card-/);
+    expect(cards).toHaveLength(6);
+  });
+
+  it("renders_view_all_link_when_more_than_12_total", () => {
+    const cards = Array.from({ length: 14 }, (_, i) =>
+      makeAchievement({
+        id: `a-${i}`,
+        kind: i % 2 === 0 ? "certificate" : "badge",
+        level: i % 2 === 0 ? "Completion" : "Milestone25",
+        trackId: `t${i}`,
+      }),
+    );
+    mockState = makeState({ achievements: cards });
     renderWithRouter();
 
     const link = screen.getByTestId("achievements-view-all");
@@ -118,11 +175,11 @@ describe("AchievementSection — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
     expect(link.getAttribute("href")).toBe("/achievements");
   });
 
-  it("hides_view_all_link_when_five_or_fewer", () => {
-    const five = Array.from({ length: 5 }, (_, i) =>
-      makeAchievement({ id: `a-${i}` }),
+  it("hides_view_all_link_when_12_or_fewer", () => {
+    const cards = Array.from({ length: 5 }, (_, i) =>
+      makeAchievement({ id: `a-${i}`, trackId: `t${i}` }),
     );
-    mockState = makeState({ achievements: five });
+    mockState = makeState({ achievements: cards });
     renderWithRouter();
 
     expect(screen.queryByTestId("achievements-view-all")).toBeNull();
@@ -135,22 +192,21 @@ describe("AchievementSection — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
     expect(loadAchievementsMock).toHaveBeenCalledTimes(1);
   });
 
-  it("celebration_banner_shows_then_dismisses", async () => {
+  it("celebration_banner_shows_then_dismisses", () => {
     vi.useFakeTimers();
     try {
       const celeb = makeAchievement({
         id: "celeb-1",
-        level: "Practitioner",
+        level: "Milestone25",
         trackTopic: "Kubernetes",
       });
       mockState = makeState({ recentCelebration: celeb });
       renderWithRouter();
 
       expect(
-        screen.getByText(/You just earned Practitioner in Kubernetes/i),
+        screen.getByText(/You just earned Milestone25 in Kubernetes/i),
       ).toBeInTheDocument();
 
-      // Advance 5s — the timeout calls clearCelebration.
       act(() => {
         vi.advanceTimersByTime(5000);
       });

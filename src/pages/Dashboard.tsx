@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Target, BarChart3, Flame, BookOpen, Layers } from "lucide-react";
+import { Plus, Target, BarChart3, Flame, BookOpen, Layers, Award } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { useDailyChallengeStore } from "@/stores/useDailyChallengeStore";
 import * as commands from "@/lib/tauri-commands";
@@ -114,7 +114,7 @@ export function Dashboard() {
       <AchievementSection />
 
       {/* Stats Row */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatsCard
           label="Reviews Due"
           value={dueCards.length}
@@ -146,6 +146,14 @@ export function Dashboard() {
           subtitle="concurrent topics"
           icon={<Layers size={18} />}
           accentColor="hsl(var(--success))"
+        />
+        {/* Phase 08.2 (D-09) — Points stat card. */}
+        <StatsCard
+          label="Points"
+          value={profile?.points ?? 0}
+          subtitle="quizzes + milestones"
+          icon={<Award size={18} />}
+          accentColor="hsl(var(--warning))"
         />
       </div>
 
