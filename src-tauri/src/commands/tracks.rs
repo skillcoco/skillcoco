@@ -24,7 +24,7 @@ pub fn get_or_create_profile(state: State<AppState>) -> Result<LearnerProfile, S
     let maybe_profile: Option<LearnerProfile> = db
         .conn
         .query_row(
-            "SELECT id, display_name, learning_style, experience_level, preferences_json, created_at, updated_at FROM learner_profiles LIMIT 1",
+            "SELECT id, display_name, learning_style, experience_level, preferences_json, created_at, updated_at, COALESCE(points, 0) FROM learner_profiles LIMIT 1",
             [],
             |row| {
                 Ok(LearnerProfile {
@@ -35,6 +35,7 @@ pub fn get_or_create_profile(state: State<AppState>) -> Result<LearnerProfile, S
                     preferences_json: row.get(4)?,
                     created_at: row.get(5)?,
                     updated_at: row.get(6)?,
+                    points: row.get(7)?,
                 })
             },
         )
@@ -53,7 +54,7 @@ pub fn get_or_create_profile(state: State<AppState>) -> Result<LearnerProfile, S
 
             db.conn
                 .query_row(
-                    "SELECT id, display_name, learning_style, experience_level, preferences_json, created_at, updated_at FROM learner_profiles WHERE id = ?1",
+                    "SELECT id, display_name, learning_style, experience_level, preferences_json, created_at, updated_at, COALESCE(points, 0) FROM learner_profiles WHERE id = ?1",
                     [&id],
                     |row| {
                         Ok(LearnerProfile {
@@ -64,6 +65,7 @@ pub fn get_or_create_profile(state: State<AppState>) -> Result<LearnerProfile, S
                             preferences_json: row.get(4)?,
                             created_at: row.get(5)?,
                             updated_at: row.get(6)?,
+                            points: row.get(7)?,
                         })
                     },
                 )
@@ -122,7 +124,7 @@ pub fn update_profile(
 fn get_or_create_profile_inner(db: &crate::db::Database) -> Result<LearnerProfile, String> {
     db.conn
         .query_row(
-            "SELECT id, display_name, learning_style, experience_level, preferences_json, created_at, updated_at FROM learner_profiles LIMIT 1",
+            "SELECT id, display_name, learning_style, experience_level, preferences_json, created_at, updated_at, COALESCE(points, 0) FROM learner_profiles LIMIT 1",
             [],
             |row| {
                 Ok(LearnerProfile {
@@ -133,6 +135,7 @@ fn get_or_create_profile_inner(db: &crate::db::Database) -> Result<LearnerProfil
                     preferences_json: row.get(4)?,
                     created_at: row.get(5)?,
                     updated_at: row.get(6)?,
+                    points: row.get(7)?,
                 })
             },
         )

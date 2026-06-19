@@ -10,6 +10,11 @@ pub struct LearnerProfile {
     pub preferences_json: String,
     pub created_at: String,
     pub updated_at: String,
+    /// Phase 08.2 — Gamification points accumulator (D-08 schedule:
+    /// +10/quiz-pass, +50/module-completion, +100/milestone, +500/track-cert).
+    /// Default 0 from the v010 ALTER TABLE column default.
+    #[serde(default)]
+    pub points: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -98,6 +103,7 @@ mod tests {
             preferences_json: "{}".to_string(),
             created_at: "2026-01-01".to_string(),
             updated_at: "2026-01-01".to_string(),
+            points: 0,
         };
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("\"displayName\""), "Expected displayName in JSON, got: {}", json);
@@ -106,6 +112,7 @@ mod tests {
         assert!(json.contains("\"preferencesJson\""), "Expected preferencesJson in JSON, got: {}", json);
         assert!(json.contains("\"createdAt\""), "Expected createdAt in JSON, got: {}", json);
         assert!(json.contains("\"updatedAt\""), "Expected updatedAt in JSON, got: {}", json);
+        assert!(json.contains("\"points\""), "Expected points in JSON, got: {}", json);
         assert!(!json.contains("\"display_name\""), "Snake case display_name must not appear");
     }
 

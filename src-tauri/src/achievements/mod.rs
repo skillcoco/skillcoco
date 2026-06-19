@@ -25,6 +25,7 @@
 //! `AchievementStore` impl lives in `crate::storage_impl::achievements`.
 
 pub mod artifacts;
+pub mod milestones_and_completion;
 
 // `AchievementError` is referenced by `artifacts.rs` via `super::AchievementError`.
 // Re-export from core so the existing artifacts module body compiles
