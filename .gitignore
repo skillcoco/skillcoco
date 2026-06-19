@@ -27,3 +27,6 @@ Thumbs.db
 # Tauri
 src-tauri/gen/
 pro/src-tauri-pro/gen/
+
+# pnpm corepack side-effect (not project workspace config)
+pnpm-workspace.yaml
