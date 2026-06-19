@@ -285,14 +285,13 @@ pub fn run() {
             topic_packs::commands::reload_skills,
             topic_packs::commands::get_topic_pack_modules,
             // Certification (Phase 6 — Wave 2, Plan 06-03)
+            // Phase 08.1 (Cert Split) — export_badge, verify_signature,
+            // get_signing_public_key, fingerprint_from_public_pem moved to
+            // Studio overlay (pro/src-tauri-pro/src/commands/achievements.rs)
+            // per docs/OSS-VS-STUDIO.md §"Certification (Phase 6 — split)".
             commands::achievements::list_achievements_for_learner,
             commands::achievements::get_track_certifications,
             commands::achievements::export_certificate,
-            commands::achievements::export_badge,
-            commands::achievements::verify_signature,
-            // Certification (Phase 6 — Wave 5, Plan 06-06) — Settings Verify panel
-            commands::achievements::get_signing_public_key,
-            commands::achievements::fingerprint_from_public_pem,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
