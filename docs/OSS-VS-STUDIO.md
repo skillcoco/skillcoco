@@ -144,27 +144,43 @@ write a pack. Future commercial packs gate via a `requires_license:
 bool` field in pack.json; OSS loader rejects gated packs without a
 Studio license key.
 
-### Certification (Phase 6 — split)
+### Certification + Gamification (Phase 6 + 08.1 + 08.2)
 
 This is where OSS-adoption-first matters most. Cert is the primary
 **viral surface** (LinkedIn-shared certs = organic billboards).
 
+**Phase 08.2 simplification (2026-06-19):** the original Phase 6
+3-tier ladder (Associate / Practitioner / Professional) was replaced
+with **1 Completion certificate per track** + **3 progress
+milestones at 25/50/75%** + **gamification points scaffold**. Old
+Associate / Practitioner / Professional rows from pre-08.2 testing
+data are preserved as-is in the UI (D-02). `learnforge-core` did NOT
+bump versions — the 3-tier primitives stay callable as library code;
+the OSS desktop binary just stopped consuming them.
+
 | Feature | OSS | Studio | Phase |
 |---------|-----|--------|-------|
-| Mastery tracking (Associate/Practitioner/Professional levels) | ✓ | inherits | Phase 6 |
-| In-app achievement badges | ✓ | inherits | Phase 6 |
-| Dashboard "Achievements" section + `/achievements` route | ✓ | inherits | Phase 6 |
-| TrackView certification progress indicator | ✓ | inherits | Phase 6 |
-| PackPicker certifications preview | ✓ | inherits | Phase 6 |
-| **Unsigned PDF completion certificate** | ✓ | inherits | Phase 6 |
-| **Unsigned PNG badge** | ✓ | inherits | Phase 6 |
+| Mastery tracking (BKT, 0.7 threshold) | ✓ | inherits | Phase 6 |
+| **1 Completion certificate per track (100% + 0.85 avg + labs)** | ✓ | inherits | Phase 08.2 |
+| **3 progress milestones (Milestone25/50/75)** | ✓ | inherits | Phase 08.2 |
+| **Gamification points (+10 quiz / +50 module / +100 milestone / +500 cert)** | ✓ | inherits | Phase 08.2 |
+| Dashboard "Achievements" grouped by kind (Certificates + Milestones) | ✓ | inherits | Phase 08.2 |
+| Dashboard "Points" stat card | ✓ | inherits | Phase 08.2 |
+| `/achievements` route with grouped layout | ✓ | inherits | Phase 08.2 |
+| TrackView 4-segment progress bar + milestone markers | ✓ | inherits | Phase 08.2 |
+| PackPicker "1 completion certificate available" preview | ✓ | inherits | Phase 08.2 |
+| **Unsigned PDF completion certificate** (Completion-level only) | ✓ | inherits | Phase 6 + 08.1 |
 | Copyable share text ("I just earned X on LearnForge") | ✓ | inherits | Phase 6 |
-| **Ed25519 cryptographic signing** | — | ✓ | Phase 6 (split) |
+| Legacy Associate/Practitioner/Professional row rendering | ✓ | inherits | Phase 08.2 (D-02) |
+| **Ed25519 cryptographic signing of Completion cert** | — | ✓ | Phase 6 + 08.1 |
 | **QR code on certs** | — | ✓ | Phase 6 (split) |
+| **PNG badge export** | — | ✓ | Phase 08.1 |
 | **Settings "Verify Certificate" panel** | — | ✓ | Phase 6 (split) |
 | **Public verification URL (hosted)** | — | ✓ | Phase 14 |
 | **Credly / Open Badges export** | — | ✓ | Phase 14 |
 | **Org-branded certificate templates** | — | ✓ | Phase 14 |
+| **Cross-track domain certs (e.g. "DevOps Practitioner")** | — | ✓ | Phase 11+ |
+| **XP curves, leaderboards, streak-bonus points** | — | ✓ | Phase 13 |
 | **Bulk issuance + audit log** | — | ✓ | Phase 11+ |
 | **W3C Verifiable Credentials** | — | ✓ | Phase 14 |
 
