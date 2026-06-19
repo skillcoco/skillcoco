@@ -3044,11 +3044,17 @@ dependencies = [
 name = "learnforge-studio"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
+ "ed25519-dalek",
  "env_logger",
+ "hex",
  "learnforge",
+ "learnforge-core",
  "licensing",
  "log",
+ "pkcs8",
+ "rand 0.8.6",
  "serde",
  "serde_json",
  "tauri",
