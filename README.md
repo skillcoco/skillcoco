@@ -1,7 +1,7 @@
 <h1 align="center">LearnForge</h1>
 
 <p align="center">
-  <strong>The open-source adaptive learning platform for engineering teams — powered by real learning science, not video completion theater.</strong>
+  <strong>Adaptive learning for any subject — powered by real learning science, not video completion theater.</strong>
 </p>
 
 <p align="center">
@@ -19,9 +19,9 @@
 
 ---
 
-LearnForge is an **open-source, offline-capable desktop application** for adaptive engineering education. It combines **Bayesian Knowledge Tracing (BKT)**, **SM-2 spaced repetition**, AI-judged hands-on terminal labs, and a local-first architecture into a single mastery loop. The whole course reshapes per learner. No cloud required. No vendor lock-in. MIT licensed.
+LearnForge is an **open-source, offline-capable desktop application** for adaptive learning — languages, programming, music theory, history, anything you want to learn. It combines **Bayesian Knowledge Tracing (BKT)**, **SM-2 spaced repetition**, AI-generated content shaped by demonstrated mastery, and (when the topic is technical) AI-judged hands-on terminal labs — into a single local-first mastery loop. The whole course reshapes per learner. No cloud required. No vendor lock-in. MIT licensed.
 
-Bring your own API key (Anthropic, OpenAI, or Gemini) or run fully offline with a local Ollama model. Every algorithm is auditable in the source code.
+Type any subject in the onboarding ("Spanish", "Watercolor", "Kubernetes", "Music Theory") and the engine generates an adaptive path. Bring your own API key (Anthropic, OpenAI, or Gemini) or run fully offline with a local Ollama model. Every algorithm is auditable in the source code.
 
 ---
 
