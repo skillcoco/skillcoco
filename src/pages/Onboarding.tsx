@@ -12,19 +12,20 @@ import {
   assessKnowledge,
   generateLearningPath,
 } from "@/lib/tauri-commands";
-import { PackPicker } from "@/components/onboarding/PackPicker";
+import { TopicPicker } from "@/components/onboarding/TopicPicker";
 
-// Phase 5 Plan 05 (Wave 4) — step 1 renamed from "topic" to "pack-picker"
-// per D-08. The free-text fallback now lives inside <PackPicker /> as a
-// collapsible. R5: the static domain-modules list moved into PackPicker
-// (its canonical home now that the picker owns domain selection).
-type OnboardingStep = "pack-picker" | "goals" | "assessment";
+// Phase 08.3 — step 1 is "topic-picker" (was "pack-picker" in Phase 5
+// D-08). The Phase 08.3 refactor inverts the surface: free-text input is
+// primary, chip cloud sits below it, and the original 6 bundled topic
+// packs are demoted into a collapsible templates section (D-04..D-08).
+// All onboarding flow downstream of step 1 is unchanged.
+type OnboardingStep = "topic-picker" | "goals" | "assessment";
 
 type LevelOption = "beginner" | "intermediate" | "advanced";
 
 export function Onboarding() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<OnboardingStep>("pack-picker");
+  const [step, setStep] = useState<OnboardingStep>("topic-picker");
   const [topic, setTopic] = useState("");
   const [selectedDomain, setSelectedDomain] = useState("");
   const [goal, setGoal] = useState("");
@@ -105,9 +106,9 @@ export function Onboarding() {
         {/* Header */}
         <div className="text-center">
           <Sparkles className="mx-auto mb-3 text-primary" size={32} />
-          <h1 className="text-2xl font-bold text-foreground">Start a New Learning Track</h1>
+          <h1 className="text-2xl font-bold text-foreground">What do you want to learn?</h1>
           <p className="text-sm text-muted-foreground">
-            {step === "pack-picker" && "Pick a topic pack or describe what you want to learn"}
+            {step === "topic-picker" && "Type anything, tap a topic, or pick a template"}
             {step === "goals" && "Set your learning goals"}
             {step === "assessment" && "Rate your experience level"}
           </p>
@@ -115,14 +116,14 @@ export function Onboarding() {
 
         {/* Progress indicator */}
         <div className="flex items-center justify-center gap-2">
-          {(["pack-picker", "goals", "assessment"] as const).map((s, i) => (
+          {(["topic-picker", "goals", "assessment"] as const).map((s, i) => (
             <div key={s} className="flex items-center gap-2">
               <div
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium",
                   step === s
                     ? "bg-primary text-primary-foreground"
-                    : (["pack-picker", "goals", "assessment"].indexOf(step) > i)
+                    : (["topic-picker", "goals", "assessment"].indexOf(step) > i)
                       ? "bg-primary/20 text-primary"
                       : "bg-muted text-muted-foreground"
                 )}
@@ -133,7 +134,7 @@ export function Onboarding() {
                 <div
                   className={cn(
                     "h-0.5 w-8",
-                    (["pack-picker", "goals", "assessment"].indexOf(step) > i)
+                    (["topic-picker", "goals", "assessment"].indexOf(step) > i)
                       ? "bg-primary/40"
                       : "bg-muted"
                   )}
@@ -156,16 +157,18 @@ export function Onboarding() {
           </div>
         )}
 
-        {/* Step: Pack Picker (D-08 — replaces the free-text topic step) */}
-        {step === "pack-picker" && (
-          <PackPicker
-            onPick={(packId, packTopic, domainModule) => {
+        {/* Step: Topic Picker (Phase 08.3 — replaces PackPicker; the
+            topic-first surface with free-text + chip cloud + collapsible
+            templates per D-04..D-08). */}
+        {step === "topic-picker" && (
+          <TopicPicker
+            onPick={(packId: string, packTopic: string, domainModule: string) => {
               setTopic(packTopic);
               setSelectedDomain(domainModule);
               setSelectedPackId(packId);
               setStep("goals");
             }}
-            onCustomTopic={(text, domain) => {
+            onCustomTopic={(text: string, domain: string) => {
               setTopic(text);
               setSelectedDomain(domain);
               setSelectedPackId(null);
@@ -192,7 +195,7 @@ export function Onboarding() {
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setStep("pack-picker")}
+                onClick={() => setStep("topic-picker")}
                 className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm font-medium hover:bg-accent"
               >
                 <ArrowLeft size={16} />
