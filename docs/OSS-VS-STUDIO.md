@@ -42,6 +42,40 @@ single largest reason open-source projects fork.
 
 ---
 
+## Decision #1 — Two products, two positions
+
+**OSS LearnForge = "Adaptive Learning for Anything". LearnForge Studio
+= "Adaptive Learning for Engineering Teams".**
+
+Both products share 95% of the same codebase, but they target
+different audiences with different marketing messages.
+
+| | OSS LearnForge | LearnForge Studio |
+|--|----------------|-------------------|
+| **Position** | Adaptive learning for any subject | Adaptive learning for engineering teams |
+| **Audience** | Individual learners, hobbyists, students | Engineering teams, L&D departments, enterprises |
+| **Subject matter** | ANY topic (languages, music theory, art, programming, history, math, cooking, public speaking) | Tech-focused (corporate compliance training, certification prep, internal training) |
+| **Marketing message** | "Learn anything, faster" | "Train your engineering team" |
+| **Bundled content** | 6 tech packs ship as curated DEMOS, not constraints — AI generates a path for any topic the learner types | Studio packs = corporate-vetted tech content (SOC2, Security+, CKA, AWS — Phase 11+) |
+
+**Implications:**
+- **OSS marketing breadth** — the OSS hero / docs / onboarding lead
+  with "any subject" framing. The 6 bundled tech packs are templates,
+  not a ceiling.
+- **Studio marketing depth** — the Studio sales surface (Phase 14+
+  landing page) leads with engineering-team value (cohorts, manager
+  dashboards, compliance content).
+- **No platform schism.** Both binaries share the same
+  `learnforge-core` algorithms. Labs + terminal work in OSS too —
+  Phase 03.1's detection logic decides when a topic warrants lab
+  blocks. Non-tech topics get section + quiz + flash_card blocks
+  only.
+- **Onboarding step 2** in OSS is a topic-first surface (free-text
+  input + diverse chip cloud) with the 6 bundled tech packs demoted
+  to a collapsible "Or use a curated template" section.
+
+---
+
 ## Two products, one codebase
 
 | | LearnForge | LearnForge Studio |
@@ -143,6 +177,12 @@ the lab RUNTIME is OSS.
 write a pack. Future commercial packs gate via a `requires_license:
 bool` field in pack.json; OSS loader rejects gated packs without a
 Studio license key.
+
+**Bundled tech packs are curated DEMOS, not constraints.** The AI
+generates a learning path for any topic the learner types in
+onboarding step 2 (or via Settings → Topic Packs free-text). Phase
+08.3 demoted the 6 tech packs into a collapsible "Or use a curated
+template" section to make the breadth of supported subjects clearer.
 
 ### Certification + Gamification (Phase 6 + 08.1 + 08.2)
 
