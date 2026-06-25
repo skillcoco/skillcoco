@@ -64,6 +64,13 @@ function renderOnboarding() {
   );
 }
 
+// Phase 08.3 — Onboarding step 1 now mounts <TopicPicker /> (free-text
+// primary, chip cloud below, templates collapsible). Tests below replace
+// the Phase 5 PackPicker assertions (Topic Packs heading, custom-topic
+// toggle, domain-selector chip click) with the topic-first surface
+// equivalents. Component-level coverage of the picker itself lives in
+// src/components/onboarding/__tests__/TopicPicker.test.tsx — this file
+// only exercises the wizard flow that surrounds it.
 describe("Onboarding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,60 +95,68 @@ describe("Onboarding", () => {
     generateLearningPathMock.mockResolvedValue({} as never);
   });
 
-  it("renders the pack-picker step on initial load", async () => {
+  it("renders the topic-picker step on initial load with new wizard copy", async () => {
     listTopicPacksMock.mockResolvedValue([
       makePack("kubernetes-fundamentals", "bundled"),
     ]);
     renderOnboarding();
 
+    // Phase 08.3 — wizard <h1> + TopicPicker <h2> both carry the
+    // 'What do you want to learn?' string by design. Scope the wizard
+    // header check to level 1.
     expect(
-      screen.getByText(/pick a topic pack or describe what you want to learn/i),
+      screen.getByRole("heading", {
+        level: 1,
+        name: /what do you want to learn\?/i,
+      }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/type anything, tap a topic, or pick a template/i),
+    ).toBeInTheDocument();
+    // Free-text input is the primary surface (D-04).
+    expect(screen.getByTestId("topic-freetext-input")).toBeInTheDocument();
+    // Templates collapsible exists, but bundled packs are NOT yet
+    // rendered (collapsed by default per D-06).
     await waitFor(() => {
-      expect(screen.getByText(/topic packs/i)).toBeInTheDocument();
-      expect(screen.getByText(/my skills/i)).toBeInTheDocument();
+      expect(screen.getByTestId("templates-toggle")).toBeInTheDocument();
     });
+    expect(
+      screen.queryByTestId("pack-card-kubernetes-fundamentals"),
+    ).not.toBeInTheDocument();
   });
 
-  it("free-text fallback collapsible navigates to goals step", async () => {
+  it("free-text submit advances to the goals step", async () => {
     const user = userEvent.setup();
     listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    await waitFor(() => {
-      expect(screen.getByTestId("custom-topic-toggle")).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByTestId("custom-topic-toggle"));
     await user.type(
-      screen.getByPlaceholderText(/kubernetes/i),
+      screen.getByTestId("topic-freetext-input"),
       "Distributed systems",
     );
-    await user.click(screen.getByText(/concepts & theory/i));
-    await user.click(screen.getByTestId("custom-topic-submit"));
+    await user.click(screen.getByTestId("topic-freetext-submit"));
 
     expect(screen.getByText(/set your learning goals/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/pass the cka/i)).toBeInTheDocument();
   });
 
-  it("navigates back from goals to pack-picker step", async () => {
+  it("Back button on goals step returns to topic-picker", async () => {
     const user = userEvent.setup();
     listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    // Open fallback → submit → goals
-    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
-    await user.click(screen.getByTestId("custom-topic-toggle"));
-    await user.type(screen.getByPlaceholderText(/kubernetes/i), "Rust");
-    await user.click(screen.getByText(/programming language/i));
-    await user.click(screen.getByTestId("custom-topic-submit"));
+    // Free-text → goals.
+    await user.type(screen.getByTestId("topic-freetext-input"), "Rust");
+    await user.click(screen.getByTestId("topic-freetext-submit"));
 
-    // Back
+    // Back to topic-picker.
     await user.click(screen.getByRole("button", { name: /back/i }));
 
     expect(
-      screen.getByText(/pick a topic pack or describe what you want to learn/i),
+      screen.getByText(/type anything, tap a topic, or pick a template/i),
     ).toBeInTheDocument();
+    // Free-text input visible again.
+    expect(screen.getByTestId("topic-freetext-input")).toBeInTheDocument();
   });
 
   it("navigates to level-selection step after setting a goal", async () => {
@@ -149,11 +164,8 @@ describe("Onboarding", () => {
     listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
-    await user.click(screen.getByTestId("custom-topic-toggle"));
-    await user.type(screen.getByPlaceholderText(/kubernetes/i), "Kubernetes");
-    await user.click(screen.getByText(/devops & infrastructure/i));
-    await user.click(screen.getByTestId("custom-topic-submit"));
+    await user.type(screen.getByTestId("topic-freetext-input"), "Kubernetes");
+    await user.click(screen.getByTestId("topic-freetext-submit"));
 
     // Goals
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn fundamentals");
@@ -169,11 +181,8 @@ describe("Onboarding", () => {
     listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
-    await user.click(screen.getByTestId("custom-topic-toggle"));
-    await user.type(screen.getByPlaceholderText(/kubernetes/i), "Kubernetes");
-    await user.click(screen.getByText(/devops & infrastructure/i));
-    await user.click(screen.getByTestId("custom-topic-submit"));
+    await user.type(screen.getByTestId("topic-freetext-input"), "Kubernetes");
+    await user.click(screen.getByTestId("topic-freetext-submit"));
 
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn fundamentals");
     await user.click(screen.getByRole("button", { name: /continue/i }));
@@ -190,11 +199,8 @@ describe("Onboarding", () => {
     listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
-    await user.click(screen.getByTestId("custom-topic-toggle"));
-    await user.type(screen.getByPlaceholderText(/kubernetes/i), "Kubernetes");
-    await user.click(screen.getByText(/devops & infrastructure/i));
-    await user.click(screen.getByTestId("custom-topic-submit"));
+    await user.type(screen.getByTestId("topic-freetext-input"), "Kubernetes");
+    await user.click(screen.getByTestId("topic-freetext-submit"));
 
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn fundamentals");
     await user.click(screen.getByRole("button", { name: /continue/i }));
@@ -210,11 +216,15 @@ describe("Onboarding", () => {
 });
 
 /**
- * Plan 05-05 Wave 4 — Wave 0 RED scaffolds turn GREEN here. Tests verify
- * the picker structure, the collapsible fallback, and packId flowing
- * through `generateLearningPath`.
+ * Phase 08.3 W2 — wizard-level coverage for the template-pick path and
+ * the free-text path through generateLearningPath. The Phase 5 RED
+ * scaffolds turned GREEN in 05-05 are preserved in spirit: we still
+ * verify packId flows to the backend when a template is picked, and is
+ * undefined for free-text. The surface that reveals templates moved to
+ * the collapsible (D-06), so each test expands it before clicking a
+ * pack card.
  */
-describe("Onboarding pack picker", () => {
+describe("Onboarding template + free-text wizard flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listTopicPacksMock.mockResolvedValue([]);
@@ -237,7 +247,8 @@ describe("Onboarding pack picker", () => {
     generateLearningPathMock.mockResolvedValue({} as never);
   });
 
-  it("step 2 shows Topic Packs and My Skills sections", async () => {
+  it("expanding templates reveals bundled packs and My Skills section", async () => {
+    const user = userEvent.setup();
     listTopicPacksMock.mockResolvedValue([
       makePack("kubernetes-fundamentals", "bundled"),
       makePack("rust-from-zero", "bundled"),
@@ -246,37 +257,41 @@ describe("Onboarding pack picker", () => {
     renderOnboarding();
 
     await waitFor(() => {
-      expect(screen.getByText(/topic packs/i)).toBeInTheDocument();
-      expect(screen.getByText(/my skills/i)).toBeInTheDocument();
-      expect(
-        screen.getByTestId("pack-card-kubernetes-fundamentals"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByTestId("pack-card-my-custom-skill"),
-      ).toBeInTheDocument();
+      expect(screen.getByTestId("templates-toggle")).toBeInTheDocument();
     });
+    await user.click(screen.getByTestId("templates-toggle"));
+
+    expect(screen.getByText(/my skills/i)).toBeInTheDocument();
+    expect(
+      screen.getByTestId("pack-card-kubernetes-fundamentals"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("pack-card-my-custom-skill"),
+    ).toBeInTheDocument();
   });
 
-  it("collapsible 'Or describe your own' fallback exists at bottom", async () => {
+  it("templates collapsible is collapsed by default (D-06)", async () => {
     listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
     await waitFor(() => {
-      expect(screen.getByTestId("custom-topic-toggle")).toBeInTheDocument();
+      expect(screen.getByTestId("templates-toggle")).toBeInTheDocument();
     });
-    expect(screen.getByText(/or describe your own/i)).toBeInTheDocument();
-    // Form is collapsed by default — the free-text input is absent.
-    expect(screen.queryByPlaceholderText(/kubernetes/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/or use a curated template/i)).toBeInTheDocument();
+    // Without expanding, the My Skills section is NOT rendered.
+    expect(screen.queryByText(/my skills/i)).not.toBeInTheDocument();
   });
 
-  it("picking a pack flows packId into generateLearningPath", async () => {
+  it("picking a template flows packId into generateLearningPath", async () => {
     const user = userEvent.setup();
     listTopicPacksMock.mockResolvedValue([
       makePack("agentic-devops", "bundled"),
     ]);
     renderOnboarding();
 
-    // Pick the pack
+    // Expand templates → click the pack card.
+    await waitFor(() => screen.getByTestId("templates-toggle"));
+    await user.click(screen.getByTestId("templates-toggle"));
     await waitFor(() => screen.getByTestId("pack-card-agentic-devops"));
     await user.click(screen.getByTestId("pack-card-agentic-devops"));
 
@@ -303,11 +318,11 @@ describe("Onboarding pack picker", () => {
     listTopicPacksMock.mockResolvedValue([]);
     renderOnboarding();
 
-    await waitFor(() => screen.getByTestId("custom-topic-toggle"));
-    await user.click(screen.getByTestId("custom-topic-toggle"));
-    await user.type(screen.getByPlaceholderText(/kubernetes/i), "Distributed systems");
-    await user.click(screen.getByText(/concepts & theory/i));
-    await user.click(screen.getByTestId("custom-topic-submit"));
+    await user.type(
+      screen.getByTestId("topic-freetext-input"),
+      "Distributed systems",
+    );
+    await user.click(screen.getByTestId("topic-freetext-submit"));
 
     await user.type(screen.getByPlaceholderText(/pass the cka/i), "Learn the patterns");
     await user.click(screen.getByRole("button", { name: /continue/i }));
@@ -322,6 +337,25 @@ describe("Onboarding pack picker", () => {
     const call = generateLearningPathMock.mock.calls[0][0];
     expect(call.packId).toBeUndefined();
     expect(call.topic).toBe("Distributed systems");
-    expect(call.domain).toBe("concepts");
+    // Phase 08.3 — domain is no longer surfaced; TopicPicker passes
+    // DEFAULT_DOMAIN ('general') through to the wizard.
+    expect(call.domain).toBe("general");
+  });
+
+  it("chip click prefills the free-text input and Continue submits with that topic", async () => {
+    const user = userEvent.setup();
+    listTopicPacksMock.mockResolvedValue([]);
+    renderOnboarding();
+
+    // Click the "Spanish" chip — input should prefill.
+    await user.click(screen.getByTestId("chip-spanish"));
+    const input = screen.getByTestId(
+      "topic-freetext-input",
+    ) as HTMLInputElement;
+    expect(input.value).toBe("Spanish");
+
+    // Submit → goals step uses the chip-derived topic.
+    await user.click(screen.getByTestId("topic-freetext-submit"));
+    expect(screen.getByPlaceholderText(/pass the cka/i)).toBeInTheDocument();
   });
 });
