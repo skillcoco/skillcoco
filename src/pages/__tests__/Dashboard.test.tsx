@@ -277,7 +277,7 @@ describe("Dashboard", () => {
     await waitFor(() => {
       expect(screen.getByText("Reviews Due")).toBeInTheDocument();
       expect(screen.getByText("Modules Done")).toBeInTheDocument();
-      expect(screen.getByText("Best Streak")).toBeInTheDocument();
+      expect(screen.getByText("Daily Streak")).toBeInTheDocument();
       expect(screen.getByText("Active Tracks")).toBeInTheDocument();
     });
   });
@@ -393,7 +393,7 @@ describe("Dashboard", () => {
     }
   });
 
-  it("global streak StatsCard shows '--' when isEnabled=false (D-12 — no streak before gate)", async () => {
+  it("consecutive days StatsCard shows '--' when isEnabled=false (D-12 — no streak before gate)", async () => {
     vi.mocked(listTracks).mockResolvedValue([]);
     vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
 
@@ -401,9 +401,9 @@ describe("Dashboard", () => {
     renderDashboard();
 
     await waitFor(() => {
-      expect(screen.getByText("Best Streak")).toBeInTheDocument();
+      expect(screen.getByText("Daily Streak")).toBeInTheDocument();
     });
-    // The Best Streak card value is "--" and subtitle is "not yet active"
+    // The Daily Streak card value is "--" and subtitle is "not yet active"
     expect(screen.getByText("not yet active")).toBeInTheDocument();
   });
 
@@ -443,7 +443,7 @@ describe("Dashboard", () => {
     );
   });
 
-  it("global streak StatsCard shows 'Xd' when isEnabled=true (Phase 4 Plan 04)", async () => {
+  it("consecutive days StatsCard shows 'Xd' when isEnabled=true (Phase 4 Plan 04)", async () => {
     vi.mocked(listTracks).mockResolvedValue([]);
     vi.mocked(getOrCreateProfile).mockResolvedValue(mockProfile);
 
@@ -456,9 +456,9 @@ describe("Dashboard", () => {
     renderDashboard();
 
     await waitFor(() => {
-      expect(screen.getByText("Best Streak")).toBeInTheDocument();
+      expect(screen.getByText("Daily Streak")).toBeInTheDocument();
     });
     expect(screen.getByText("7d")).toBeInTheDocument();
-    expect(screen.getByText("global streak")).toBeInTheDocument();
+    expect(screen.getByText("consecutive days")).toBeInTheDocument();
   });
 });

@@ -34,7 +34,13 @@ export function Dashboard() {
       .catch((err) => console.error("Failed to load profile:", err));
   }, []);
 
-  const activeTracks = tracks.filter((t) => t.status === "active");
+  // Treat both "active" and "onboarding" tracks as in-progress. Tracks stay in
+  // "onboarding" status while their AI-generated path is being built and during
+  // first-pass learning; status transitions to "active" downstream. For Dashboard
+  // stats + Smart Session gating, both states count as engaged learning.
+  const activeTracks = tracks.filter(
+    (t) => t.status === "active" || t.status === "onboarding"
+  );
   const [moduleCounts, setModuleCounts] = useState<Record<string, { total: number; completed: number }>>({});
 
   useEffect(() => {
@@ -46,7 +52,15 @@ export function Dashboard() {
             commands.getPath(track.id),
             commands.getModuleProgress(track.id),
           ]);
-          const total = path.modules?.length ?? 0;
+          // Backend returns modulesJson as a JSON-encoded string; parse it.
+          // path.modules is deprecated and undefined here.
+          const total = (() => {
+            try {
+              return JSON.parse(path.modulesJson || "[]").length;
+            } catch {
+              return 0;
+            }
+          })();
           const completed = progress.filter((p) => p.status === "completed").length;
           counts[track.id] = { total, completed };
         } catch {
@@ -134,9 +148,9 @@ export function Dashboard() {
             auto-enable gate fires so the streak counter never leaks before
             the daily challenge surface goes live. */}
         <StatsCard
-          label="Best Streak"
+          label="Daily Streak"
           value={dailyChallengeEnabled ? `${globalStreakDays}d` : "--"}
-          subtitle={dailyChallengeEnabled ? "global streak" : "not yet active"}
+          subtitle={dailyChallengeEnabled ? "consecutive days" : "not yet active"}
           icon={<Flame size={18} />}
           accentColor="hsl(var(--warning))"
         />
