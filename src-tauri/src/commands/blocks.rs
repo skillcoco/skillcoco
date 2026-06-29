@@ -641,6 +641,65 @@ pub(crate) async fn generate_section_with_client<C: AIClientTrait>(
     Ok(payload.to_string())
 }
 
+/// Validate a generated quiz so a malformed answer key can't silently
+/// mis-score (Phase 06 UAT insurance). Scoring is id-based, so it ASSUMES
+/// each question has unique option ids and a correctOptionId that matches
+/// exactly one option — nothing upstream guaranteed that. Rejects: no
+/// questions, duplicate question ids, < 2 options, duplicate option ids
+/// within a question, or a correctOptionId matching no option. Returns Err
+/// so the block fails cleanly (and regenerates) rather than serving a quiz
+/// that would grade wrong.
+fn validate_quiz_json(v: &serde_json::Value) -> Result<(), String> {
+    let questions = v
+        .get("questions")
+        .and_then(|q| q.as_array())
+        .ok_or_else(|| "quiz: missing questions array".to_string())?;
+    if questions.is_empty() {
+        return Err("quiz: no questions".to_string());
+    }
+    let mut seen_qids = std::collections::HashSet::new();
+    for (i, q) in questions.iter().enumerate() {
+        let qid = q
+            .get("id")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| format!("quiz: question {} missing id", i))?;
+        if !seen_qids.insert(qid) {
+            return Err(format!("quiz: duplicate question id '{}'", qid));
+        }
+        let opts = q
+            .get("options")
+            .and_then(|o| o.as_array())
+            .ok_or_else(|| format!("quiz: question '{}' missing options", qid))?;
+        if opts.len() < 2 {
+            return Err(format!("quiz: question '{}' has fewer than 2 options", qid));
+        }
+        let mut oids = std::collections::HashSet::new();
+        for o in opts {
+            let oid = o
+                .get("id")
+                .and_then(|x| x.as_str())
+                .ok_or_else(|| format!("quiz: question '{}' has an option missing id", qid))?;
+            if !oids.insert(oid) {
+                return Err(format!(
+                    "quiz: question '{}' has duplicate option id '{}'",
+                    qid, oid
+                ));
+            }
+        }
+        let correct = q
+            .get("correctOptionId")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| format!("quiz: question '{}' missing correctOptionId", qid))?;
+        if !oids.contains(correct) {
+            return Err(format!(
+                "quiz: question '{}' correctOptionId '{}' matches no option",
+                qid, correct
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Generate a quiz block's content via LLM.
 pub(crate) async fn generate_quiz_with_client<C: AIClientTrait>(
     client: &C,
@@ -706,6 +765,8 @@ pub(crate) async fn generate_quiz_with_client<C: AIClientTrait>(
 
     let text = client.request(req, 2).await?;
     let json_val = crate::commands::ai::extract_json_pub(&text)?;
+    // Reject a malformed answer key before it can mis-score (Phase 06 UAT).
+    validate_quiz_json(&json_val)?;
     Ok(json_val.to_string())
 }
 
@@ -2564,5 +2625,63 @@ pub(crate) mod tests {
             "quiz max_tokens must be >= 4096 to avoid truncating a 10-question quiz, got {}",
             mt
         );
+    }
+
+    // ── validate_quiz_json (Phase 06 UAT grading insurance) ──
+
+    #[test]
+    fn validate_quiz_accepts_a_clean_quiz() {
+        let v: serde_json::Value = serde_json::from_str(&canned_quiz_json()).unwrap();
+        assert!(validate_quiz_json(&v).is_ok());
+    }
+
+    #[test]
+    fn validate_quiz_rejects_duplicate_option_ids() {
+        // Two options share id "o1" → id-based scoring would mark any pick
+        // of either as correct. Must be rejected.
+        let v = serde_json::json!({
+            "questions": [{
+                "id": "q1", "stem": "s",
+                "options": [
+                    {"id": "o1", "text": "a"},
+                    {"id": "o1", "text": "b"},
+                    {"id": "o3", "text": "c"}
+                ],
+                "correctOptionId": "o1", "explanation": ""
+            }]
+        });
+        assert!(validate_quiz_json(&v).is_err());
+    }
+
+    #[test]
+    fn validate_quiz_rejects_correct_id_not_in_options() {
+        let v = serde_json::json!({
+            "questions": [{
+                "id": "q1", "stem": "s",
+                "options": [
+                    {"id": "o1", "text": "a"},
+                    {"id": "o2", "text": "b"}
+                ],
+                "correctOptionId": "o9", "explanation": ""
+            }]
+        });
+        assert!(validate_quiz_json(&v).is_err());
+    }
+
+    #[test]
+    fn validate_quiz_rejects_duplicate_question_ids() {
+        let v = serde_json::json!({
+            "questions": [
+                {"id": "q1", "stem": "s", "options": [{"id":"o1","text":"a"},{"id":"o2","text":"b"}], "correctOptionId": "o1"},
+                {"id": "q1", "stem": "s2", "options": [{"id":"o1","text":"a"},{"id":"o2","text":"b"}], "correctOptionId": "o2"}
+            ]
+        });
+        assert!(validate_quiz_json(&v).is_err());
+    }
+
+    #[test]
+    fn validate_quiz_rejects_empty() {
+        assert!(validate_quiz_json(&serde_json::json!({ "questions": [] })).is_err());
+        assert!(validate_quiz_json(&serde_json::json!({})).is_err());
     }
 }
