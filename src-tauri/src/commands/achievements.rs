@@ -72,6 +72,15 @@ fn extract_learner_name(payload_json: &str) -> String {
         .unwrap_or_else(|| "Learner".to_string())
 }
 
+/// Format an RFC3339 issuance timestamp as a human-readable date for the
+/// certificate (e.g. "29 Jun 2026"). Falls back to the raw string if parsing
+/// fails (never panic).
+fn format_issued_date(rfc3339: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(rfc3339)
+        .map(|dt| dt.format("%d %b %Y").to_string())
+        .unwrap_or_else(|_| rfc3339.to_string())
+}
+
 // ── IPC handlers ─────────────────────────────────────────────────────────
 
 /// List the current learner's earned achievements (badges + certificates).
@@ -160,11 +169,24 @@ pub fn export_certificate(
     if ach.kind != "certificate" {
         return Err("Only completion certificates can be exported as PDF".to_string());
     }
-    let learner_name = extract_learner_name(&ach.payload_json);
+    // Prefer the learner's CURRENT display name from their profile — the
+    // achievement payload is unsigned/empty on the OSS path, so the old
+    // extract_learner_name always fell back to "Learner". Fall back to the
+    // payload name, then the default, only if the profile lookup is empty.
+    let learner_name = db
+        .conn
+        .query_row(
+            "SELECT display_name FROM learner_profiles WHERE id = ?1",
+            [&ach.learner_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| extract_learner_name(&ach.payload_json));
     let pdf_input = CertificatePdfInput {
         learner_name,
         track_topic: ach.track_topic.clone(),
-        issued_at: ach.issued_at.clone(),
+        issued_at: format_issued_date(&ach.issued_at),
         mastery_score: ach.mastery_score,
         key_fingerprint_short: ach.key_fingerprint.clone(),
         level: ach.level.clone(),
@@ -402,6 +424,20 @@ mod tests {
             extract_learner_name(r#"{"learner": "Bob"}"#),
             "Bob"
         );
+    }
+
+    #[test]
+    fn format_issued_date_humanizes_rfc3339() {
+        assert_eq!(
+            format_issued_date("2026-06-29T12:27:00.470966+00:00"),
+            "29 Jun 2026"
+        );
+        assert_eq!(format_issued_date("2026-01-05T00:00:00Z"), "05 Jan 2026");
+    }
+
+    #[test]
+    fn format_issued_date_passes_through_garbage() {
+        assert_eq!(format_issued_date("not a date"), "not a date");
     }
 
     // ── Phase 08.1: signing/verify/export_badge tests moved to Studio ──

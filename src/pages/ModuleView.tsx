@@ -8,6 +8,7 @@ import { TutorSidebar } from "@/components/learning/TutorSidebar";
 import { CourseSidebar } from "@/components/learning/CourseSidebar";
 import { regenerateModule, generateModuleBlocks } from "@/lib/tauri-commands";
 import { cn } from "@/lib/utils";
+import { parsePathModules } from "@/lib/learning-path";
 import type { PathModule } from "@/types/learning";
 
 type Tab = "lessons" | "quiz" | "practice";
@@ -54,15 +55,12 @@ export function ModuleView() {
     }
   }, [trackId, currentTrack, selectTrack]);
 
-  // Parse current module from path
-  const pathModules: PathModule[] = useMemo(() => {
-    if (!currentPath) return [];
-    try {
-      return JSON.parse(currentPath.modulesJson || "[]") as PathModule[];
-    } catch {
-      return [];
-    }
-  }, [currentPath]);
+  // Parse current module from path (normalizes estimatedMinutes — see
+  // parsePathModules: backend sends snake_case estimated_minutes).
+  const pathModules: PathModule[] = useMemo(
+    () => parsePathModules(currentPath?.modulesJson),
+    [currentPath],
+  );
 
   const currentModule = pathModules.find((m) => m.id === moduleId);
   const progress = moduleProgress.find((p) => p.moduleId === moduleId);

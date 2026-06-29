@@ -101,8 +101,9 @@ pub fn render_certificate_pdf(
     let font_bold = PdfFontHandle::Builtin(BuiltinFont::HelveticaBold);
 
     // ── Text block ──────────────────────────────────────────────────────
+    // Fill color is graphics state — it persists across the per-line text
+    // sections created inside push_line.
     ops.push(Op::SetFillColor { col: black.clone() });
-    ops.push(Op::StartTextSection);
 
     // Title
     push_line(&mut ops, &font_bold, 24.0, 20.0, 260.0, "Certificate of Completion");
@@ -172,8 +173,6 @@ pub fn render_certificate_pdf(
         );
     }
 
-    ops.push(Op::EndTextSection);
-
     // ── QR image ────────────────────────────────────────────────────────
     // Place at roughly x=150mm, y=210mm — image origin is bottom-left,
     // so translate_y is the bottom edge of a ~40mm-tall QR. Skipped
@@ -210,6 +209,13 @@ fn push_line(
     y_mm: f32,
     text: &str,
 ) {
+    // Each line is its own text object (BT…ET). printpdf's SetTextCursor
+    // emits PDF `Td`, which positions RELATIVE to the previous text line.
+    // Sharing one text section made every line after the first accumulate the
+    // prior offsets and fly off the page — only the title rendered. Wrapping
+    // each line in its own section resets the text matrix so the cursor is
+    // absolute from the page origin.
+    ops.push(Op::StartTextSection);
     ops.push(Op::SetFont {
         font: font.clone(),
         size: Pt(size_pt),
@@ -223,6 +229,7 @@ fn push_line(
     ops.push(Op::ShowText {
         items: vec![TextItem::Text(text.to_string())],
     });
+    ops.push(Op::EndTextSection);
 }
 
 // ── PNG badge ─────────────────────────────────────────────────────────────
@@ -366,6 +373,37 @@ mod tests {
         let input = sample_pdf_input(qr_png);
         let bytes = render_certificate_pdf(&input).expect("pdf bytes");
         assert!(bytes.len() >= 2048, "expected >= 2KB, got {}", bytes.len());
+    }
+
+    /// Regression (Phase 06 UAT): the certificate rendered only its title —
+    /// every other line flew off the page. printpdf's SetTextCursor emits PDF
+    /// `Td` (relative to the previous text line), so sharing one text section
+    /// accumulated offsets. Each line must be its own BT…ET text object so the
+    /// cursor is absolute.
+    #[test]
+    fn push_line_emits_self_contained_text_object() {
+        let mut ops: Vec<Op> = Vec::new();
+        let font = PdfFontHandle::Builtin(BuiltinFont::Helvetica);
+        push_line(&mut ops, &font, 12.0, 20.0, 100.0, "hello");
+
+        assert!(
+            matches!(ops.first(), Some(Op::StartTextSection)),
+            "line must open its own text section"
+        );
+        assert!(
+            matches!(ops.last(), Some(Op::EndTextSection)),
+            "line must close its own text section"
+        );
+        let starts = ops
+            .iter()
+            .filter(|o| matches!(o, Op::StartTextSection))
+            .count();
+        let ends = ops
+            .iter()
+            .filter(|o| matches!(o, Op::EndTextSection))
+            .count();
+        assert_eq!(starts, 1, "exactly one StartTextSection per line");
+        assert_eq!(ends, 1, "exactly one EndTextSection per line");
     }
 
     /// Phase 08.1 (Cert Split) — when the caller passes an empty

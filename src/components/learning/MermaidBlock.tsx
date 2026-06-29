@@ -23,6 +23,10 @@ function loadMermaid() {
         theme: "dark",
         securityLevel: "loose",
         fontFamily: "inherit",
+        // Stop mermaid from injecting its own "Syntax error in text" bomb SVG
+        // into the DOM on a parse failure. render() still throws, which we
+        // catch below to show the graceful source fallback. (mermaid v11)
+        suppressErrorRendering: true,
       });
       return mermaid;
     });

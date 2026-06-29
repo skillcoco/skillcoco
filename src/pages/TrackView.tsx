@@ -3,6 +3,8 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Play,
+  PlayCircle,
+  RotateCcw,
   CheckCircle2,
   Lock,
   BookOpen,
@@ -16,6 +18,11 @@ import { useLearningStore } from "@/stores/useLearningStore";
 import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
 import type { PathModule, ModuleStatus } from "@/types";
 import { cn, formatDuration } from "@/lib/utils";
+import {
+  parsePathModules,
+  pickNextModule,
+  computeCertGate,
+} from "@/lib/learning-path";
 import { listTopicPacksAdmin } from "@/lib/tauri-commands";
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
 
@@ -310,6 +317,7 @@ function ModuleDetailPanel({
 
 export function TrackView() {
   const { trackId } = useParams<{ trackId: string }>();
+  const navigate = useNavigate();
   const { currentTrack, currentPath, moduleProgress, selectTrack, isLoading } =
     useLearningStore();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -369,7 +377,7 @@ export function TrackView() {
 
   // Parse modulesJson/edgesJson from backend (they arrive as JSON strings)
   const pathModules = useMemo(
-    () => (currentPath ? (JSON.parse(currentPath.modulesJson || "[]") as import("@/types/learning").PathModule[]) : []),
+    () => parsePathModules(currentPath?.modulesJson),
     [currentPath],
   );
   const pathEdges = useMemo(
@@ -407,6 +415,13 @@ export function TrackView() {
     .reduce((acc, m) => acc + m.estimatedMinutes, 0);
   const remainingMinutes = totalEstimatedMinutes - completedMinutes;
 
+  // Certificate gate — drives the explicit "more than finishing" panel in
+  // CertificationProgress (100% modules mastered AND avg mastery >= 0.85).
+  const certGate = computeCertGate(
+    modules,
+    (id) => progressMap.get(id)?.masteryLevel ?? 0,
+  );
+
   const selectedModule = selectedModuleId
     ? modules.find((m) => m.id === selectedModuleId) ?? null
     : null;
@@ -417,6 +432,20 @@ export function TrackView() {
   function getModuleStatus(moduleId: string): ModuleStatus {
     return progressMap.get(moduleId)?.status ?? "locked";
   }
+
+  // "Continue learning" CTA target: next actionable module (in_progress →
+  // first available → none). When the path is fully complete we offer review
+  // of the first module.
+  const nextModule = pickNextModule(modules, getModuleStatus);
+  const allComplete = modules.length > 0 && completedCount === modules.length;
+  const ctaTarget = nextModule ?? modules[0] ?? null;
+  const ctaLabel = allComplete
+    ? "Review course"
+    : completedCount === 0 && !nextModule
+      ? "Start learning"
+      : completedCount === 0
+        ? "Start learning"
+        : "Continue";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12">
@@ -533,7 +562,9 @@ export function TrackView() {
             track header + stats row, above the DAG, so the learner sees
             progress signals before the modules tree. The component
             handles its own IPC + error state. */}
-        {trackId && <CertificationProgress trackId={trackId} />}
+        {trackId && (
+          <CertificationProgress trackId={trackId} gate={certGate} />
+        )}
       </div>
 
       {/* DAG Visualization */}
@@ -607,6 +638,32 @@ export function TrackView() {
         ) : (
           <div className="glass flex h-48 items-center justify-center rounded-xl text-sm text-muted-foreground">
             No modules in this learning path yet.
+          </div>
+        )}
+
+        {/* Continue CTA — sits directly below the Learning Path so the most
+            common action (resume the next actionable module) is one click
+            from the path the learner just scanned. */}
+        {ctaTarget && (
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                navigate(`/track/${currentTrack.id}/module/${ctaTarget.id}`)
+              }
+              data-testid="track-continue-cta"
+              aria-label={ctaLabel}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-200 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+            >
+              {allComplete ? <RotateCcw size={16} /> : <PlayCircle size={16} />}
+              <span>{ctaLabel}</span>
+            </button>
+            {nextModule && !allComplete && (
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                Module {modules.indexOf(nextModule) + 1} of {modules.length} ·{" "}
+                {nextModule.title}
+              </span>
+            )}
           </div>
         )}
       </div>

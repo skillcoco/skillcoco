@@ -16,7 +16,7 @@
 // must not crash).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BadgeCheck, Lock, Trophy } from "lucide-react";
+import { BadgeCheck, Check, Lock, Trophy, X } from "lucide-react";
 import { getTrackCertifications } from "@/lib/tauri-commands";
 import { useAchievementsStore } from "@/stores/useAchievementsStore";
 import type { Achievement, TrackCertifications } from "@/types/achievements";
@@ -25,9 +25,17 @@ import {
   milestoneThreshold,
   type MilestoneLevel,
 } from "@/types/achievements";
+import { CERT_AVG_GATE, type CertGate } from "@/lib/learning-path";
 
 interface Props {
   trackId: string;
+  /**
+   * Certificate gate status (computed by the parent from module mastery).
+   * When provided and the certificate is not yet earned, the component shows
+   * the explicit gate — making clear the certificate demands MORE than
+   * finishing the modules (100% mastered AND avg mastery >= 0.85).
+   */
+  gate?: CertGate;
 }
 
 interface MilestoneRow {
@@ -36,7 +44,7 @@ interface MilestoneRow {
   earned: boolean;
 }
 
-export function CertificationProgress({ trackId }: Props) {
+export function CertificationProgress({ trackId, gate }: Props) {
   const [data, setData] = useState<TrackCertifications | null>(null);
   const [error, setError] = useState<string | null>(null);
   const achievements = useAchievementsStore((s) => s.achievements);
@@ -145,7 +153,7 @@ export function CertificationProgress({ trackId }: Props) {
     >
       <header className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
         <Trophy className="h-3 w-3" aria-hidden />
-        Certification Progress
+        Certificate Progress
       </header>
 
       {/* 4-segment progress bar */}
@@ -228,6 +236,46 @@ export function CertificationProgress({ trackId }: Props) {
           </span>
         </li>
       </ul>
+
+      {/* Certificate gate — makes explicit that the certificate demands MORE
+          than finishing: 100% modules mastered AND average mastery >= 0.85.
+          Hidden once earned (the gate is, by definition, met). */}
+      {gate && !completionEarned && gate.modulesTotal > 0 && (
+        <div
+          data-testid="cert-gate"
+          className="space-y-1.5 border-t border-border pt-2 text-xs"
+        >
+          <p className="text-muted-foreground">
+            The certificate needs more than finishing:
+          </p>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-foreground">
+              {gate.meetsModules ? (
+                <Check className="h-3 w-3 text-emerald-400" aria-hidden />
+              ) : (
+                <X className="h-3 w-3 text-muted-foreground/60" aria-hidden />
+              )}
+              All modules mastered
+            </span>
+            <span className="tabular-nums text-muted-foreground">
+              {gate.modulesMastered}/{gate.modulesTotal}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-foreground">
+              {gate.meetsAvg ? (
+                <Check className="h-3 w-3 text-emerald-400" aria-hidden />
+              ) : (
+                <X className="h-3 w-3 text-muted-foreground/60" aria-hidden />
+              )}
+              Average mastery
+            </span>
+            <span className="tabular-nums text-muted-foreground">
+              {gate.avgMastery.toFixed(2)} / {CERT_AVG_GATE.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Completion certificate row — shown once 100% reached. */}
       {completionEarned && completionAchievement && (
