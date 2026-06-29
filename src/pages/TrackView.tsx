@@ -477,28 +477,6 @@ export function TrackView() {
               </p>
             )}
           </div>
-          {ctaTarget && (
-            <div className="flex flex-col items-end gap-1">
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(`/track/${currentTrack.id}/module/${ctaTarget.id}`)
-                }
-                data-testid="track-continue-cta"
-                aria-label={ctaLabel}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-200 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
-              >
-                {allComplete ? <RotateCcw size={16} /> : <PlayCircle size={16} />}
-                <span>{ctaLabel}</span>
-              </button>
-              {nextModule && !allComplete && (
-                <span className="max-w-[16rem] truncate text-xs text-muted-foreground">
-                  Module {modules.indexOf(nextModule) + 1} of {modules.length} ·{" "}
-                  {nextModule.title}
-                </span>
-              )}
-            </div>
-          )}
           <div className="text-right">
             <div className="text-2xl font-bold text-foreground">
               {Math.round(currentTrack.progressPercent)}%
@@ -647,6 +625,32 @@ export function TrackView() {
         ) : (
           <div className="glass flex h-48 items-center justify-center rounded-xl text-sm text-muted-foreground">
             No modules in this learning path yet.
+          </div>
+        )}
+
+        {/* Continue CTA — sits directly below the Learning Path so the most
+            common action (resume the next actionable module) is one click
+            from the path the learner just scanned. */}
+        {ctaTarget && (
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                navigate(`/track/${currentTrack.id}/module/${ctaTarget.id}`)
+              }
+              data-testid="track-continue-cta"
+              aria-label={ctaLabel}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-200 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+            >
+              {allComplete ? <RotateCcw size={16} /> : <PlayCircle size={16} />}
+              <span>{ctaLabel}</span>
+            </button>
+            {nextModule && !allComplete && (
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                Module {modules.indexOf(nextModule) + 1} of {modules.length} ·{" "}
+                {nextModule.title}
+              </span>
+            )}
           </div>
         )}
       </div>
