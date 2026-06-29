@@ -696,7 +696,10 @@ pub(crate) async fn generate_quiz_with_client<C: AIClientTrait>(
             role: "user".to_string(),
             content: format!("Generate quiz for: {}", module_title),
         }],
-        max_tokens: Some(2048),
+        // 4096 (parity with section blocks). 2048 truncated a full
+        // 10-question quiz mid-array → serde "EOF while parsing a list"
+        // surfaced to the UI (Phase 06 UAT).
+        max_tokens: Some(4096),
         temperature: Some(0.5),
         response_format: Some("json".to_string()),
     };
@@ -2501,6 +2504,65 @@ pub(crate) mod tests {
             final_blocks[0].payload_json,
             r#"{"markdown":"preserved legacy","wordCount":2}"#,
             "legacy payload must be unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn quiz_generation_budget_fits_full_quiz() {
+        // Regression (Phase 06 UAT): quiz max_tokens was 2048 → a full
+        // 10-question quiz truncated mid-array → serde "EOF while parsing a
+        // list at line N". Budget must be large enough (>= 4096, parity with
+        // section blocks) to avoid the truncation.
+        struct CapturingClient {
+            captured: Arc<std::sync::Mutex<Option<u32>>>,
+            resp: String,
+        }
+        impl AIClientTrait for CapturingClient {
+            fn request<'a>(
+                &'a self,
+                req: crate::ai::service::AIServiceRequest,
+                _max_retries: u8,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>,
+            > {
+                *self.captured.lock().unwrap() = req.max_tokens;
+                let resp = self.resp.clone();
+                Box::pin(async move { Ok(resp) })
+            }
+        }
+
+        let captured = Arc::new(std::sync::Mutex::new(None));
+        let client = CapturingClient {
+            captured: Arc::clone(&captured),
+            resp: canned_quiz_json(),
+        };
+        let block = ModuleBlock {
+            id: "blk-quiz".to_string(),
+            module_id: "mod-q".to_string(),
+            ordering: 0,
+            block_type: "quiz".to_string(),
+            status: "pending".to_string(),
+            params_json: r#"{"questionCount":10,"topics":["a","b","c"]}"#.to_string(),
+            payload_json: "{}".to_string(),
+            source_anchors_json: "[]".to_string(),
+            metadata_json: r#"{"concept_id": null}"#.to_string(),
+            retry_count: 0,
+            created_at: "2026-05-05T00:00:00Z".to_string(),
+            updated_at: "2026-05-05T00:00:00Z".to_string(),
+        };
+
+        generate_quiz_with_client(&client, &block, "Test Module")
+            .await
+            .expect("quiz generation should parse the canned response");
+
+        let mt = captured
+            .lock()
+            .unwrap()
+            .expect("request must set max_tokens");
+        assert!(
+            mt >= 4096,
+            "quiz max_tokens must be >= 4096 to avoid truncating a 10-question quiz, got {}",
+            mt
         );
     }
 }
