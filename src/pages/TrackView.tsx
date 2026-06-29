@@ -3,6 +3,8 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Play,
+  PlayCircle,
+  RotateCcw,
   CheckCircle2,
   Lock,
   BookOpen,
@@ -16,6 +18,7 @@ import { useLearningStore } from "@/stores/useLearningStore";
 import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
 import type { PathModule, ModuleStatus } from "@/types";
 import { cn, formatDuration } from "@/lib/utils";
+import { parsePathModules, pickNextModule } from "@/lib/learning-path";
 import { listTopicPacksAdmin } from "@/lib/tauri-commands";
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
 
@@ -310,6 +313,7 @@ function ModuleDetailPanel({
 
 export function TrackView() {
   const { trackId } = useParams<{ trackId: string }>();
+  const navigate = useNavigate();
   const { currentTrack, currentPath, moduleProgress, selectTrack, isLoading } =
     useLearningStore();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -369,7 +373,7 @@ export function TrackView() {
 
   // Parse modulesJson/edgesJson from backend (they arrive as JSON strings)
   const pathModules = useMemo(
-    () => (currentPath ? (JSON.parse(currentPath.modulesJson || "[]") as import("@/types/learning").PathModule[]) : []),
+    () => parsePathModules(currentPath?.modulesJson),
     [currentPath],
   );
   const pathEdges = useMemo(
@@ -418,6 +422,20 @@ export function TrackView() {
     return progressMap.get(moduleId)?.status ?? "locked";
   }
 
+  // "Continue learning" CTA target: next actionable module (in_progress →
+  // first available → none). When the path is fully complete we offer review
+  // of the first module.
+  const nextModule = pickNextModule(modules, getModuleStatus);
+  const allComplete = modules.length > 0 && completedCount === modules.length;
+  const ctaTarget = nextModule ?? modules[0] ?? null;
+  const ctaLabel = allComplete
+    ? "Review course"
+    : completedCount === 0 && !nextModule
+      ? "Start learning"
+      : completedCount === 0
+        ? "Start learning"
+        : "Continue";
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12">
       {/* Track Header */}
@@ -459,6 +477,28 @@ export function TrackView() {
               </p>
             )}
           </div>
+          {ctaTarget && (
+            <div className="flex flex-col items-end gap-1">
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(`/track/${currentTrack.id}/module/${ctaTarget.id}`)
+                }
+                data-testid="track-continue-cta"
+                aria-label={ctaLabel}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-200 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+              >
+                {allComplete ? <RotateCcw size={16} /> : <PlayCircle size={16} />}
+                <span>{ctaLabel}</span>
+              </button>
+              {nextModule && !allComplete && (
+                <span className="max-w-[16rem] truncate text-xs text-muted-foreground">
+                  Module {modules.indexOf(nextModule) + 1} of {modules.length} ·{" "}
+                  {nextModule.title}
+                </span>
+              )}
+            </div>
+          )}
           <div className="text-right">
             <div className="text-2xl font-bold text-foreground">
               {Math.round(currentTrack.progressPercent)}%
