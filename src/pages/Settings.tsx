@@ -77,6 +77,13 @@ export function Settings() {
   const [loading, setLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // ── Profile name (shown on the dashboard greeting + printed on the
+  // completion certificate) ──
+  const [displayName, setDisplayName] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+
   // Ollama state
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434");
   const [ollamaModel, setOllamaModel] = useState("llama3");
@@ -150,6 +157,7 @@ export function Settings() {
       .getOrCreateProfile()
       .then((profile) => {
         if (cancelled) return;
+        setDisplayName(profile.displayName ?? "");
         try {
           const prefs = JSON.parse(profile.preferencesJson || "{}") as Record<
             string,
@@ -168,6 +176,22 @@ export function Settings() {
       cancelled = true;
     };
   }, []);
+
+  async function handleSaveName() {
+    const name = displayName.trim();
+    if (!name) return;
+    setNameSaving(true);
+    setNameError(null);
+    setNameSaved(false);
+    try {
+      await commands.updateProfile({ displayName: name });
+      setNameSaved(true);
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNameSaving(false);
+    }
+  }
 
   async function handleToggleDailyChallenge() {
     setToggleError(null);
@@ -351,6 +375,51 @@ export function Settings() {
           Configure AI providers, preferences, and application behavior.
         </p>
       </div>
+
+      {/* ── Profile ── */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-foreground">Profile</h2>
+        <div className="glass rounded-xl p-5">
+          <label
+            htmlFor="display-name"
+            className="mb-1.5 block text-sm font-medium text-foreground"
+          >
+            Your name
+          </label>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Shown on your dashboard greeting and printed on the completion
+            certificates you earn.
+          </p>
+          <div className="flex gap-2">
+            <input
+              id="display-name"
+              type="text"
+              value={displayName}
+              onChange={(e) => {
+                setDisplayName(e.target.value);
+                setNameSaved(false);
+              }}
+              placeholder="e.g. Ada Lovelace"
+              data-testid="display-name-input"
+              className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <button
+              type="button"
+              onClick={handleSaveName}
+              disabled={!displayName.trim() || nameSaving}
+              className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {nameSaving ? "Saving..." : "Save"}
+            </button>
+          </div>
+          {nameSaved && (
+            <p className="mt-1.5 text-xs text-emerald-500">Saved.</p>
+          )}
+          {nameError && (
+            <p className="mt-1.5 text-xs text-destructive">{nameError}</p>
+          )}
+        </div>
+      </section>
 
       {/* Active Provider Indicator */}
       <div className="glass rounded-xl p-4">

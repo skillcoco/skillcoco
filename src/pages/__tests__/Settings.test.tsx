@@ -40,6 +40,7 @@ import {
   labRuntimeDetect,
   getAuthStatus,
   setDailyChallengeEnabled,
+  updateProfile,
 } from "@/lib/tauri-commands";
 
 // Mock useAppStore to prevent Tauri state dependencies
@@ -306,6 +307,39 @@ describe("Settings", () => {
       expect(
         await screen.findByText(/db locked/i),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("Profile name", () => {
+    it("loads the current display name and saves edits via updateProfile", async () => {
+      vi.mocked(updateProfile).mockResolvedValue({
+        id: "p1",
+        displayName: "Ada Lovelace",
+        learningStyle: "practical",
+        experienceLevel: "intermediate",
+        preferencesJson: "{}",
+        createdAt: "2026-01-01",
+        updatedAt: "2026-01-01",
+      });
+
+      renderSettings();
+
+      const input = (await screen.findByTestId(
+        "display-name-input",
+      )) as HTMLInputElement;
+      // Pre-filled from getOrCreateProfile mock.
+      await waitFor(() => expect(input.value).toBe("Test User"));
+
+      await userEvent.clear(input);
+      await userEvent.type(input, "Ada Lovelace");
+      await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() =>
+        expect(updateProfile).toHaveBeenCalledWith({
+          displayName: "Ada Lovelace",
+        }),
+      );
+      expect(await screen.findByText(/saved\./i)).toBeInTheDocument();
     });
   });
 });
