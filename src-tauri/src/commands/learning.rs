@@ -103,6 +103,19 @@ struct QuizQuestion {
     explanation: String,
 }
 
+/// Decide whether a quiz attempt "passed".
+///
+/// A pass is either clearing the raw score threshold (>= 70%) OR the attempt
+/// pushing BKT mastery across the completion threshold. Mastery IS the pass
+/// criterion in this app: the per-question iterative BKT update can complete +
+/// unlock a module on a strong-but-sub-70% attempt. Without the
+/// `became_completed` clause the learner hit a contradictory state — module
+/// completed + next module unlocked, yet the quiz showed "Not yet" and the +10
+/// quiz-pass points were dropped (Phase 06 UAT: 50 points instead of 60).
+fn quiz_passed(score_percent: f64, became_completed: bool) -> bool {
+    score_percent >= 70.0 || became_completed
+}
+
 /// Score a quiz attempt purely by option ID (shuffle-safe invariant).
 ///
 /// Returns `(score_percent, review_vec)`.
@@ -325,9 +338,10 @@ pub async fn submit_quiz(
         ));
     }
 
-    // 2. Score the quiz (pure function — no DB)
+    // 2. Score the quiz (pure function — no DB). The pass verdict is decided
+    //    AFTER the BKT update (see quiz_passed) so a completing attempt counts
+    //    as a pass even when the raw score is below 70.
     let (score_percent, review) = score_quiz(&block.payload_json, &req.answers)?;
-    let passed = score_percent >= 70.0;
 
     // 3. Resolve learner_id from learning_tracks
     let learner_id: String = db
@@ -362,6 +376,13 @@ pub async fn submit_quiz(
         prior_mastery,
         &observations,
     )?;
+
+    // Decide pass AFTER the BKT update: completing the module (mastery
+    // crossed) counts as a pass even if the raw score was < 70 — mastery is
+    // the pass criterion. Keeps "module completed" and "quiz passed"
+    // consistent and ensures the +10 quiz-pass award fires on completion
+    // (Phase 06 UAT: 50 → 60 points).
+    let passed = quiz_passed(score_percent, transition.became_completed);
 
     let mut newly_unlocked: Vec<String> = Vec::new();
     let mut cards_created: usize = 0;
@@ -2767,6 +2788,30 @@ mod phase3_tests {
             )
             .unwrap();
         assert_eq!(points, 60, "+50 module + +10 quiz on first completion (D-08)");
+    }
+
+    // ── quiz_passed: pass verdict reconciles score with mastery completion ──
+
+    #[test]
+    fn quiz_passed_when_score_clears_threshold() {
+        assert!(quiz_passed(70.0, false));
+        assert!(quiz_passed(85.0, false));
+    }
+
+    #[test]
+    fn quiz_failed_when_score_below_threshold_and_not_completed() {
+        assert!(!quiz_passed(60.0, false));
+        assert!(!quiz_passed(0.0, false));
+    }
+
+    #[test]
+    fn quiz_passed_when_attempt_completes_module_despite_low_score() {
+        // The Phase 06 UAT bug: a per-question BKT update can cross 0.7 and
+        // complete the module on a sub-70% attempt. That MUST count as a pass
+        // so the +10 quiz-pass award fires (50 → 60) and the UI badge stays
+        // consistent with "module completed".
+        assert!(quiz_passed(60.0, true));
+        assert!(quiz_passed(40.0, true));
     }
 
     // ── Task 3: rate_flash_card tests (GREEN in 03-04 Task 3) ──
