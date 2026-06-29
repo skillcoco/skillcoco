@@ -18,7 +18,11 @@ import { useLearningStore } from "@/stores/useLearningStore";
 import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
 import type { PathModule, ModuleStatus } from "@/types";
 import { cn, formatDuration } from "@/lib/utils";
-import { parsePathModules, pickNextModule } from "@/lib/learning-path";
+import {
+  parsePathModules,
+  pickNextModule,
+  computeCertGate,
+} from "@/lib/learning-path";
 import { listTopicPacksAdmin } from "@/lib/tauri-commands";
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
 
@@ -411,6 +415,13 @@ export function TrackView() {
     .reduce((acc, m) => acc + m.estimatedMinutes, 0);
   const remainingMinutes = totalEstimatedMinutes - completedMinutes;
 
+  // Certificate gate — drives the explicit "more than finishing" panel in
+  // CertificationProgress (100% modules mastered AND avg mastery >= 0.85).
+  const certGate = computeCertGate(
+    modules,
+    (id) => progressMap.get(id)?.masteryLevel ?? 0,
+  );
+
   const selectedModule = selectedModuleId
     ? modules.find((m) => m.id === selectedModuleId) ?? null
     : null;
@@ -551,7 +562,9 @@ export function TrackView() {
             track header + stats row, above the DAG, so the learner sees
             progress signals before the modules tree. The component
             handles its own IPC + error state. */}
-        {trackId && <CertificationProgress trackId={trackId} />}
+        {trackId && (
+          <CertificationProgress trackId={trackId} gate={certGate} />
+        )}
       </div>
 
       {/* DAG Visualization */}

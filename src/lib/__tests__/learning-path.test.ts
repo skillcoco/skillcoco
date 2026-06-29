@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parsePathModules, pickNextModule } from "@/lib/learning-path";
+import {
+  parsePathModules,
+  pickNextModule,
+  computeCertGate,
+  CERT_AVG_GATE,
+} from "@/lib/learning-path";
 import type { ModuleStatus } from "@/types";
 
 const baseModuleJson = (over: Record<string, unknown> = {}) => ({
@@ -85,5 +90,51 @@ describe("pickNextModule", () => {
 
   it("returns null for empty module list", () => {
     expect(pickNextModule([], () => "locked")).toBeNull();
+  });
+});
+
+describe("computeCertGate", () => {
+  const mods = parsePathModules(
+    JSON.stringify([
+      baseModuleJson({ id: "a" }),
+      baseModuleJson({ id: "b" }),
+      baseModuleJson({ id: "c" }),
+      baseModuleJson({ id: "d" }),
+    ]),
+  );
+  const masteryMap = (m: Record<string, number>) => (id: string) => m[id] ?? 0;
+
+  it("all modules mastered AND avg >= 0.85 → both gates met", () => {
+    const g = computeCertGate(mods, masteryMap({ a: 0.9, b: 0.88, c: 0.86, d: 0.86 }));
+    expect(g.modulesMastered).toBe(4);
+    expect(g.meetsModules).toBe(true);
+    expect(g.meetsAvg).toBe(true);
+    expect(g.avgMastery).toBeCloseTo(0.875, 3);
+  });
+
+  it("all modules mastered but avg < 0.85 → certificate NOT met (the real differentiator)", () => {
+    // every module exactly at the 0.7 completion bar — 100% 'complete' but
+    // avg 0.70 < 0.85, so the certificate gate is unmet.
+    const g = computeCertGate(mods, masteryMap({ a: 0.7, b: 0.7, c: 0.7, d: 0.7 }));
+    expect(g.meetsModules).toBe(true);
+    expect(g.meetsAvg).toBe(false);
+    expect(g.avgMastery).toBeCloseTo(0.7, 3);
+  });
+
+  it("counts only modules >= 0.7 as mastered; missing mastery counts as 0 in the average", () => {
+    const g = computeCertGate(mods, masteryMap({ a: 0.9, b: 0.5 /* c,d missing → 0 */ }));
+    expect(g.modulesMastered).toBe(1);
+    expect(g.masteredPct).toBe(25);
+    expect(g.avgMastery).toBeCloseTo((0.9 + 0.5) / 4, 3);
+    expect(g.meetsModules).toBe(false);
+  });
+
+  it("empty track → zeros, no gates met", () => {
+    const g = computeCertGate([], () => 0);
+    expect(g).toMatchObject({ modulesTotal: 0, modulesMastered: 0, avgMastery: 0, meetsModules: false, meetsAvg: false });
+  });
+
+  it("exposes the avg gate constant (0.85)", () => {
+    expect(CERT_AVG_GATE).toBe(0.85);
   });
 });
