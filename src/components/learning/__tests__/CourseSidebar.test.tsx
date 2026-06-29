@@ -162,8 +162,8 @@ describe("CourseSidebar Phase 3 lesson expansion", () => {
     // Collapse state — lesson list not visible
     expect(screen.queryByTestId("lesson-nav-list-mod-1")).not.toBeInTheDocument();
 
-    // Click the module row to expand
-    await user.click(screen.getByText("Pods and Nodes"));
+    // Click the chevron to expand (the row body navigates to the module)
+    await user.click(screen.getByTestId("module-expand-mod-1"));
 
     await waitFor(() => {
       expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument();
@@ -181,8 +181,8 @@ describe("CourseSidebar Phase 3 lesson expansion", () => {
     // Active module auto-expanded
     expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument();
 
-    // Click to collapse
-    await user.click(screen.getByText("Pods and Nodes"));
+    // Click the chevron to collapse
+    await user.click(screen.getByTestId("module-expand-mod-1"));
     expect(screen.queryByTestId("lesson-nav-list-mod-1")).not.toBeInTheDocument();
   });
 
@@ -200,16 +200,16 @@ describe("CourseSidebar Phase 3 lesson expansion", () => {
     renderSidebar("mod-other");
 
     // First expand — triggers IPC
-    await user.click(screen.getByText("Pods and Nodes"));
+    await user.click(screen.getByTestId("module-expand-mod-1"));
     await waitFor(() => expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument());
     expect(callCount).toBe(1);
 
     // Collapse
-    await user.click(screen.getByText("Pods and Nodes"));
+    await user.click(screen.getByTestId("module-expand-mod-1"));
     expect(screen.queryByTestId("lesson-nav-list-mod-1")).not.toBeInTheDocument();
 
     // Re-expand — blocks already cached in store (moduleBlocks.has("mod-1")), no second call
-    await user.click(screen.getByText("Pods and Nodes"));
+    await user.click(screen.getByTestId("module-expand-mod-1"));
     await waitFor(() => expect(screen.getByTestId("lesson-nav-list-mod-1")).toBeInTheDocument());
     expect(callCount).toBe(1); // still 1 — cache hit
   });
@@ -227,7 +227,7 @@ describe("CourseSidebar Phase 3 lesson expansion", () => {
     });
 
     renderSidebar("mod-other");
-    await user.click(screen.getByText("Pods and Nodes"));
+    await user.click(screen.getByTestId("module-expand-mod-1"));
 
     await waitFor(() => {
       expect(screen.getByTestId("status-ready")).toBeInTheDocument();
@@ -261,6 +261,16 @@ describe("CourseSidebar Phase 3 lesson expansion", () => {
     await user.click(lessonRow);
 
     expect(mockSetCurrentLesson).toHaveBeenCalledWith("blk-3");
+    expect(mockNavigate).toHaveBeenCalledWith("/track/track-1/module/mod-1");
+  });
+
+  it("sidebar_module_row_navigates — clicking a non-active module row opens that module", async () => {
+    const user = userEvent.setup();
+    // mod-1 is NOT the active module here, so clicking its row should open it.
+    renderSidebar("mod-other");
+
+    await user.click(screen.getByText("Pods and Nodes"));
+
     expect(mockNavigate).toHaveBeenCalledWith("/track/track-1/module/mod-1");
   });
 

@@ -180,6 +180,15 @@ function ModuleNavItem({
     navigate(`/track/${trackId}/module/${row.module.id}`);
   }
 
+  // Opening the module is the primary row action (LMS convention + matches the
+  // "Continue to next module" Link in ModuleView). ModuleView lazily loads and
+  // generates this module's blocks on mount, so navigating is enough to enter a
+  // not-yet-started "available" module — the lesson sub-list (chevron) is a
+  // secondary affordance and is an empty dead-end before blocks are generated.
+  function openModule() {
+    navigate(`/track/${trackId}/module/${row.module.id}`);
+  }
+
   const StatusIcon = pickStatusIcon(row.status);
 
   const inner = (
@@ -224,11 +233,6 @@ function ModuleNavItem({
           )}
         </span>
       </span>
-      {!isLocked && (
-        <span className="mt-1 flex-shrink-0 text-muted-foreground/50">
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </span>
-      )}
     </div>
   );
 
@@ -239,13 +243,24 @@ function ModuleNavItem({
           {inner}
         </div>
       ) : (
-        <button
-          onClick={toggleExpand}
-          className="w-full text-left block"
-          data-testid={`module-row-${row.module.id}`}
-        >
-          {inner}
-        </button>
+        <div className="flex items-stretch">
+          <button
+            onClick={openModule}
+            className="min-w-0 flex-1 text-left block"
+            data-testid={`module-row-${row.module.id}`}
+          >
+            {inner}
+          </button>
+          <button
+            type="button"
+            onClick={toggleExpand}
+            aria-label={`Toggle lessons for ${row.module.title}`}
+            data-testid={`module-expand-${row.module.id}`}
+            className="flex flex-shrink-0 items-center px-2 text-muted-foreground/50 transition-colors hover:bg-secondary/60 hover:text-muted-foreground"
+          >
+            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </button>
+        </div>
       )}
 
       {/* Expandable lesson sub-list */}
