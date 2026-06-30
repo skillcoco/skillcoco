@@ -10,6 +10,7 @@ import type {
   ModuleProgress,
   SRCard,
 } from "@/types";
+import type { LessonVideosResult } from "@/types/videos";
 import type {
   AssessmentRequest,
   GeneratePathRequest,
@@ -481,4 +482,29 @@ export async function fingerprintFromPublicPem(
   return invoke("fingerprint_from_public_pem", {
     request: { publicKeyPem },
   });
+}
+
+// ── Phase 11 — Video-Enriched Lessons IPC wrappers ──
+//
+// Both wrappers invoke the Rust commands registered in
+// src-tauri/src/commands/videos.rs (Plan 02). The arg key `moduleId` is
+// camelCase to match the Rust `#[serde(rename_all = "camelCase")]` derive
+// on the command parameters (T-11-02 / FIX-02 contract).
+//
+// Backend returns LessonVideosResult{ videos: [] } on any failure path
+// (no key, quota exceeded, no results above relevance threshold) —
+// the panel's empty-array → null suppression (D-09) handles all silent
+// paths without needing separate error state.
+
+/// Fetch the cached related videos for a module (lazy: calls YouTube + LLM
+/// only on cache miss). Returns an empty list when no key is configured,
+/// the quota is exceeded, or no videos pass the relevance threshold (D-06/D-09).
+export async function getLessonVideos(moduleId: string): Promise<LessonVideosResult> {
+  return invoke("get_lesson_videos", { moduleId });
+}
+
+/// Re-run discovery for a module, discarding the existing cache first.
+/// Used by the manual Refresh control in RelatedVideosPanel (D-04).
+export async function refreshLessonVideos(moduleId: string): Promise<LessonVideosResult> {
+  return invoke("refresh_lesson_videos", { moduleId });
 }
