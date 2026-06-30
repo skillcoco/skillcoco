@@ -36,6 +36,7 @@ pub mod v007_microlearning;
 pub mod v008_topic_packs;
 pub mod v009_achievements;
 pub mod v010_cert_simplification;
+pub mod v011_track_browse_mode;
 
 /// A single schema migration.
 pub struct Migration {
@@ -97,6 +98,11 @@ fn registered_migrations() -> Vec<Migration> {
             version: v010_cert_simplification::VERSION,
             name: v010_cert_simplification::NAME,
             up: v010_cert_simplification::up,
+        },
+        Migration {
+            version: v011_track_browse_mode::VERSION,
+            name: v011_track_browse_mode::NAME,
+            up: v011_track_browse_mode::up,
         },
     ]
 }
@@ -187,7 +193,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 10, "After all migrations, version must be 10 (v1..v9 + v10 cert_simplification)");
+        assert_eq!(version, 11, "After all migrations, version must be 11 (v1..v10 + v11 track_browse_mode)");
     }
 
     #[test]
@@ -204,7 +210,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 10, "Idempotent: exactly ten rows in schema_migrations (v1..v9 + v10 cert_simplification)");
+        assert_eq!(count, 11, "Idempotent: exactly eleven rows in schema_migrations (v1..v10 + v11 track_browse_mode)");
     }
 
     #[test]
@@ -228,9 +234,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3..v10.
-        // Max is now 10.
-        assert_eq!(version, 10, "current_version returns MAX(version) = 10 after v3..v10 applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3..v11.
+        // Max is now 11.
+        assert_eq!(version, 11, "current_version returns MAX(version) = 11 after v3..v11 applied");
     }
 
     #[test]
