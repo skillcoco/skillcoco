@@ -46,6 +46,13 @@ export interface LearningTrack {
   streakDays?: number;
   /** ISO datetime of last activity on this track (FIX-04). null until first completion. */
   lastActivityDate?: string | null;
+  /**
+   * Phase 10 Plan 03 — per-track browse mode.
+   * "linear" (default): sequential unlock rules enforced.
+   * "free": every module is openable; guidance (recommended-next) still shown.
+   * Optional + default-linear so older cached rows without browse_mode are treated as linear.
+   */
+  browseMode?: "linear" | "free";
 }
 
 export type DomainModule = "programming" | "devops" | "concepts" | "data" | "cloud";

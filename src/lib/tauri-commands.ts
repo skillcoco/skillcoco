@@ -53,6 +53,15 @@ export async function updateTrackStatus(trackId: string, status: string): Promis
   return invoke("update_track_status", { trackId, status });
 }
 
+/**
+ * Phase 10 Plan 03 — IPC wrapper for set_track_browse_mode.
+ * Persists the per-track browse mode to the backend (validated there against
+ * the {linear, free} whitelist — T-10-01 mitigation from Plan 10-01).
+ */
+export async function setTrackBrowseMode(trackId: string, mode: "linear" | "free"): Promise<void> {
+  return invoke("set_track_browse_mode", { trackId, mode });
+}
+
 export async function deleteTrack(trackId: string): Promise<void> {
   return invoke("delete_track", { trackId });
 }

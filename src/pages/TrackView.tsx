@@ -318,7 +318,7 @@ function ModuleDetailPanel({
 export function TrackView() {
   const { trackId } = useParams<{ trackId: string }>();
   const navigate = useNavigate();
-  const { currentTrack, currentPath, moduleProgress, selectTrack, isLoading } =
+  const { currentTrack, currentPath, moduleProgress, selectTrack, isLoading, setTrackBrowseMode } =
     useLearningStore();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -505,6 +505,26 @@ export function TrackView() {
               backgroundColor: accentColor,
             }}
           />
+        </div>
+
+        {/* Phase 10 Plan 03 — browse-mode toggle (D-01/D-02).
+            Default: "linear" (sequential lock rules active).
+            "free": every module is openable; cert/mastery gates intact.
+            Presentation-only — does NOT touch computeCertGate or module statuses. */}
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-xs font-medium text-muted-foreground">Browse mode:</span>
+          <select
+            data-testid="browse-mode-toggle"
+            value={currentTrack.browseMode ?? "linear"}
+            onChange={(e) => {
+              const newMode = e.target.value as "linear" | "free";
+              setTrackBrowseMode(currentTrack.id, newMode);
+            }}
+            className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="linear">Linear</option>
+            <option value="free">Free</option>
+          </select>
         </div>
 
         {/* Stats row */}

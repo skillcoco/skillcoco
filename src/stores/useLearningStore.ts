@@ -37,6 +37,9 @@ interface LearningState {
   markLessonComplete: (moduleId: string, blockId: string) => Promise<void>;
   submitQuiz: (req: SubmitQuizRequest) => Promise<SubmitQuizResult>;
   regenerateLesson: (blockId: string) => Promise<void>;
+
+  // Phase 10 Plan 03 — browse mode action (D-01/D-02)
+  setTrackBrowseMode: (trackId: string, mode: "linear" | "free") => Promise<void>;
 }
 
 /**
@@ -219,6 +222,42 @@ export const useLearningStore = create<LearningState>((set, _get) => ({
       set({ currentQuizResult: result });
     }
     return result;
+  },
+
+  // Phase 10 Plan 03 — setTrackBrowseMode with optimistic + rollback
+  // (mirrors markLessonComplete shape). Free mode is a presentation-only
+  // change: it does NOT relax cert/mastery gates (T-10-06 invariant).
+  setTrackBrowseMode: async (trackId, mode) => {
+    // Capture prior mode for rollback
+    const prevCurrentTrack = useLearningStore.getState().currentTrack;
+    const prevMode = prevCurrentTrack?.id === trackId ? prevCurrentTrack.browseMode : undefined;
+
+    // Optimistic patch: currentTrack + matching tracks[] entry
+    set((s) => ({
+      currentTrack:
+        s.currentTrack?.id === trackId
+          ? { ...s.currentTrack, browseMode: mode }
+          : s.currentTrack,
+      tracks: s.tracks.map((t) =>
+        t.id === trackId ? { ...t, browseMode: mode } : t,
+      ),
+    }));
+
+    try {
+      await commands.setTrackBrowseMode(trackId, mode);
+    } catch (err) {
+      // Rollback on IPC error — restore previous browseMode
+      console.error("setTrackBrowseMode IPC failed, rolling back:", err);
+      set((s) => ({
+        currentTrack:
+          s.currentTrack?.id === trackId
+            ? { ...s.currentTrack, browseMode: prevMode }
+            : s.currentTrack,
+        tracks: s.tracks.map((t) =>
+          t.id === trackId ? { ...t, browseMode: prevMode } : t,
+        ),
+      }));
+    }
   },
 
   regenerateLesson: async (blockId) => {
