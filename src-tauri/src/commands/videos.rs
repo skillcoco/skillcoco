@@ -382,8 +382,11 @@ async fn discover_and_persist(
         };
         for v in &videos {
             let id = uuid::Uuid::new_v4().to_string();
+            // INSERT OR IGNORE: relies on the UNIQUE(module_id, video_id) index
+            // to make concurrent discovery idempotent — a racing call that
+            // already persisted the same video is silently skipped (WR-02).
             if let Err(e) = db.conn.execute(
-                "INSERT INTO lesson_videos \
+                "INSERT OR IGNORE INTO lesson_videos \
                  (id, module_id, video_id, title, channel_title, relevance_score, status) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ready')",
                 rusqlite::params![
@@ -727,6 +730,41 @@ mod tests {
 
         assert_eq!(candidates.len(), 1, "non-embeddable candidates are dropped (D-07)");
         assert_eq!(candidates[0].video_id, "v1");
+    }
+
+    // ── WR-02: unique constraint prevents duplicate cache rows ────────────────
+
+    #[test]
+    fn insert_or_ignore_prevents_duplicate_module_video_rows() {
+        // WR-02: the UNIQUE(module_id, video_id) index + INSERT OR IGNORE makes
+        // concurrent discovery idempotent — a second insert of the same
+        // (module_id, video_id) is silently skipped, not duplicated.
+        let conn = fresh_conn();
+        let mod_id = seed_module(&conn, "Dup Test", "[]");
+
+        let do_insert = |video_id: &str, row_id: &str| {
+            conn.execute(
+                "INSERT OR IGNORE INTO lesson_videos \
+                 (id, module_id, video_id, title, channel_title, relevance_score, status) \
+                 VALUES (?1, ?2, ?3, 'T', 'C', 0.8, 'ready')",
+                rusqlite::params![row_id, mod_id, video_id],
+            )
+            .unwrap()
+        };
+
+        let first = do_insert("vid1", "row-a");
+        let second = do_insert("vid1", "row-b"); // same module+video, different PK
+        assert_eq!(first, 1, "first insert writes one row");
+        assert_eq!(second, 0, "duplicate (module_id, video_id) is ignored");
+
+        let count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM lesson_videos WHERE module_id = ?1 AND video_id = 'vid1'",
+                rusqlite::params![mod_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "exactly one row survives despite double insert");
     }
 
     // ── load_cached_videos tests ──────────────────────────────────────────────

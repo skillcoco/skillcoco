@@ -26,7 +26,14 @@ pub fn up(conn: &Connection) -> Result<()> {
             fetched_at      TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE
         );
-        CREATE INDEX IF NOT EXISTS idx_lesson_videos_module_id ON lesson_videos(module_id);",
+        CREATE INDEX IF NOT EXISTS idx_lesson_videos_module_id ON lesson_videos(module_id);
+        -- Prevent duplicate cache rows for the same module/video if two
+        -- concurrent get_lesson_videos calls both miss the cache and both run
+        -- discovery (e.g. React Strict-Mode double-mount). Combined with
+        -- INSERT OR IGNORE in discover_and_persist this makes the persist path
+        -- idempotent (WR-02).
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_lesson_videos_module_video
+            ON lesson_videos(module_id, video_id);",
     )?;
     Ok(())
 }
