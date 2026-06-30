@@ -272,8 +272,24 @@ pub async fn fetch_and_rank_videos(
     .await?;
 
     // Step 4: Parse ranking, join to metadata, apply threshold, sort, truncate.
+    //
+    // The output quality of this feature hinges on the LLM returning
+    // well-formed, in-vocabulary videoIds. Per D-08 this is "working as
+    // designed": a model that hallucinates videoIds (not in the candidate set)
+    // has those rows silently dropped by the `filter_map` below, and a model
+    // that returns `[]` or all-low scores yields an empty panel — which is the
+    // intended clean-suppression behavior (D-09). There is intentionally no
+    // search-order fallback. We log any divergence to aid diagnosis (WR-05).
     let ranked: Vec<RankedVideo> = extract_json_pub(&llm_response.content)
         .and_then(|v| serde_json::from_value(v).map_err(|e| e.to_string()))?;
+
+    if ranked.len() != candidates.len() {
+        log::info!(
+            "video ranking: LLM returned {} scores for {} candidates (divergence is expected when the model omits or hallucinates videoIds)",
+            ranked.len(),
+            candidates.len()
+        );
+    }
 
     // Build a lookup map from videoId to metadata.
     let meta_map: std::collections::HashMap<String, &SearchCandidate> =
@@ -281,6 +297,12 @@ pub async fn fetch_and_rank_videos(
 
     let mut scored: Vec<LessonVideo> = ranked
         .into_iter()
+        // Clamp to the documented 0.0–1.0 range BEFORE thresholding/persisting —
+        // a misbehaving/jailbroken model could return out-of-range values (WR-01).
+        .map(|r| RankedVideo {
+            video_id: r.video_id,
+            relevance_score: (r.relevance_score as f32).clamp(0.0, 1.0) as f64,
+        })
         .filter(|r| r.relevance_score as f32 >= RELEVANCE_THRESHOLD)
         .filter_map(|r| {
             meta_map.get(&r.video_id).map(|c| LessonVideo {
@@ -759,6 +781,60 @@ mod tests {
         let desc = "short ascii description";
         let truncated: String = desc.chars().take(300).collect();
         assert_eq!(truncated, desc, "strings under 300 chars are unchanged");
+    }
+
+    // ── WR-01: relevance score clamping ───────────────────────────────────────
+
+    #[test]
+    fn relevance_score_is_clamped_to_unit_range() {
+        // WR-01: out-of-range LLM scores must be clamped to [0.0, 1.0] before
+        // thresholding/persisting.
+        let candidates = vec![
+            SearchCandidate {
+                video_id: "hi".to_string(),
+                title: "High".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+            },
+            SearchCandidate {
+                video_id: "neg".to_string(),
+                title: "Negative".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+            },
+        ];
+        let ranked_raw = vec![
+            RankedVideo { video_id: "hi".to_string(), relevance_score: 42.0 }, // way out of range
+            RankedVideo { video_id: "neg".to_string(), relevance_score: -5.0 }, // negative
+        ];
+        let meta_map: std::collections::HashMap<String, &SearchCandidate> =
+            candidates.iter().map(|c| (c.video_id.clone(), c)).collect();
+
+        let scored: Vec<LessonVideo> = ranked_raw
+            .into_iter()
+            .map(|r| RankedVideo {
+                video_id: r.video_id,
+                relevance_score: (r.relevance_score as f32).clamp(0.0, 1.0) as f64,
+            })
+            .filter(|r| r.relevance_score as f32 >= RELEVANCE_THRESHOLD)
+            .filter_map(|r| {
+                meta_map.get(&r.video_id).map(|c| LessonVideo {
+                    video_id: c.video_id.clone(),
+                    title: c.title.clone(),
+                    channel_title: c.channel_title.clone(),
+                    relevance_score: r.relevance_score as f32,
+                })
+            })
+            .collect();
+
+        assert_eq!(scored.len(), 1, "negative score clamps to 0.0 and is dropped");
+        assert_eq!(scored[0].video_id, "hi");
+        assert!(
+            scored[0].relevance_score <= 1.0 && scored[0].relevance_score >= 0.0,
+            "score {} must be within [0.0, 1.0]",
+            scored[0].relevance_score
+        );
+        assert_eq!(scored[0].relevance_score, 1.0, "42.0 clamps to 1.0");
     }
 
     // ── WR-02: unique constraint prevents duplicate cache rows ────────────────
