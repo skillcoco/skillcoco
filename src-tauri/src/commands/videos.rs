@@ -237,7 +237,10 @@ pub async fn fetch_and_rank_videos(
             "videoId": c.video_id,
             "title": c.title,
             "channelTitle": c.channel_title,
-            "description": &c.description[..c.description.len().min(300)],
+            // Truncate on a char boundary (not a byte boundary) — YouTube
+            // descriptions routinely contain multi-byte chars (emoji/CJK) and a
+            // byte-index slice would panic mid-codepoint, breaking fail-soft (CR-01).
+            "description": c.description.chars().take(300).collect::<String>(),
         })).collect::<Vec<_>>()
     )
     .to_string();
@@ -730,6 +733,32 @@ mod tests {
 
         assert_eq!(candidates.len(), 1, "non-embeddable candidates are dropped (D-07)");
         assert_eq!(candidates[0].video_id, "v1");
+    }
+
+    // ── CR-01: char-boundary description truncation ──────────────────────────
+
+    #[test]
+    fn description_truncation_does_not_panic_on_multibyte_boundary() {
+        // CR-01: a byte-slice at index 300 would panic mid-codepoint. The
+        // char-boundary truncation must never panic and must keep <= 300 chars.
+        // Build a string where byte 300 lands inside a multi-byte char.
+        let desc: String = "é".repeat(400); // each 'é' is 2 bytes → byte 300 is mid-char
+        let truncated: String = desc.chars().take(300).collect();
+        assert_eq!(truncated.chars().count(), 300, "keeps exactly 300 chars");
+        // Round-trips as valid UTF-8 (String guarantees this; the point is no panic).
+        assert!(truncated.len() >= 300, "byte length reflects multibyte chars");
+
+        // Emoji (4-byte) near the boundary must also be safe.
+        let emoji_desc: String = "😀".repeat(400);
+        let emoji_trunc: String = emoji_desc.chars().take(300).collect();
+        assert_eq!(emoji_trunc.chars().count(), 300);
+    }
+
+    #[test]
+    fn description_truncation_keeps_short_strings_intact() {
+        let desc = "short ascii description";
+        let truncated: String = desc.chars().take(300).collect();
+        assert_eq!(truncated, desc, "strings under 300 chars are unchanged");
     }
 
     // ── WR-02: unique constraint prevents duplicate cache rows ────────────────
