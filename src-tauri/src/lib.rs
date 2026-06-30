@@ -293,6 +293,9 @@ pub fn run() {
             commands::achievements::list_achievements_for_learner,
             commands::achievements::get_track_certifications,
             commands::achievements::export_certificate,
+            // Video-enriched lessons (Phase 11 — Plan 02)
+            commands::videos::get_lesson_videos,
+            commands::videos::refresh_lesson_videos,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
