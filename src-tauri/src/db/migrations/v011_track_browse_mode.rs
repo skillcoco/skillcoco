@@ -51,13 +51,14 @@ mod tests {
 
     #[test]
     fn v011_adds_browse_mode_column_and_version_is_11() {
-        // After apply_migrations on a fresh DB, current_version == 11 AND
+        // After apply_migrations on a fresh DB, browse_mode column exists AND
         // an INSERT supplying browse_mode='free' succeeds.
+        // current_version reflects the latest registered migration (12 after Phase 11 added v012).
         let conn = fresh_conn();
         apply_migrations(&conn).expect("migrations must succeed");
 
         let version = current_version(&conn).unwrap();
-        assert_eq!(version, 11, "current_version must be 11 after v011 is registered");
+        assert!(version >= 11, "current_version must be >= 11 (v011 applied); currently {}", version);
 
         // Seed a learner profile for FK
         conn.execute(
@@ -118,6 +119,7 @@ mod tests {
             [],
             |row| row.get(0),
         ).unwrap();
-        assert_eq!(count, 11, "exactly 11 rows in schema_migrations after idempotent double-apply");
+        // v012 was added in Phase 11; schema_migrations has 12 rows after full apply.
+        assert_eq!(count, 12, "exactly 12 rows in schema_migrations after idempotent double-apply (v012 added by Phase 11)");
     }
 }

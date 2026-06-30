@@ -37,6 +37,7 @@ pub mod v008_topic_packs;
 pub mod v009_achievements;
 pub mod v010_cert_simplification;
 pub mod v011_track_browse_mode;
+pub mod v012_lesson_videos;
 
 /// A single schema migration.
 pub struct Migration {
@@ -103,6 +104,11 @@ fn registered_migrations() -> Vec<Migration> {
             version: v011_track_browse_mode::VERSION,
             name: v011_track_browse_mode::NAME,
             up: v011_track_browse_mode::up,
+        },
+        Migration {
+            version: v012_lesson_videos::VERSION,
+            name: v012_lesson_videos::NAME,
+            up: v012_lesson_videos::up,
         },
     ]
 }
@@ -193,7 +199,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 11, "After all migrations, version must be 11 (v1..v10 + v11 track_browse_mode)");
+        assert_eq!(version, 12, "After all migrations, version must be 12 (v1..v11 + v12 lesson_videos)");
     }
 
     #[test]
@@ -210,7 +216,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 11, "Idempotent: exactly eleven rows in schema_migrations (v1..v10 + v11 track_browse_mode)");
+        assert_eq!(count, 12, "Idempotent: exactly twelve rows in schema_migrations (v1..v11 + v12 lesson_videos)");
     }
 
     #[test]
@@ -234,9 +240,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3..v11.
-        // Max is now 11.
-        assert_eq!(version, 11, "current_version returns MAX(version) = 11 after v3..v11 applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3..v12.
+        // Max is now 12.
+        assert_eq!(version, 12, "current_version returns MAX(version) = 12 after v3..v12 applied");
     }
 
     #[test]
