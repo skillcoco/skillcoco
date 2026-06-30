@@ -92,22 +92,23 @@ describe("SectionBlock Phase 3 scaffolds", () => {
     expect(screen.queryByText(/haven't read prior lessons/i)).not.toBeInTheDocument();
   });
 
-  it("section_mark_complete — Mark complete button calls markLessonComplete with blockId", async () => {
+  it("section_mark_complete — DailyChallenge context renders in-body button that calls onMarkComplete with blockId", async () => {
+    // Phase 10-02: the in-body button now renders ONLY in the DailyChallenge
+    // context (signaled by onComplete/onMarkComplete being provided). ModuleView
+    // hosts its own footer control instead and passes neither prop.
     const user = userEvent.setup();
     const onMarkComplete = vi.fn();
     const block = makeBlock('{"markdown":"# Lesson\\nContent.","word_count":10}');
 
     render(<SectionBlock block={block} onMarkComplete={onMarkComplete} />);
 
-    // FAILS in Wave 0: placeholder doesn't render a "Mark complete" button.
-    // GREEN in 03-05 Task 2.
     await user.click(screen.getByRole("button", { name: /mark complete/i }));
     expect(onMarkComplete).toHaveBeenCalledWith("blk-section-1");
   });
 
   // ── Phase 4 Wave 4 (04-05 Task 1) — optional onComplete prop ──
 
-  it("section_on_complete_fires — onComplete callback fires after mark-complete click", async () => {
+  it("section_on_complete_fires — onComplete callback fires after in-body mark-complete click (DailyChallenge context)", async () => {
     const user = userEvent.setup();
     const onComplete = vi.fn();
     const onMarkComplete = vi.fn();
@@ -127,40 +128,29 @@ describe("SectionBlock Phase 3 scaffolds", () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
-  // ── Phase 10 Plan 02: in-body mark-complete-btn removed (relocated to footer) ──
+  // ── Phase 10 Plan 02: in-body mark-complete-btn removed from ModuleView context ──
 
-  it("section_no_in_body_mark_complete_btn — data-testid=mark-complete-btn must NOT render in the article body", () => {
+  it("section_no_in_body_mark_complete_btn — ModuleView context (no callbacks) must NOT render in-body mark-complete-btn", () => {
     const block = makeBlock('{"markdown":"# Lesson\\nContent.","word_count":10}');
+    // ModuleView passes neither onComplete nor onMarkComplete — completion is
+    // hosted by the lesson footer (mark-read-advance-btn) instead (D-05).
     render(<SectionBlock block={block} />);
 
-    // D-05: the button has been relocated to the ModuleView lesson footer.
-    // SectionBlock must NOT render the in-body mark-complete-btn.
     expect(screen.queryByTestId("mark-complete-btn")).not.toBeInTheDocument();
   });
 
-  it("section_daily_challenge_onMarkComplete_prop_preserved — DailyChallenge prop path still fires after in-body removal", async () => {
-    // The onMarkComplete + onComplete props are kept intact for DailyChallenge.
-    // After the in-body button removal, DailyChallenge drives these via its own UI.
-    // This test verifies the handler wiring is preserved (not just the button).
+  it("section_daily_challenge_onComplete_path_preserved — DailyChallenge context still renders the in-body button (regression guard)", async () => {
+    // Regression guard (Rule 1): the DailyChallenge section flow advances ONLY
+    // via SectionBlock's in-body button firing onComplete. Removing the button
+    // unconditionally would break DailyChallenge; it must remain in this context.
     const user = userEvent.setup();
-    const onMarkComplete = vi.fn();
     const onComplete = vi.fn();
     const block = makeBlock('{"markdown":"# Lesson\\nContent.","word_count":10}');
 
-    render(
-      <SectionBlock
-        block={block}
-        onMarkComplete={onMarkComplete}
-        onComplete={onComplete}
-      />,
-    );
+    render(<SectionBlock block={block} onComplete={onComplete} />);
 
-    // In-body button is gone — but the handler function itself should still be callable
-    // via onMarkComplete prop (DailyChallenge invokes it programmatically, not via button).
-    // Verify props are wired: call them directly to assert they work.
-    onMarkComplete("blk-section-1");
-    onComplete();
-    expect(onMarkComplete).toHaveBeenCalledWith("blk-section-1");
+    expect(screen.getByTestId("mark-complete-btn")).toBeInTheDocument();
+    await user.click(screen.getByTestId("mark-complete-btn"));
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });

@@ -31,6 +31,7 @@ export function ModuleView() {
   const loadLessonCompletions = useLearningStore((s) => s.loadLessonCompletions);
   const selectTrack = useLearningStore((s) => s.selectTrack);
   const setCurrentLesson = useLearningStore((s) => s.setCurrentLesson);
+  const markLessonComplete = useLearningStore((s) => s.markLessonComplete);
 
   const [tab, setTab] = useState<Tab>("lessons");
   const [tutorOpen, setTutorOpen] = useState(false);
@@ -213,6 +214,16 @@ export function ModuleView() {
     },
     [activeLessonIndex, sectionBlocks, setCurrentLesson],
   );
+
+  // D-05: mark-read + advance handler. Writes lesson_completions only via the
+  // existing markLessonComplete store action (optimistic, fire-and-forget).
+  // D-06 invariant: NEVER calls submitQuiz or any mastery path.
+  const handleMarkReadAndAdvance = useCallback(() => {
+    if (!moduleId || !activeLesson) return;
+    markLessonComplete(moduleId, activeLesson.id);
+    // goToLesson clamps at bounds — on the last lesson it's a no-op advance.
+    goToLesson(1);
+  }, [moduleId, activeLesson, markLessonComplete, goToLesson]);
 
   // Scroll lesson pane to top when the active lesson changes (sidebar click,
   // Prev/Next, or default-to-first on mount). jsdom doesn't implement
@@ -478,6 +489,7 @@ export function ModuleView() {
                   </div>
 
                   {/* Prev/Next lesson navigation — bottom of the active lesson.
+                      D-05: "Mark read & continue" button lives here (beside Next).
                       On the last lesson, "Next" is replaced by a contextual
                       "What's next?" CTA: Take the quiz, or Continue to next
                       module if the learner has already passed. */}
@@ -500,38 +512,57 @@ export function ModuleView() {
                     <span className="text-xs text-muted-foreground">
                       Lesson {activeLessonIndex + 1} of {sectionBlocks.length}
                     </span>
-                    {isLastLesson ? (
-                      <div className="flex items-center gap-2">
-                        {moduleAlreadyPassed && nextModuleId ? (
-                          <Link
-                            to={`/track/${trackId}/module/${nextModuleId}`}
-                            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                          >
-                            <span>Continue to next module</span>
-                            <ChevronRight size={16} />
-                          </Link>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setTab("quiz")}
-                            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                          >
-                            <span>Take the quiz</span>
-                            <ChevronRight size={16} />
-                          </button>
-                        )}
-                      </div>
-                    ) : (
+                    <div className="flex items-center gap-2">
+                      {/* D-05: mark-read + advance control. D-06: calls only
+                          markLessonComplete (coverage write). Never submitQuiz. */}
                       <button
                         type="button"
-                        aria-label="Next lesson"
-                        onClick={() => goToLesson(1)}
-                        className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                        data-testid="mark-read-advance-btn"
+                        onClick={handleMarkReadAndAdvance}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                          lessonCompletions?.has(activeLesson?.id ?? "")
+                            ? "text-muted-foreground hover:bg-accent"
+                            : "text-foreground hover:bg-accent",
+                        )}
                       >
-                        <span>Next lesson</span>
-                        <ChevronRight size={16} />
+                        {lessonCompletions?.has(activeLesson?.id ?? "")
+                          ? "Mark read ✓"
+                          : "Mark read & continue"}
                       </button>
-                    )}
+                      {isLastLesson ? (
+                        <>
+                          {moduleAlreadyPassed && nextModuleId ? (
+                            <Link
+                              to={`/track/${trackId}/module/${nextModuleId}`}
+                              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                            >
+                              <span>Continue to next module</span>
+                              <ChevronRight size={16} />
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setTab("quiz")}
+                              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                            >
+                              <span>Take the quiz</span>
+                              <ChevronRight size={16} />
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          aria-label="Next lesson"
+                          onClick={() => goToLesson(1)}
+                          className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                        >
+                          <span>Next lesson</span>
+                          <ChevronRight size={16} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </>
               )}

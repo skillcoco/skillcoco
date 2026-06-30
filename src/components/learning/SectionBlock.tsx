@@ -48,6 +48,12 @@ export function SectionBlock({
   const showSkipBanner =
     lessonIndex > 0 && priorCompletedCount < lessonIndex && !bannerDismissed;
 
+  // Phase 10-02 (D-05): only the DailyChallenge surface drives in-body
+  // completion (it threads onComplete and/or onMarkComplete). ModuleView passes
+  // neither — its completion control lives in the lesson footer instead.
+  const isDailyChallengeContext =
+    onComplete !== undefined || onMarkComplete !== undefined;
+
   let payload: SectionPayload;
   try {
     payload = JSON.parse(block.payloadJson) as SectionPayload;
@@ -118,17 +124,25 @@ export function SectionBlock({
 
       <MarkdownRenderer content={payload.markdown} />
 
-      <div className="not-prose mt-8">
-        <button
-          type="button"
-          className="glass-strong px-6 py-3 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
-          data-testid="mark-complete-btn"
-          disabled={isCompleted}
-          onClick={handleMarkComplete}
-        >
-          {isCompleted ? "Completed" : "Mark complete"}
-        </button>
-      </div>
+      {/* Phase 10-02 (D-05): the standalone ModuleView "Mark complete" button
+          was relocated to the lesson footer in ModuleView. SectionBlock only
+          renders an in-body completion button for the DailyChallenge surface,
+          which threads `onComplete` and has no footer of its own to host the
+          control. ModuleView never passes onComplete/onMarkComplete, so the
+          button is absent there. */}
+      {isDailyChallengeContext && (
+        <div className="not-prose mt-8">
+          <button
+            type="button"
+            className="glass-strong px-6 py-3 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+            data-testid="mark-complete-btn"
+            disabled={isCompleted}
+            onClick={handleMarkComplete}
+          >
+            {isCompleted ? "Completed" : "Mark complete"}
+          </button>
+        </div>
+      )}
     </article>
   );
 }

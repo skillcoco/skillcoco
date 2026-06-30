@@ -886,6 +886,8 @@ describe("ModuleView — Phase 3 tabs and core behaviour", () => {
     mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
     mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
     mockStore.currentLessonId = "s-2"; // last section lesson
+    // Ensure module not yet passed so "Take the quiz" CTA shows (not "Continue to next module")
+    mockStore.moduleProgress = [];
 
     renderModuleView();
 
