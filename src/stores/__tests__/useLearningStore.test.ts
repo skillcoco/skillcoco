@@ -15,6 +15,7 @@ vi.mock("@/lib/tauri-commands", () => ({
   submitQuiz: vi.fn(),
   getModuleBlocks: vi.fn(),
   regenerateLesson: vi.fn(),
+  setTrackBrowseMode: vi.fn(),
 }));
 
 import { useLearningStore, selectModulePracticalMastery } from "@/stores/useLearningStore";
@@ -271,5 +272,70 @@ describe("useLearningStore phase 3 extensions", () => {
 
     const storedBlocks = useLearningStore.getState().moduleBlocks.get("mod-1");
     expect(storedBlocks?.[0].payloadJson).toBe('{"markdown":"# Updated"}');
+  });
+
+  // ── Phase 10 Plan 03 — setTrackBrowseMode optimistic action ──
+
+  it("setTrackBrowseMode — patches currentTrack.browseMode optimistically and calls IPC", async () => {
+    vi.mocked(commands.setTrackBrowseMode).mockResolvedValue(undefined);
+
+    const track = {
+      id: "trk-browse",
+      learnerId: "lnr-1",
+      topic: "Kubernetes",
+      domainModule: "devops" as const,
+      status: "active" as const,
+      goal: "Pass CKA",
+      currentModuleId: null,
+      progressPercent: 0,
+      totalTimeSpent: 0,
+      createdAt: "2026-06-30T00:00:00Z",
+      updatedAt: "2026-06-30T00:00:00Z",
+    };
+    useLearningStore.setState({
+      currentTrack: track,
+      tracks: [track],
+    });
+
+    const store = useLearningStore.getState();
+    expect(typeof store.setTrackBrowseMode).toBe("function");
+
+    await store.setTrackBrowseMode("trk-browse", "free");
+
+    const state = useLearningStore.getState();
+    expect(state.currentTrack?.browseMode).toBe("free");
+    expect(state.tracks[0].browseMode).toBe("free");
+    expect(commands.setTrackBrowseMode).toHaveBeenCalledWith("trk-browse", "free");
+  });
+
+  it("setTrackBrowseMode — rolls back on IPC error", async () => {
+    vi.mocked(commands.setTrackBrowseMode).mockRejectedValue(new Error("IPC failed"));
+
+    const track = {
+      id: "trk-browse",
+      learnerId: "lnr-1",
+      topic: "Kubernetes",
+      domainModule: "devops" as const,
+      status: "active" as const,
+      goal: "Pass CKA",
+      currentModuleId: null,
+      progressPercent: 0,
+      totalTimeSpent: 0,
+      createdAt: "2026-06-30T00:00:00Z",
+      updatedAt: "2026-06-30T00:00:00Z",
+      browseMode: "linear" as const,
+    };
+    useLearningStore.setState({
+      currentTrack: track,
+      tracks: [track],
+    });
+
+    const store = useLearningStore.getState();
+    await store.setTrackBrowseMode("trk-browse", "free");
+
+    // Rollback: browseMode should be "linear" again
+    const state = useLearningStore.getState();
+    expect(state.currentTrack?.browseMode).toBe("linear");
+    expect(state.tracks[0].browseMode).toBe("linear");
   });
 });

@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import type { LearningPath, LearningTrack } from "@/types";
 import type { TopicPack } from "@/types/topic-packs";
@@ -55,18 +56,22 @@ import { listTopicPacksAdmin } from "@/lib/tauri-commands";
 const listTopicPacksAdminMock = vi.mocked(listTopicPacksAdmin);
 
 // Hoisted store factory so we can mutate state per test.
+const mockSetTrackBrowseMode = vi.fn();
+
 const mockStoreState: {
   currentTrack: LearningTrack | null;
   currentPath: LearningPath | null;
   moduleProgress: never[];
   isLoading: boolean;
   selectTrack: () => Promise<void>;
+  setTrackBrowseMode: typeof mockSetTrackBrowseMode;
 } = {
   currentTrack: null,
   currentPath: null,
   moduleProgress: [],
   isLoading: false,
   selectTrack: vi.fn().mockResolvedValue(undefined),
+  setTrackBrowseMode: mockSetTrackBrowseMode,
 };
 
 vi.mock("@/stores/useLearningStore", () => ({
@@ -207,5 +212,54 @@ describe("TrackView CertificationProgress mount (Plan 06-05 Wave 4)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("certification-progress")).toBeInTheDocument();
     });
+  });
+});
+
+describe("TrackView browse-mode toggle (Plan 10-03 Task 1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStoreState.currentTrack = makeTrack();
+    mockStoreState.currentPath = makePath("");
+    mockStoreState.isLoading = false;
+    mockStoreState.selectTrack = vi.fn().mockResolvedValue(undefined);
+    mockStoreState.setTrackBrowseMode = mockSetTrackBrowseMode;
+    mockSetTrackBrowseMode.mockResolvedValue(undefined);
+    listTopicPacksAdminMock.mockResolvedValue([]);
+  });
+
+  it("renders browse-mode-toggle in the header", () => {
+    renderTrackView();
+    expect(screen.getByTestId("browse-mode-toggle")).toBeInTheDocument();
+  });
+
+  it("defaults to linear when browseMode is undefined", () => {
+    mockStoreState.currentTrack = { ...makeTrack(), browseMode: undefined };
+    renderTrackView();
+    const toggle = screen.getByTestId("browse-mode-toggle");
+    expect(toggle).toHaveValue("linear");
+  });
+
+  it("shows free when browseMode is free", () => {
+    mockStoreState.currentTrack = { ...makeTrack(), browseMode: "free" as const };
+    renderTrackView();
+    const toggle = screen.getByTestId("browse-mode-toggle");
+    expect(toggle).toHaveValue("free");
+  });
+
+  it("calls setTrackBrowseMode with 'free' when toggled to free", async () => {
+    const user = userEvent.setup();
+    renderTrackView();
+    const toggle = screen.getByTestId("browse-mode-toggle");
+    await user.selectOptions(toggle, "free");
+    expect(mockSetTrackBrowseMode).toHaveBeenCalledWith("trk-attr", "free");
+  });
+
+  it("calls setTrackBrowseMode with 'linear' when toggled back to linear", async () => {
+    const user = userEvent.setup();
+    mockStoreState.currentTrack = { ...makeTrack(), browseMode: "free" as const };
+    renderTrackView();
+    const toggle = screen.getByTestId("browse-mode-toggle");
+    await user.selectOptions(toggle, "linear");
+    expect(mockSetTrackBrowseMode).toHaveBeenCalledWith("trk-attr", "linear");
   });
 });
