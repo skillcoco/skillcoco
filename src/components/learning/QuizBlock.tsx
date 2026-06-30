@@ -33,6 +33,13 @@ function fisherYates<T>(arr: T[]): T[] {
 export function QuizBlock({ block, moduleId, trackId, onComplete }: QuizBlockProps) {
   const submitQuizAction = useLearningStore((s) => s.submitQuiz);
   const moduleProgress = useLearningStore((s) => s.moduleProgress);
+  // Phase 10 Plan 03 (D-09) — suppress unlock celebration copy in free mode.
+  // currentTrack is optional in the store (may be null before selectTrack fires).
+  // undefined browseMode defaults to linear per D-01.
+  const currentTrackBrowseMode = useLearningStore(
+    (s) => (s as { currentTrack?: { browseMode?: "linear" | "free" } | null }).currentTrack?.browseMode,
+  );
+  const isLinearMode = currentTrackBrowseMode !== "free";
 
   // Look up persisted mastery for this module — set on a prior successful
   // submit_quiz call. >= 0.7 means the learner already cleared this module.
@@ -100,7 +107,9 @@ export function QuizBlock({ block, moduleId, trackId, onComplete }: QuizBlockPro
         </div>
         <p className="text-sm text-muted-foreground m-0">
           Mastery: <strong className="text-foreground">{Math.round(priorMastery * 100)}%</strong>
-          . Your progress is saved — the next module is unlocked.
+          {/* Phase 10 Plan 03 (D-09): suppress unlock phrasing in free mode */}
+          {isLinearMode && ". Your progress is saved — the next module is unlocked."}
+          {!isLinearMode && ". Your progress is saved."}
         </p>
         <button
           type="button"
@@ -123,6 +132,7 @@ export function QuizBlock({ block, moduleId, trackId, onComplete }: QuizBlockPro
       <ReviewScreen
         questions={questions}
         result={result}
+        isLinearMode={isLinearMode}
         onRetake={() => {
           setResult(null);
           setAnswers({});
@@ -388,10 +398,12 @@ function ReviewScreen({
   questions,
   result,
   onRetake,
+  isLinearMode,
 }: {
   questions: QuizQuestion[];
   result: SubmitQuizResult;
   onRetake: () => void;
+  isLinearMode: boolean;
 }) {
   const reviewByQ = new Map(result.review.map((r) => [r.questionId, r]));
 
@@ -466,7 +478,10 @@ function ReviewScreen({
         })}
       </div>
 
-      {result.passed && (
+      {/* Phase 10 Plan 03 (D-09): unlock celebration shown only in linear mode.
+          In free mode the sequential-unlock narrative doesn't apply — modules
+          were already openable. cert/mastery gates remain intact either way. */}
+      {result.passed && isLinearMode && (
         <p className="text-sm text-foreground/70 mt-4">
           Module mastered — downstream modules unlocked.
         </p>

@@ -5,18 +5,24 @@ import userEvent from "@testing-library/user-event";
 import { QuizBlock } from "@/components/learning/QuizBlock";
 import type { ModuleBlock, SubmitQuizResult } from "@/types/learning";
 
-// Mock useLearningStore — inline literals only (Vitest hoisting rule)
+// Mock useLearningStore — single factory, mutable currentState object.
+// Tests override currentState.currentTrack per-test (see Phase 10 celebrate tests).
 const mockSubmitQuiz = vi.fn();
+
+// Mutable state shared across all tests in this file (reset in beforeEach)
+const currentMockStoreState: {
+  submitQuiz: typeof mockSubmitQuiz;
+  moduleProgress: Array<{ moduleId: string; masteryLevel: number }>;
+  currentTrack: { id: string; browseMode?: "linear" | "free" } | null;
+} = {
+  submitQuiz: mockSubmitQuiz,
+  moduleProgress: [],
+  currentTrack: null,
+};
 
 vi.mock("@/stores/useLearningStore", () => ({
   useLearningStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      submitQuiz: mockSubmitQuiz,
-      // moduleProgress: empty by default — tests that exercise the
-      // already-passed gate override this in their own mock.
-      moduleProgress: [],
-    };
-    return typeof selector === "function" ? selector(state) : state;
+    return typeof selector === "function" ? selector(currentMockStoreState as unknown as Record<string, unknown>) : currentMockStoreState;
   }),
 }));
 
@@ -152,6 +158,10 @@ describe("QuizBlock Phase 3 scaffolds", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSubmitQuiz.mockResolvedValue(mockPassedResult);
+    // Reset to linear/no-track default so existing tests aren't affected by browseMode changes
+    currentMockStoreState.submitQuiz = mockSubmitQuiz;
+    currentMockStoreState.moduleProgress = [];
+    currentMockStoreState.currentTrack = null;
   });
 
   it("quiz_card_navigation — Next advances to question 2, Prev returns to 1", async () => {
@@ -405,43 +415,12 @@ describe("QuizBlock Phase 3 scaffolds", () => {
 
 // Phase 10 Plan 03 (Task 2) — celebration copy suppression in free mode (D-09)
 
-// Helper to re-create the mock store with a currentTrack carrying browseMode
-const createQuizStoreMock = (browseMode?: "linear" | "free") => ({
-  submitQuiz: mockSubmitQuiz,
-  moduleProgress: [],
-  currentTrack: browseMode !== undefined
-    ? {
-        id: "trk-1",
-        learnerId: "lnr-1",
-        topic: "K8s",
-        domainModule: "devops",
-        status: "active",
-        goal: "Pass CKA",
-        currentModuleId: null,
-        progressPercent: 0,
-        totalTimeSpent: 0,
-        createdAt: "2026-06-30T00:00:00Z",
-        updatedAt: "2026-06-30T00:00:00Z",
-        browseMode,
-      }
-    : null,
-});
-
-// Override the vi.mock factory to be selector-aware + currentTrack aware
-// We re-use the same top-level vi.mock above but swap the returned state per-test
-// via a factory closure.
-const quizMockState = { state: createQuizStoreMock() };
-vi.mock("@/stores/useLearningStore", () => ({
-  useLearningStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) => {
-    const state = quizMockState.state;
-    return typeof selector === "function" ? selector(state) : state;
-  }),
-}));
-
 describe("QuizBlock free-mode celebration suppression (Plan 10-03 Task 2)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSubmitQuiz.mockResolvedValue(mockPassedResult);
+    currentMockStoreState.submitQuiz = mockSubmitQuiz;
+    currentMockStoreState.moduleProgress = [];
   });
 
   async function submitQuiz(user: ReturnType<typeof userEvent.setup>) {
@@ -455,7 +434,7 @@ describe("QuizBlock free-mode celebration suppression (Plan 10-03 Task 2)", () =
 
   it("linear_mode_shows_unlock_celebration — 'downstream modules unlocked' visible in linear mode", async () => {
     const user = userEvent.setup();
-    quizMockState.state = createQuizStoreMock("linear");
+    currentMockStoreState.currentTrack = { id: "trk-1", browseMode: "linear" };
     render(<QuizBlock block={mockBlock} moduleId="mod-1" trackId="track-1" />);
     await submitQuiz(user);
     await screen.findByTestId("quiz-review");
@@ -464,7 +443,7 @@ describe("QuizBlock free-mode celebration suppression (Plan 10-03 Task 2)", () =
 
   it("free_mode_suppresses_unlock_celebration — 'downstream modules unlocked' hidden in free mode", async () => {
     const user = userEvent.setup();
-    quizMockState.state = createQuizStoreMock("free");
+    currentMockStoreState.currentTrack = { id: "trk-1", browseMode: "free" };
     render(<QuizBlock block={mockBlock} moduleId="mod-1" trackId="track-1" />);
     await submitQuiz(user);
     await screen.findByTestId("quiz-review");

@@ -142,22 +142,27 @@ function ModuleNode({
   accentColor,
   onClick,
   isSelected,
+  isOpenable,
 }: {
   module: PathModule;
   status: ModuleStatus;
   accentColor: string;
   onClick: () => void;
   isSelected: boolean;
+  isOpenable?: boolean;
 }) {
   const config = STATUS_CONFIG[status];
   const Icon = config.icon;
+
+  // Phase 10 Plan 03 (D-07): isOpenable overrides status-based gate in free mode.
+  const openable = isOpenable !== undefined ? isOpenable : status !== "locked";
 
   const borderColor =
     status === "available" || status === "in_progress" ? accentColor : undefined;
 
   return (
     <div
-      onClick={status !== "locked" ? onClick : undefined}
+      onClick={openable ? onClick : undefined}
       className={cn(
         "glass absolute flex flex-col gap-1.5 rounded-xl border p-3",
         config.nodeClass,
@@ -198,15 +203,18 @@ function ModuleDetailPanel({
   accentColor,
   trackId,
   onClose,
+  isOpenable,
 }: {
   module: PathModule;
   status: ModuleStatus;
   accentColor: string;
   trackId: string;
   onClose: () => void;
+  isOpenable?: boolean;
 }) {
   const navigate = useNavigate();
-  const isClickable = status !== "locked";
+  // Phase 10 Plan 03 (D-07): isOpenable overrides status-based lock in free mode.
+  const isClickable = isOpenable !== undefined ? isOpenable : status !== "locked";
 
   return (
     <div className="glass-strong rounded-xl border border-border p-6">
@@ -293,7 +301,10 @@ function ModuleDetailPanel({
             </button>
           )}
 
-          {status === "locked" && (
+          {/* Phase 10 Plan 03 (D-09): show lock message only in linear mode.
+              In free mode, status may be "locked" in DB but the module IS
+              openable — replace hard-lock text with a neutral hint. */}
+          {status === "locked" && !isClickable && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Lock size={14} />
               Complete prerequisite modules to unlock.
@@ -431,6 +442,15 @@ export function TrackView() {
 
   function getModuleStatus(moduleId: string): ModuleStatus {
     return progressMap.get(moduleId)?.status ?? "locked";
+  }
+
+  // Phase 10 Plan 03 (D-07) — effectiveOpenable helper.
+  // In free mode, ANY module status is openable (frontend presentation only;
+  // module_progress.status and cert/mastery gates are unchanged — D-03/D-04).
+  // In linear mode, falls back to the sequential lock rule (status !== "locked").
+  const browseMode = currentTrack.browseMode ?? "linear";
+  function effectiveOpenable(status: ModuleStatus): boolean {
+    return browseMode === "free" ? true : status !== "locked";
   }
 
   // "Continue learning" CTA target: next actionable module (in_progress →
@@ -642,6 +662,7 @@ export function TrackView() {
                       status={status}
                       accentColor={accentColor}
                       isSelected={selectedModuleId === node.module.id}
+                      isOpenable={effectiveOpenable(status)}
                       onClick={() =>
                         setSelectedModuleId(
                           selectedModuleId === node.module.id
@@ -696,6 +717,7 @@ export function TrackView() {
           accentColor={accentColor}
           trackId={trackId}
           onClose={() => setSelectedModuleId(null)}
+          isOpenable={effectiveOpenable(selectedStatus)}
         />
       )}
     </div>

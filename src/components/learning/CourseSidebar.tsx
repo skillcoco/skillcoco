@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronRight,
+  Compass,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
@@ -17,6 +18,7 @@ import type {
 } from "@/types/learning";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { LessonNavList } from "./LessonNavList";
+import { pickNextModule } from "@/lib/learning-path";
 
 interface CourseSidebarProps {
   track: LearningTrack;
@@ -72,6 +74,21 @@ export function CourseSidebar({
   const overallPercent =
     rows.length === 0 ? 0 : Math.round((completedCount / rows.length) * 100);
 
+  // Phase 10 Plan 03 (D-08) — recommended-next module for guidance in both modes.
+  // In free mode this is the primary signal; in linear mode it's a secondary hint.
+  // Uses the existing pickNextModule: in_progress ?? first available ?? null.
+  const recommendedNextId = useMemo(() => {
+    const next = pickNextModule(
+      rows.map((r) => r.module),
+      (id) => rows.find((r) => r.module.id === id)?.status ?? "locked",
+    );
+    return next?.id ?? null;
+  }, [rows]);
+
+  // Phase 10 Plan 03 (D-07) — in free mode every row is treated as openable
+  // regardless of its DB status. browseMode === undefined → default linear.
+  const isFreeMode = track.browseMode === "free";
+
   return (
     <aside className="hidden h-screen w-72 flex-shrink-0 border-r border-border bg-secondary/20 lg:flex lg:flex-col">
       {/* Track header */}
@@ -117,7 +134,10 @@ export function CourseSidebar({
         <ul className="space-y-1">
           {rows.map((row, index) => {
             const isActive = row.module.id === currentModuleId;
-            const isLocked = row.status === "locked";
+            // Phase 10 Plan 03 (D-07): in free mode, all rows are openable.
+            // In linear mode (or undefined = default linear), use DB status.
+            const isLocked = isFreeMode ? false : row.status === "locked";
+            const isRecommendedNext = row.module.id === recommendedNextId;
             return (
               <li key={row.module.id}>
                 <ModuleNavItem
@@ -126,6 +146,7 @@ export function CourseSidebar({
                   trackId={track.id}
                   isActive={isActive}
                   isLocked={isLocked}
+                  isRecommendedNext={isRecommendedNext}
                 />
               </li>
             );
@@ -142,12 +163,14 @@ function ModuleNavItem({
   trackId,
   isActive,
   isLocked,
+  isRecommendedNext,
 }: {
   index: number;
   row: ModuleRow;
   trackId: string;
   isActive: boolean;
   isLocked: boolean;
+  isRecommendedNext?: boolean;
 }) {
   const navigate = useNavigate();
 
@@ -232,6 +255,17 @@ function ModuleNavItem({
             </span>
           )}
         </span>
+        {/* Phase 10 Plan 03 (D-08) — recommended-next hint shown in both modes.
+            Primary guidance signal in free mode; complementary in linear mode. */}
+        {isRecommendedNext && (
+          <span
+            data-testid="recommended-next"
+            className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-primary"
+          >
+            <Compass size={10} aria-hidden />
+            Recommended next
+          </span>
+        )}
       </span>
     </div>
   );
