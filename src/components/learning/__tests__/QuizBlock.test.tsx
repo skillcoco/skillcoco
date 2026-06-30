@@ -402,3 +402,72 @@ describe("QuizBlock Phase 3 scaffolds", () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });
+
+// Phase 10 Plan 03 (Task 2) — celebration copy suppression in free mode (D-09)
+
+// Helper to re-create the mock store with a currentTrack carrying browseMode
+const createQuizStoreMock = (browseMode?: "linear" | "free") => ({
+  submitQuiz: mockSubmitQuiz,
+  moduleProgress: [],
+  currentTrack: browseMode !== undefined
+    ? {
+        id: "trk-1",
+        learnerId: "lnr-1",
+        topic: "K8s",
+        domainModule: "devops",
+        status: "active",
+        goal: "Pass CKA",
+        currentModuleId: null,
+        progressPercent: 0,
+        totalTimeSpent: 0,
+        createdAt: "2026-06-30T00:00:00Z",
+        updatedAt: "2026-06-30T00:00:00Z",
+        browseMode,
+      }
+    : null,
+});
+
+// Override the vi.mock factory to be selector-aware + currentTrack aware
+// We re-use the same top-level vi.mock above but swap the returned state per-test
+// via a factory closure.
+const quizMockState = { state: createQuizStoreMock() };
+vi.mock("@/stores/useLearningStore", () => ({
+  useLearningStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) => {
+    const state = quizMockState.state;
+    return typeof selector === "function" ? selector(state) : state;
+  }),
+}));
+
+describe("QuizBlock free-mode celebration suppression (Plan 10-03 Task 2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSubmitQuiz.mockResolvedValue(mockPassedResult);
+  });
+
+  async function submitQuiz(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByText("The smallest deployable unit"));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    await user.click(screen.getByText("kube-scheduler"));
+    await user.click(screen.getByRole("button", { name: /next/i }));
+    await user.click(screen.getByText("A distributed key-value store"));
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+  }
+
+  it("linear_mode_shows_unlock_celebration — 'downstream modules unlocked' visible in linear mode", async () => {
+    const user = userEvent.setup();
+    quizMockState.state = createQuizStoreMock("linear");
+    render(<QuizBlock block={mockBlock} moduleId="mod-1" trackId="track-1" />);
+    await submitQuiz(user);
+    await screen.findByTestId("quiz-review");
+    expect(screen.getByText(/downstream modules unlocked/i)).toBeInTheDocument();
+  });
+
+  it("free_mode_suppresses_unlock_celebration — 'downstream modules unlocked' hidden in free mode", async () => {
+    const user = userEvent.setup();
+    quizMockState.state = createQuizStoreMock("free");
+    render(<QuizBlock block={mockBlock} moduleId="mod-1" trackId="track-1" />);
+    await submitQuiz(user);
+    await screen.findByTestId("quiz-review");
+    expect(screen.queryByText(/downstream modules unlocked/i)).not.toBeInTheDocument();
+  });
+});

@@ -60,6 +60,9 @@ const mockTrack: LearningTrack = {
   updatedAt: "2026-05-05T00:00:00Z",
 };
 
+const mockTrackFree: LearningTrack = { ...mockTrack, browseMode: "free" as const };
+const mockTrackLinear: LearningTrack = { ...mockTrack, browseMode: "linear" as const };
+
 const mockModules: PathModule[] = [
   {
     id: "mod-1",
@@ -70,6 +73,29 @@ const mockModules: PathModule[] = [
     estimatedMinutes: 30,
     objectives: ["Understand pods"],
     prerequisites: [],
+  },
+];
+
+const mockModulesWithLocked: PathModule[] = [
+  {
+    id: "mod-1",
+    title: "Pods and Nodes",
+    description: "Introduction to pods",
+    type: "lesson",
+    difficulty: 2,
+    estimatedMinutes: 30,
+    objectives: ["Understand pods"],
+    prerequisites: [],
+  },
+  {
+    id: "mod-2",
+    title: "Services",
+    description: "Introduction to services",
+    type: "lesson",
+    difficulty: 3,
+    estimatedMinutes: 20,
+    objectives: ["Understand services"],
+    prerequisites: ["mod-1"],
   },
 ];
 
@@ -280,5 +306,90 @@ describe("CourseSidebar Phase 3 lesson expansion", () => {
 
     expect(screen.getByText("Pods and Nodes")).toBeInTheDocument();
     expect(screen.getByText("In progress")).toBeInTheDocument();
+  });
+});
+
+// Phase 10 Plan 03 (Task 2) — free-mode openability + recommended-next
+const mockProgressWithLocked: ModuleProgress[] = [
+  {
+    id: "mp-1",
+    moduleId: "mod-1",
+    learnerId: "learner-1",
+    status: "in_progress",
+    score: null,
+    timeSpent: 0,
+    attempts: 0,
+    masteryLevel: 0.2,
+    practicalMastery: 0,
+    startedAt: "2026-05-05T00:00:00Z",
+    completedAt: null,
+  },
+  {
+    id: "mp-2",
+    moduleId: "mod-2",
+    learnerId: "learner-1",
+    status: "locked",
+    score: null,
+    timeSpent: 0,
+    attempts: 0,
+    masteryLevel: 0,
+    practicalMastery: 0,
+    startedAt: null,
+    completedAt: null,
+  },
+];
+
+function renderSidebarWith(track: LearningTrack, modules: PathModule[], progress: ModuleProgress[], currentModuleId = "mod-1") {
+  return render(
+    <MemoryRouter>
+      <CourseSidebar
+        track={track}
+        modules={modules}
+        progress={progress}
+        currentModuleId={currentModuleId}
+      />
+    </MemoryRouter>,
+  );
+}
+
+describe("CourseSidebar browse-mode free openability (Plan 10-03 Task 2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStoreState.moduleBlocks = new Map();
+    mockStoreState.currentLessonId = null;
+    mockStoreState.lessonCompletions = new Map();
+    mockLoadModuleBlocks.mockResolvedValue([]);
+  });
+
+  it("free_open_all — locked row renders as clickable button in free mode", () => {
+    renderSidebarWith(mockTrackFree, mockModulesWithLocked, mockProgressWithLocked);
+
+    // In free mode, mod-2 (locked in DB) should render as a clickable module-row button
+    expect(screen.getByTestId("module-row-mod-2")).toBeInTheDocument();
+    // The aria-disabled wrapper should NOT exist for mod-2
+    const ariaDisabled = document.querySelector('[aria-disabled][data-testid="module-row-mod-2"]');
+    expect(ariaDisabled).not.toBeInTheDocument();
+  });
+
+  it("linear_locked_unchanged — locked row stays aria-disabled in linear mode", () => {
+    renderSidebarWith(mockTrackLinear, mockModulesWithLocked, mockProgressWithLocked);
+
+    // In linear mode, mod-2 (locked) must NOT have module-row testid (it uses aria-disabled wrapper)
+    expect(screen.queryByTestId("module-row-mod-2")).not.toBeInTheDocument();
+  });
+
+  it("recommended_next — row returned by pickNextModule has recommended-next testid", () => {
+    // mod-1 is in_progress → pickNextModule returns mod-1 as recommended next
+    renderSidebarWith(mockTrackLinear, mockModulesWithLocked, mockProgressWithLocked);
+
+    expect(screen.getByTestId("recommended-next")).toBeInTheDocument();
+  });
+
+  it("free_mode_no_cursor_not_allowed — locked rows do not have cursor-not-allowed class in free mode", () => {
+    renderSidebarWith(mockTrackFree, mockModulesWithLocked, mockProgressWithLocked);
+
+    const button = screen.getByTestId("module-row-mod-2");
+    // The button wrapper's inner content should not have cursor-not-allowed
+    expect(button.closest("div")?.className ?? button.className).not.toContain("cursor-not-allowed");
   });
 });
