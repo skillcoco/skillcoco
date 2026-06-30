@@ -149,7 +149,7 @@ pub fn list_tracks(state: State<AppState>) -> Result<Vec<LearningTrack>, String>
     let mut stmt = db
         .conn
         .prepare(
-            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at, COALESCE(streak_days, 0), last_activity_date FROM learning_tracks ORDER BY updated_at DESC",
+            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at, COALESCE(streak_days, 0), last_activity_date, COALESCE(browse_mode, 'linear') FROM learning_tracks ORDER BY updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
 
@@ -169,6 +169,7 @@ pub fn list_tracks(state: State<AppState>) -> Result<Vec<LearningTrack>, String>
                 updated_at: row.get(10)?,
                 streak_days: row.get(11)?,
                 last_activity_date: row.get(12)?,
+                browse_mode: row.get(13)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -210,7 +211,7 @@ pub fn get_track(state: State<AppState>, track_id: String) -> Result<LearningTra
 fn get_track_inner(db: &crate::db::Database, track_id: &str) -> Result<LearningTrack, String> {
     db.conn
         .query_row(
-            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at, COALESCE(streak_days, 0), last_activity_date FROM learning_tracks WHERE id = ?1",
+            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at, COALESCE(streak_days, 0), last_activity_date, COALESCE(browse_mode, 'linear') FROM learning_tracks WHERE id = ?1",
             [track_id],
             |row| {
                 Ok(LearningTrack {
@@ -227,6 +228,7 @@ fn get_track_inner(db: &crate::db::Database, track_id: &str) -> Result<LearningT
                     updated_at: row.get(10)?,
                     streak_days: row.get(11)?,
                     last_activity_date: row.get(12)?,
+                    browse_mode: row.get(13)?,
                 })
             },
         )
@@ -267,7 +269,7 @@ mod tests {
 
         // List tracks using the raw query logic (mirrors list_tracks command)
         let mut stmt = conn.prepare(
-            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at, COALESCE(streak_days, 0), last_activity_date FROM learning_tracks ORDER BY updated_at DESC",
+            "SELECT id, learner_id, topic, domain_module, status, goal, current_module_id, progress_percent, total_time_spent, created_at, updated_at, COALESCE(streak_days, 0), last_activity_date, COALESCE(browse_mode, 'linear') FROM learning_tracks ORDER BY updated_at DESC",
         ).unwrap();
 
         let tracks = stmt.query_map([], |row| {
@@ -285,6 +287,7 @@ mod tests {
                 updated_at: row.get(10)?,
                 streak_days: row.get(11)?,
                 last_activity_date: row.get(12)?,
+                browse_mode: row.get(13)?,
             })
         }).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
 
@@ -294,6 +297,7 @@ mod tests {
         assert_eq!(tracks[0].learner_id, "lp1");
         assert_eq!(tracks[0].streak_days, 0, "new track starts with streak_days=0");
         assert!(tracks[0].last_activity_date.is_none(), "new track has no last_activity_date");
+        assert_eq!(tracks[0].browse_mode, "linear", "new track defaults to browse_mode='linear'");
 
         // Verify camelCase serde — TypeScript receives camelCase field names
         let json = serde_json::to_string(&tracks[0]).unwrap();
@@ -301,6 +305,7 @@ mod tests {
         assert!(json.contains("\"domainModule\""), "domainModule must be camelCase in JSON");
         assert!(json.contains("\"progressPercent\""), "progressPercent must be camelCase in JSON");
         assert!(json.contains("\"streakDays\""), "streakDays must be camelCase in JSON");
+        assert!(json.contains("\"browseMode\""), "browseMode must be camelCase in JSON");
     }
 
     /// delete_track_cascades — deleting a track removes its paths, modules,
@@ -396,6 +401,108 @@ mod tests {
         // Active provider is set
         assert_eq!(auth.get_active_provider().unwrap().as_deref(), Some("anthropic"));
     }
+
+    // ── browse_mode tests (Phase 10-01, Task 2) ──────────────────────────────
+
+    /// Helper: insert a learner_profiles row for FK satisfaction.
+    fn seed_profile(conn: &Connection, id: &str) {
+        conn.execute(
+            "INSERT INTO learner_profiles (id, display_name) VALUES (?1, 'Test')",
+            rusqlite::params![id],
+        ).unwrap();
+    }
+
+    /// Helper: insert a track row and return its id.
+    fn seed_track(conn: &Connection, id: &str, learner_id: &str) {
+        conn.execute(
+            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module, goal) \
+             VALUES (?1, ?2, 'TestTopic', 'testdomain', 'TestGoal')",
+            rusqlite::params![id, learner_id],
+        ).unwrap();
+    }
+
+    /// Helper: read browse_mode for a track directly from the DB.
+    fn get_browse_mode(conn: &Connection, track_id: &str) -> String {
+        conn.query_row(
+            "SELECT COALESCE(browse_mode, 'linear') FROM learning_tracks WHERE id = ?1",
+            rusqlite::params![track_id],
+            |row| row.get(0),
+        ).unwrap()
+    }
+
+    /// Test (round-trip): inserting a track returns browse_mode == 'linear' by
+    /// default; after set_track_browse_mode_inner("free") it returns 'free'.
+    #[test]
+    fn browse_mode_round_trip_default_and_set() {
+        let conn = setup_test_db();
+        seed_profile(&conn, "lp1");
+        seed_track(&conn, "t1", "lp1");
+
+        // Default
+        assert_eq!(get_browse_mode(&conn, "t1"), "linear", "new track must default to 'linear'");
+
+        // Set to free
+        super::set_track_browse_mode_inner(&conn, "t1", "free")
+            .expect("set to 'free' must succeed");
+        assert_eq!(get_browse_mode(&conn, "t1"), "free", "browse_mode must be 'free' after set");
+
+        // Set back to linear
+        super::set_track_browse_mode_inner(&conn, "t1", "linear")
+            .expect("set back to 'linear' must succeed");
+        assert_eq!(get_browse_mode(&conn, "t1"), "linear", "browse_mode must be 'linear' after reset");
+    }
+
+    /// Test (validation): set_track_browse_mode rejects any value other than
+    /// 'linear' or 'free' with an Err (no DB write on reject).
+    #[test]
+    fn browse_mode_validation_rejects_invalid_modes() {
+        let conn = setup_test_db();
+        seed_profile(&conn, "lp1");
+        seed_track(&conn, "t1", "lp1");
+
+        let invalid_modes = ["", "random", "LINEAR", "Free", "both", "admin", "1=1; DROP TABLE"];
+        for bad in &invalid_modes {
+            let result = super::set_track_browse_mode_inner(&conn, "t1", bad);
+            assert!(
+                result.is_err(),
+                "set_track_browse_mode_inner must reject mode '{}' but returned Ok",
+                bad
+            );
+            // DB must be untouched — mode stays 'linear'
+            assert_eq!(
+                get_browse_mode(&conn, "t1"),
+                "linear",
+                "DB must not be written for invalid mode '{}'",
+                bad
+            );
+        }
+    }
+
+    /// Test (isolation): set_track_browse_mode on track A does not change
+    /// track B's browse_mode (per-track, D-02).
+    #[test]
+    fn browse_mode_isolation_across_tracks() {
+        let conn = setup_test_db();
+        seed_profile(&conn, "lp1");
+        seed_track(&conn, "track-a", "lp1");
+        seed_track(&conn, "track-b", "lp1");
+
+        // Set track-a to 'free'
+        super::set_track_browse_mode_inner(&conn, "track-a", "free")
+            .expect("set track-a to 'free' must succeed");
+
+        // track-b must still be 'linear'
+        assert_eq!(
+            get_browse_mode(&conn, "track-b"),
+            "linear",
+            "track-b's browse_mode must not change when track-a is updated"
+        );
+        assert_eq!(
+            get_browse_mode(&conn, "track-a"),
+            "free",
+            "track-a browse_mode must be 'free'"
+        );
+    }
 }
 
 #[tauri::command]
@@ -427,4 +534,43 @@ fn delete_track_inner(conn: &rusqlite::Connection, track_id: &str) -> Result<usi
         rusqlite::params![track_id],
     )
     .map_err(|e| e.to_string())
+}
+
+/// Inner testable implementation for set_track_browse_mode.
+///
+/// T-10-01: whitelist-validates mode ∈ {"linear", "free"} before any DB write.
+/// Parameterized query prevents SQL injection regardless of mode content.
+fn set_track_browse_mode_inner(
+    conn: &rusqlite::Connection,
+    track_id: &str,
+    mode: &str,
+) -> Result<(), String> {
+    // T-10-01: whitelist-validate mode ∈ {"linear", "free"}; reject before DB write
+    if mode != "linear" && mode != "free" {
+        return Err(format!(
+            "Invalid browse mode '{}': must be 'linear' or 'free'",
+            mode
+        ));
+    }
+    conn.execute(
+        "UPDATE learning_tracks SET browse_mode = ?1, updated_at = datetime('now') WHERE id = ?2",
+        rusqlite::params![mode, track_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Set the browse mode for a single track.
+///
+/// Validates that `mode` is exactly "linear" or "free" (T-10-01 whitelist).
+/// Uses parameterized query — no string interpolation (T-10-01 SQLi mitigation).
+/// Does NOT touch mastery, progress, unlock, or certificate pipelines (D-03/D-06).
+#[tauri::command]
+pub fn set_track_browse_mode(
+    state: State<AppState>,
+    track_id: String,
+    mode: String,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    set_track_browse_mode_inner(&db.conn, &track_id, &mode)
 }

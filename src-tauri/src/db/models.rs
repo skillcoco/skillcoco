@@ -35,6 +35,10 @@ pub struct LearningTrack {
     pub streak_days: i32,
     /// ISO datetime of last activity on this track (FIX-04). NULL until first completion.
     pub last_activity_date: Option<String>,
+    /// Phase 10 — per-track browsing mode ('linear' | 'free'). Defaults to 'linear'
+    /// (D-01). Stored in learning_tracks.browse_mode (per-track grain, D-02).
+    /// Serialized as `browseMode` over IPC via camelCase rename_all.
+    pub browse_mode: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -132,6 +136,7 @@ mod tests {
             updated_at: "2026-01-01".to_string(),
             streak_days: 3,
             last_activity_date: Some("2026-01-01T10:00:00".to_string()),
+            browse_mode: "linear".to_string(),
         };
         let json = serde_json::to_string(&track).unwrap();
         assert!(json.contains("\"learnerId\""), "Expected learnerId, got: {}", json);
@@ -139,6 +144,8 @@ mod tests {
         assert!(json.contains("\"currentModuleId\""), "Expected currentModuleId, got: {}", json);
         assert!(json.contains("\"progressPercent\""), "Expected progressPercent, got: {}", json);
         assert!(json.contains("\"totalTimeSpent\""), "Expected totalTimeSpent, got: {}", json);
+        assert!(json.contains("\"browseMode\""), "Expected browseMode in JSON, got: {}", json);
+        assert!(!json.contains("\"browse_mode\""), "Snake case browse_mode must not appear");
         // Round-trip
         let decoded: LearningTrack = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.learner_id, "p1");
@@ -146,6 +153,7 @@ mod tests {
         assert_eq!(decoded.current_module_id, Some("m1".to_string()));
         assert_eq!(decoded.progress_percent, 42.5);
         assert_eq!(decoded.total_time_spent, 3600);
+        assert_eq!(decoded.browse_mode, "linear");
     }
 
     #[test]

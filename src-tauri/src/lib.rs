@@ -223,6 +223,7 @@ pub fn run() {
             commands::tracks::get_track,
             commands::tracks::update_track_status,
             commands::tracks::delete_track,
+            commands::tracks::set_track_browse_mode,
             // Learning commands
             commands::learning::get_path,
             commands::learning::get_module_progress,
