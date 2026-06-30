@@ -501,27 +501,44 @@ pub async fn refresh_lesson_videos(
 ) -> Result<LessonVideosResult, String> {
     let db_arc = std::sync::Arc::clone(&state.db);
 
-    // Delete existing rows inside a lock scope, drop before await.
-    let yt_key: Option<String> = {
-        let db = db_arc.lock().map_err(|e| e.to_string())?;
-        db.conn
-            .execute(
-                "DELETE FROM lesson_videos WHERE module_id = ?1",
-                rusqlite::params![module_id],
-            )
-            .map_err(|e| e.to_string())?;
-        drop(db);
-
-        match auth.get_credential("youtube")? {
-            Some(cred) => cred.api_key,
-            None => None,
+    // Resolve the YouTube key FIRST, before touching the cache (WR-03). If the
+    // key was removed or never set, we must NOT wipe the existing cached rows —
+    // the learner would lose working videos with no way to recover them.
+    // Every failure path returns an empty list, never an error (WR-04 / D-09).
+    let yt_key: Option<String> = match auth.get_credential("youtube") {
+        Ok(Some(cred)) => cred.api_key,
+        Ok(None) => None,
+        Err(e) => {
+            log::warn!("refresh: youtube credential read error: {}", e);
+            return Ok(LessonVideosResult { videos: vec![] });
         }
     };
 
     let Some(key) = yt_key else {
-        // No key — return empty (D-06).
+        // No key — return empty WITHOUT deleting the cache (D-06, WR-03).
         return Ok(LessonVideosResult { videos: vec![] });
     };
+
+    // Key is present and discovery is about to run — now it is safe to clear
+    // the cache inside a lock scope, dropping the guard before any await.
+    {
+        let db = match db_arc.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                // Fail-soft: lock poison returns empty, never an error (WR-04).
+                log::warn!("refresh: db lock error: {}", e);
+                return Ok(LessonVideosResult { videos: vec![] });
+            }
+        };
+        if let Err(e) = db.conn.execute(
+            "DELETE FROM lesson_videos WHERE module_id = ?1",
+            rusqlite::params![module_id],
+        ) {
+            log::warn!("refresh: DELETE lesson_videos error: {}", e);
+            return Ok(LessonVideosResult { videos: vec![] });
+        }
+        // db guard drops here — lock released before await.
+    }
 
     let videos = discover_and_persist(&module_id, &key, &db_arc, auth.inner()).await;
     Ok(LessonVideosResult { videos })
@@ -827,6 +844,7 @@ mod tests {
             })
             .collect();
 
+        // 42.0 → clamped to 1.0 (passes threshold); -5.0 → clamped to 0.0 (dropped).
         assert_eq!(scored.len(), 1, "negative score clamps to 0.0 and is dropped");
         assert_eq!(scored[0].video_id, "hi");
         assert!(
