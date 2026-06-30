@@ -48,15 +48,19 @@ function makeBlock(overrides: Partial<ModuleBlock>): ModuleBlock {
 }
 
 describe("BlockRenderer Phase 3", () => {
-  it("block_renderer_renders_section — section blockType renders SectionBlock (has mark-complete button)", () => {
+  it("block_renderer_renders_section — section blockType renders SectionBlock content; in-body mark-complete button suppressed without completion callbacks (10-02 footer relocation)", () => {
     render(
       <BlockRenderer
         block={makeBlock({ blockType: "section" })}
         moduleId="mod-1"
       />
     );
-    // SectionBlock renders a mark-complete button
-    expect(screen.getByRole("button", { name: /mark complete/i })).toBeInTheDocument();
+    // SectionBlock routes and renders the section markdown content.
+    expect(screen.getByText(/content here/i)).toBeInTheDocument();
+    // Phase 10-02 relocated the mark-complete control to the ModuleView footer.
+    // The in-body button now renders only when DailyChallenge threads
+    // onComplete/onMarkComplete; the bare BlockRenderer path (ModuleView) omits it.
+    expect(screen.queryByRole("button", { name: /mark complete/i })).not.toBeInTheDocument();
   });
 
   it("block_renderer_renders_quiz — quiz blockType renders QuizBlock (empty quiz error state)", () => {
