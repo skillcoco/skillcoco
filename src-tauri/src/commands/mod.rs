@@ -5,3 +5,4 @@ pub mod labs;
 pub mod learning;
 pub mod microlearning;
 pub mod tracks;
+pub mod videos;
