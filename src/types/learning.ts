@@ -189,6 +189,9 @@ export interface CompleteExercisesResult {
 
 // ── Phase 3: Block Taxonomy (BLOCK-01) ──
 
+// NOTE (Phase 11 D-01): "video" is intentionally NOT a BlockType variant. Video content is
+// rendered as a lesson-level adjunct panel (RelatedVideosPanel) mounted outside the block list,
+// so the generation pipeline and block taxonomy remain untouched. See src/types/videos.ts.
 export type BlockType = "section" | "text" | "callout" | "quiz" | "flash_cards" | "lab";
 export type BlockStatus = "pending" | "generating" | "ready" | "failed";
 
