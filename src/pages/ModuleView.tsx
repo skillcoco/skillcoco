@@ -6,6 +6,7 @@ import { BlockRenderer } from "@/components/learning/BlockRenderer";
 import { ExerciseContainer } from "@/components/exercises/ExerciseContainer";
 import { TutorSidebar } from "@/components/learning/TutorSidebar";
 import { CourseSidebar } from "@/components/learning/CourseSidebar";
+import { RelatedVideosPanel } from "@/components/learning/RelatedVideosPanel";
 import { regenerateModule, generateModuleBlocks } from "@/lib/tauri-commands";
 import { cn } from "@/lib/utils";
 import { parsePathModules } from "@/lib/learning-path";
@@ -564,6 +565,11 @@ export function ModuleView() {
                       )}
                     </div>
                   </div>
+
+                  {/* Phase 11 — Related videos panel (D-01 additive, after prev/next nav).
+                      Panel self-suppresses when no key or no videos (D-06/D-09 via empty-
+                      array → null in RelatedVideosPanel). Generation pipeline untouched. */}
+                  {moduleId && <RelatedVideosPanel moduleId={moduleId} />}
                 </>
               )}
             </div>

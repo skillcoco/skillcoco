@@ -4,6 +4,7 @@ import * as commands from "@/lib/tauri-commands";
 import type { ProviderAuthStatus, LoginRequest } from "@/types/ai";
 import { SettingsLabsSection } from "@/pages/SettingsLabsSection";
 import { SettingsTopicPacksSection } from "@/pages/SettingsTopicPacksSection";
+import { SettingsYouTubeSection } from "@/pages/SettingsYouTubeSection";
 // Phase 08.1 (Cert Split) — Studio-overlay component. The `@pro` alias
 // resolves to a no-op stub in OSS mode (renders nothing) and to the real
 // signed-cert Verify panel when LEARNFORGE_PRO=1. See
@@ -881,6 +882,12 @@ export function Settings() {
           )}
         </div>
       </section>
+
+      {/* ── YouTube Data API v3 (Phase 11 — Related Videos) ── */}
+      <SettingsYouTubeSection
+        onKeySaved={loadAuthStatus}
+        onKeyRemoved={loadAuthStatus}
+      />
 
       {/* ── Preferences ── */}
       <section className="space-y-4">
