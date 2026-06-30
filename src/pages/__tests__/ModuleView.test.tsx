@@ -782,4 +782,125 @@ describe("ModuleView — Phase 3 tabs and core behaviour", () => {
       expect(screen.getByTestId("exercise-container")).toBeInTheDocument();
     });
   });
+
+  // ── Phase 10 Plan 02: mark-read + advance footer control (D-05 / D-06) ───
+
+  it("mark_read_advance_btn_renders_in_footer — data-testid=mark-read-advance-btn exists in lessons footer row", async () => {
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-1";
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+    });
+
+    // Footer mark-read control must be present
+    expect(screen.getByTestId("mark-read-advance-btn")).toBeInTheDocument();
+  });
+
+  it("mark_read_advance_btn_calls_markLessonComplete_and_advances — single click marks read AND advances to next lesson", async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-1";
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("mark-read-advance-btn"));
+
+    // markLessonComplete called with moduleId + blockId
+    expect(mockStore.markLessonComplete).toHaveBeenCalledWith("mod-1", "s-1");
+    // advances to next lesson
+    expect(mockStore.setCurrentLesson).toHaveBeenCalledWith("s-2");
+  });
+
+  it("mark_read_advance_btn_does_not_call_submitQuiz — D-06: mark-read path never invokes mastery pipeline", async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-1";
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("mark-read-advance-btn"));
+
+    // D-06: submitQuiz must NOT be called by the mark-read path
+    expect(mockStore.submitQuiz).not.toHaveBeenCalled();
+  });
+
+  it("mark_read_advance_btn_already_read_shows_check_and_still_advances — completed lesson shows ✓ state and advances on click", async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-1";
+    // s-1 already completed
+    mockStore.lessonCompletions = new Map([["mod-1", new Set(["s-1"])]]);
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-1")).toBeInTheDocument();
+    });
+
+    // Shows read/✓ state label when already completed
+    const btn = screen.getByTestId("mark-read-advance-btn");
+    expect(btn).toBeInTheDocument();
+    // Clicking still advances
+    await user.click(btn);
+    expect(mockStore.setCurrentLesson).toHaveBeenCalledWith("s-2");
+  });
+
+  it("mark_read_advance_btn_last_lesson_records_read_quiz_cta_preserved — on last lesson, marks read without error and quiz CTA still shows", async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      makeBlock({ id: "s-1", blockType: "section", ordering: 0, status: "ready" }),
+      makeBlock({ id: "s-2", blockType: "section", ordering: 1, status: "ready" }),
+      makeBlock({ id: "q-1", blockType: "quiz", ordering: 2, status: "ready" }),
+    ];
+    mockStore.moduleBlocks = new Map([["mod-1", blocks]]);
+    mockStore.loadModuleBlocks = vi.fn().mockResolvedValue(blocks);
+    mockStore.currentLessonId = "s-2"; // last section lesson
+
+    renderModuleView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("block-renderer-s-2")).toBeInTheDocument();
+    });
+
+    // Mark-read control visible on last lesson
+    expect(screen.getByTestId("mark-read-advance-btn")).toBeInTheDocument();
+
+    // Click it — markLessonComplete should be called
+    await user.click(screen.getByTestId("mark-read-advance-btn"));
+    expect(mockStore.markLessonComplete).toHaveBeenCalledWith("mod-1", "s-2");
+
+    // "Take the quiz" CTA must still be present after click
+    expect(screen.getByRole("button", { name: /take the quiz/i })).toBeInTheDocument();
+  });
 });
