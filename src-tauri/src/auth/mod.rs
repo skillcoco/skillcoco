@@ -6,6 +6,18 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+/// Known AI providers eligible for auto-promotion to `active_provider`.
+/// `"anthropic"` is the legacy canonical id for Claude; `"claude"` is the id
+/// used by the current Settings UI provider list. Non-AI credentials sharing
+/// this store (e.g. `"youtube"`) are deliberately excluded (CR-02).
+const AI_PROVIDERS: [&str; 5] = ["claude", "anthropic", "openai", "gemini", "ollama"];
+
+/// Returns true if `provider` is a known AI provider that may become the
+/// active provider when none is set yet.
+fn is_ai_provider(provider: &str) -> bool {
+    AI_PROVIDERS.contains(&provider)
+}
+
 /// Supported auth methods for AI providers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
@@ -84,7 +96,12 @@ impl AuthState {
                 base_url: None,
             },
         );
-        if store.active_provider.is_none() {
+        // Only auto-promote KNOWN AI providers to active_provider. A non-AI
+        // credential reusing this store (e.g. the YouTube Data API key) must
+        // never silently hijack the active AI provider — doing so breaks
+        // downstream ai_request resolution while the UI shows "Not connected"
+        // (CR-02).
+        if store.active_provider.is_none() && is_ai_provider(provider) {
             store.active_provider = Some(provider.to_string());
         }
         drop(store);
@@ -224,6 +241,37 @@ mod tests {
         state.store_api_key("openai", "sk-openai", None).unwrap();
 
         assert_eq!(state.get_active_provider().unwrap().as_deref(), Some("openai"));
+    }
+
+    #[test]
+    fn test_youtube_key_does_not_become_active_provider() {
+        // CR-02: storing a non-AI credential (youtube) must NOT auto-promote it
+        // to active_provider, even when no AI provider is configured yet.
+        let (state, _dir) = temp_auth_state();
+        state.store_api_key("youtube", "AIza-test", None).unwrap();
+
+        assert!(
+            state.get_active_provider().unwrap().is_none(),
+            "youtube must never become the active AI provider"
+        );
+        // The credential itself is still stored and retrievable.
+        let cred = state.get_credential("youtube").unwrap().unwrap();
+        assert_eq!(cred.api_key.as_deref(), Some("AIza-test"));
+    }
+
+    #[test]
+    fn test_youtube_before_ai_provider_lets_ai_take_active() {
+        // CR-02: even if youtube is stored first, the next AI provider stored
+        // becomes active (because youtube never claimed the active slot).
+        let (state, _dir) = temp_auth_state();
+        state.store_api_key("youtube", "AIza-test", None).unwrap();
+        state.store_api_key("openai", "sk-openai", None).unwrap();
+
+        assert_eq!(
+            state.get_active_provider().unwrap().as_deref(),
+            Some("openai"),
+            "first AI provider becomes active despite youtube being stored first"
+        );
     }
 
     #[test]
