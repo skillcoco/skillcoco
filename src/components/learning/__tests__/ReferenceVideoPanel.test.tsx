@@ -256,4 +256,17 @@ describe("ReferenceVideoPanel (acceptance)", () => {
       expect(screen.getByTestId("reference-video-panel")).toBeInTheDocument();
     });
   });
+
+  // ── Fullscreen support (D-07 + Tauri webview) ─────────────────────────────
+
+  it("ref_vid_iframe_allow_includes_fullscreen — iframe allow list contains 'fullscreen' so native YT fullscreen works", async () => {
+    mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      const iframe = screen.getByTitle(VIDEO_A.title) as HTMLIFrameElement;
+      expect(iframe.getAttribute("allow")).toContain("fullscreen");
+    });
+  });
 });

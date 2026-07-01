@@ -96,7 +96,7 @@ export function ReferenceVideoPanel({
   return (
     <section
       data-testid="reference-video-panel"
-      className="mb-6 overflow-hidden rounded-lg border border-border bg-secondary/20"
+      className="not-prose my-8 mx-auto max-w-lg overflow-hidden rounded-lg border border-border bg-secondary/20"
     >
       {/* Header: "Reference video" label + optional sub-copy + Refresh button */}
       <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-2">
@@ -127,7 +127,7 @@ export function ReferenceVideoPanel({
           key={sectionId}
           src={`https://www.youtube-nocookie.com/embed/${video.videoId}`}
           title={video.title}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture"
           allowFullScreen
           className="absolute inset-0 h-full w-full border-0"
           loading="lazy"

@@ -471,44 +471,47 @@ export function ModuleView() {
               )}
               {activeLesson && (
                 <>
-                  {/* Phase 11 (acceptance) — Reference video hero ABOVE lesson text.
-                      Keyed per sectionId: re-fetches independently on every lesson
-                      change. Self-suppresses when no key, no qualifying video, or
-                      video exceeds 10-minute cap (D-06/D-09 via empty → null).
-                      Section title is parsed from paramsJson (lessonTitle key) to
-                      match how SectionBlock surfaces it. Falls back to empty string
-                      so discovery still fires, just with a weaker query. */}
-                  {moduleId && (() => {
-                    let sectionTitle = "";
-                    try {
-                      const p = JSON.parse(activeLesson.paramsJson) as Record<string, unknown>;
-                      const t = p.lessonTitle ?? p.lesson_title;
-                      if (typeof t === "string") sectionTitle = t;
-                    } catch { /* keep empty */ }
-                    return (
-                      <ReferenceVideoPanel
-                        moduleId={moduleId}
-                        sectionId={activeLesson.id}
-                        sectionTitle={sectionTitle}
-                      />
-                    );
-                  })()}
                   <div
                     key={activeLesson.id}
                     data-active="true"
                     data-lesson-index={activeLessonIndex}
                   >
-                    <BlockRenderer
-                      block={activeLesson}
-                      lessonIndex={activeLessonIndex}
-                      priorCompletedCount={
-                        sectionBlocks
-                          .slice(0, activeLessonIndex)
-                          .filter((sb) => lessonCompletions?.has(sb.id)).length
-                      }
-                      moduleId={moduleId!}
-                      trackId={trackId}
-                    />
+                    {/* Phase 11 (acceptance revision) — video injected MID-content
+                        via referenceSlot. SectionBlock splits the markdown at a
+                        natural paragraph boundary near 50% and renders the panel
+                        between the two halves so learners discover it mid-read.
+                        Section title parsed from paramsJson (lessonTitle key).
+                        Falls back to empty string so discovery still fires.
+                        Self-suppresses via D-09 when no video is available. */}
+                    {(() => {
+                      let sectionTitle = "";
+                      try {
+                        const p = JSON.parse(activeLesson.paramsJson) as Record<string, unknown>;
+                        const t = p.lessonTitle ?? p.lesson_title;
+                        if (typeof t === "string") sectionTitle = t;
+                      } catch { /* keep empty */ }
+                      const slot = moduleId ? (
+                        <ReferenceVideoPanel
+                          moduleId={moduleId}
+                          sectionId={activeLesson.id}
+                          sectionTitle={sectionTitle}
+                        />
+                      ) : undefined;
+                      return (
+                        <BlockRenderer
+                          block={activeLesson}
+                          lessonIndex={activeLessonIndex}
+                          priorCompletedCount={
+                            sectionBlocks
+                              .slice(0, activeLessonIndex)
+                              .filter((sb) => lessonCompletions?.has(sb.id)).length
+                          }
+                          moduleId={moduleId!}
+                          trackId={trackId}
+                          referenceSlot={slot}
+                        />
+                      );
+                    })()}
                   </div>
 
                   {/* Prev/Next lesson navigation — bottom of the active lesson.
