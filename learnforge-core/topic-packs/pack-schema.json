@@ -58,6 +58,43 @@
       "type": "array",
       "default": [],
       "items": { "$ref": "#/$defs/Edge" }
+    },
+    "export_version": {
+      "type": "string",
+      "description": "Semver of the exporter that produced this file. Absent on authored packs."
+    },
+    "exported_at": {
+      "type": "string",
+      "description": "RFC3339 timestamp. Absent on authored packs."
+    },
+    "exported_from": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Provenance marker, e.g. 'imported:my-export.json'. D-06."
+    },
+    "blocks": {
+      "type": "object",
+      "description": "Map of module_id -> array of ModuleBlock rows (D-02 fidelity).",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/ExportedBlock" }
+      }
+    },
+    "labs": {
+      "type": "object",
+      "description": "Map of module_id -> array of lab specs (D-03 image-ref only).",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/ExportedLab" }
+      }
+    },
+    "videos": {
+      "type": "object",
+      "description": "Map of section_id -> array of cached LessonVideo rows (D-04).",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/ExportedVideo" }
+      }
     }
   },
   "$defs": {
@@ -123,6 +160,48 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{2,63}$"
         }
+      }
+    },
+    "ExportedBlock": {
+      "type": "object",
+      "required": ["id", "moduleId", "ordering", "blockType", "status", "paramsJson", "payloadJson"],
+      "additionalProperties": false,
+      "properties": {
+        "id":                { "type": "string", "maxLength": 100 },
+        "moduleId":          { "type": "string", "maxLength": 100 },
+        "ordering":          { "type": "integer" },
+        "blockType":         { "type": "string", "maxLength": 50 },
+        "status":            { "type": "string", "enum": ["ready"] },
+        "paramsJson":        { "type": "string", "maxLength": 65536 },
+        "payloadJson":       { "type": "string", "maxLength": 131072 },
+        "sourceAnchorsJson": { "type": "string", "maxLength": 16384 },
+        "metadataJson":      { "type": "string", "maxLength": 16384 },
+        "retryCount":        { "type": "integer", "minimum": 0 },
+        "createdAt":         { "type": "string", "maxLength": 64 },
+        "updatedAt":         { "type": "string", "maxLength": 64 }
+      }
+    },
+    "ExportedLab": {
+      "type": "object",
+      "required": ["slug", "title", "requiresDocker", "image", "steps"],
+      "additionalProperties": true,
+      "properties": {
+        "slug":           { "type": "string", "maxLength": 100 },
+        "title":          { "type": "string", "maxLength": 200 },
+        "requiresDocker": { "type": "boolean" },
+        "image":          { "type": ["string", "null"], "maxLength": 500 },
+        "steps":          { "type": "array", "maxItems": 30 }
+      }
+    },
+    "ExportedVideo": {
+      "type": "object",
+      "required": ["videoId", "title", "channelTitle", "relevanceScore"],
+      "additionalProperties": false,
+      "properties": {
+        "videoId":        { "type": "string", "maxLength": 50 },
+        "title":          { "type": "string", "maxLength": 500 },
+        "channelTitle":   { "type": "string", "maxLength": 200 },
+        "relevanceScore": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     }
   }
