@@ -114,6 +114,14 @@ pub struct CourseExportPayload {
     /// Pack description.
     pub description: String,
     /// Domain module (one of `programming | devops | cloud | concepts | data`).
+    ///
+    /// **Schema-alignment:** pack-schema.json `required` array uses the snake_case key
+    /// `"domain_module"`. Although the outer struct has `rename_all = "camelCase"`,
+    /// this field uses a field-level `rename` override so the serialized JSON satisfies
+    /// `parse_and_validate` (D-05, D-07 forward-compat). All other export-only extension
+    /// fields (exportVersion, exportedAt, exportedFrom, blocks, labs, videos) remain
+    /// camelCase because they are NOT in the schema's `required` array.
+    #[serde(rename = "domain_module")]
     pub domain_module: String,
     /// Ordered module list (pack `Module` objects as JSON values).
     pub modules: Vec<serde_json::Value>,
@@ -228,8 +236,8 @@ mod tests {
             "must contain exportedAt; got: {json}"
         );
         assert!(
-            json.contains("domainModule"),
-            "must contain domainModule; got: {json}"
+            json.contains("domain_module"),
+            "must contain domain_module (schema-aligned snake_case key — see field-level rename override); got: {json}"
         );
 
         // round-trip
