@@ -156,6 +156,54 @@ describe("ReferenceVideoPanel (acceptance)", () => {
     expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
   });
 
+  it("ref_vid_stale_replace_does_not_overwrite_new_section — Replace resolving after a section change must NOT write into the new section (WR-02)", async () => {
+    const VIDEO_B = { ...VIDEO_A, videoId: "vidB", title: "Stale Replace Result" };
+    const VIDEO_C = { ...VIDEO_A, videoId: "vidC", title: "Service Mesh Deep Dive" };
+
+    // sec-1 initial load resolves immediately; sec-2 load resolves immediately.
+    mockGetLessonVideos
+      .mockResolvedValueOnce(makeResult([VIDEO_A])) // sec-1 mount
+      .mockResolvedValueOnce(makeResult([VIDEO_C])); // sec-2 mount
+
+    // The Replace call (fired on sec-1) is DEFERRED — we resolve it manually
+    // AFTER navigating to sec-2, simulating a slow in-flight request.
+    let resolveReplace!: (r: LessonVideosResult) => void;
+    const deferredReplace = new Promise<LessonVideosResult>((res) => {
+      resolveReplace = res;
+    });
+    mockRefreshLessonVideos.mockReturnValueOnce(deferredReplace);
+
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <ReferenceVideoPanel moduleId="mod-1" sectionId="sec-1" sectionTitle="Pod Lifecycle" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
+    });
+
+    // Fire Replace on sec-1 (request now in-flight, not yet resolved).
+    await user.click(screen.getByRole("button", { name: /replace with a different video/i }));
+
+    // Navigate to sec-2 BEFORE the Replace resolves.
+    rerender(
+      <ReferenceVideoPanel moduleId="mod-1" sectionId="sec-2" sectionTitle="Service Mesh" />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_C.title)).toBeInTheDocument();
+    });
+
+    // Now the stale Replace resolves with sec-1's replacement video.
+    resolveReplace(makeResult([VIDEO_B]));
+
+    // Give the microtask queue a chance to flush the stale resolution.
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The new section's video must remain; the stale result must be discarded.
+    expect(screen.getByText(VIDEO_C.title)).toBeInTheDocument();
+    expect(screen.queryByText(VIDEO_B.title)).not.toBeInTheDocument();
+  });
+
   // ── Back button ───────────────────────────────────────────────────────────
 
   it("ref_vid_back_absent_initially — Back button not visible when history is empty", async () => {

@@ -54,12 +54,18 @@ export function ReferenceVideoPanel({
   const [expanded, setExpanded] = useState(false);
 
   const cancelledRef = useRef(false);
+  // Tracks the section this panel is CURRENTLY showing. Async Replace/Refresh
+  // handlers capture the sectionId at call time and compare it against this ref
+  // before writing state, so an in-flight operation from a PREVIOUS section that
+  // resolves after navigation cannot overwrite the new section's video (WR-02).
+  const currentSectionRef = useRef(sectionId);
 
   useEffect(() => {
     setVideo(null);
     setHistory([]);
     let cancelled = false;
     cancelledRef.current = false;
+    currentSectionRef.current = sectionId;
 
     getLessonVideos(moduleId, sectionId, sectionTitle)
       .then((result) => {
@@ -100,16 +106,20 @@ export function ReferenceVideoPanel({
 
   async function handleRefresh() {
     if (refreshing || replacing) return;
+    // Capture the section this operation was issued for. If the user navigates
+    // away before it resolves, currentSectionRef will have moved on and we must
+    // discard the result rather than write it into the new section's panel.
+    const issuedForSection = sectionId;
     setRefreshing(true);
     try {
       const result = await refreshLessonVideos(moduleId, sectionId, sectionTitle);
-      if (!cancelledRef.current) {
+      if (!cancelledRef.current && currentSectionRef.current === issuedForSection) {
         setVideo(result.videos[0] ?? null);
         setHistory([]);
       }
     } catch {
     } finally {
-      if (!cancelledRef.current) {
+      if (!cancelledRef.current && currentSectionRef.current === issuedForSection) {
         setRefreshing(false);
       }
     }
@@ -118,6 +128,8 @@ export function ReferenceVideoPanel({
   async function handleReplace() {
     if (replacing || refreshing || !video) return;
     const currentVideo = video;
+    // Capture the section this Replace was issued for (WR-02).
+    const issuedForSection = sectionId;
     setReplacing(true);
     try {
       const result = await refreshLessonVideos(
@@ -126,7 +138,7 @@ export function ReferenceVideoPanel({
         sectionTitle,
         currentVideo.videoId,
       );
-      if (!cancelledRef.current) {
+      if (!cancelledRef.current && currentSectionRef.current === issuedForSection) {
         if (result.videos[0]) {
           // Push the current video onto history before swapping.
           setHistory((h) => [...h, currentVideo]);
@@ -136,7 +148,7 @@ export function ReferenceVideoPanel({
       }
     } catch {
     } finally {
-      if (!cancelledRef.current) {
+      if (!cancelledRef.current && currentSectionRef.current === issuedForSection) {
         setReplacing(false);
       }
     }
