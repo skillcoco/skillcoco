@@ -484,27 +484,40 @@ export async function fingerprintFromPublicPem(
   });
 }
 
-// ── Phase 11 — Video-Enriched Lessons IPC wrappers ──
+// ── Phase 11 — Video-Enriched Lessons IPC wrappers (acceptance revision) ──
 //
 // Both wrappers invoke the Rust commands registered in
-// src-tauri/src/commands/videos.rs (Plan 02). The arg key `moduleId` is
-// camelCase to match the Rust `#[serde(rename_all = "camelCase")]` derive
-// on the command parameters (T-11-02 / FIX-02 contract).
+// src-tauri/src/commands/videos.rs. Arg keys are camelCase to match the
+// Rust `#[serde(rename_all = "camelCase")]` derive (T-11-02 / FIX-02 contract).
+//
+// Acceptance changes: cache is now per-SECTION (not per-module). Both commands
+// require `sectionId` + `sectionTitle` so the backend can cache and discover
+// independently for each lesson/section block.
 //
 // Backend returns LessonVideosResult{ videos: [] } on any failure path
-// (no key, quota exceeded, no results above relevance threshold) —
-// the panel's empty-array → null suppression (D-09) handles all silent
+// (no key, quota exceeded, no results above relevance threshold, duration over
+// cap) — the panel's empty-array → null suppression (D-09) handles all silent
 // paths without needing separate error state.
 
-/// Fetch the cached related videos for a module (lazy: calls YouTube + LLM
-/// only on cache miss). Returns an empty list when no key is configured,
-/// the quota is exceeded, or no videos pass the relevance threshold (D-06/D-09).
-export async function getLessonVideos(moduleId: string): Promise<LessonVideosResult> {
-  return invoke("get_lesson_videos", { moduleId });
+/// Fetch the cached reference video for a specific lesson section (lazy: calls
+/// YouTube + LLM only on cache miss). Returns an empty list when no key is
+/// configured, the quota is exceeded, no videos pass the relevance threshold,
+/// or all candidates exceed the 10-minute duration cap (D-06/D-09).
+export async function getLessonVideos(
+  moduleId: string,
+  sectionId: string,
+  sectionTitle: string,
+): Promise<LessonVideosResult> {
+  return invoke("get_lesson_videos", { moduleId, sectionId, sectionTitle });
 }
 
-/// Re-run discovery for a module, discarding the existing cache first.
-/// Used by the manual Refresh control in RelatedVideosPanel (D-04).
-export async function refreshLessonVideos(moduleId: string): Promise<LessonVideosResult> {
-  return invoke("refresh_lesson_videos", { moduleId });
+/// Re-run discovery for a specific lesson section, discarding only that
+/// section's cached row first. Used by the manual Refresh control in
+/// ReferenceVideoPanel (D-04 revised — per-section invalidation only).
+export async function refreshLessonVideos(
+  moduleId: string,
+  sectionId: string,
+  sectionTitle: string,
+): Promise<LessonVideosResult> {
+  return invoke("refresh_lesson_videos", { moduleId, sectionId, sectionTitle });
 }

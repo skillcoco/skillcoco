@@ -6,7 +6,7 @@ import { BlockRenderer } from "@/components/learning/BlockRenderer";
 import { ExerciseContainer } from "@/components/exercises/ExerciseContainer";
 import { TutorSidebar } from "@/components/learning/TutorSidebar";
 import { CourseSidebar } from "@/components/learning/CourseSidebar";
-import { RelatedVideosPanel } from "@/components/learning/RelatedVideosPanel";
+import { ReferenceVideoPanel } from "@/components/learning/ReferenceVideoPanel";
 import { regenerateModule, generateModuleBlocks } from "@/lib/tauri-commands";
 import { cn } from "@/lib/utils";
 import { parsePathModules } from "@/lib/learning-path";
@@ -471,6 +471,28 @@ export function ModuleView() {
               )}
               {activeLesson && (
                 <>
+                  {/* Phase 11 (acceptance) — Reference video hero ABOVE lesson text.
+                      Keyed per sectionId: re-fetches independently on every lesson
+                      change. Self-suppresses when no key, no qualifying video, or
+                      video exceeds 10-minute cap (D-06/D-09 via empty → null).
+                      Section title is parsed from paramsJson (lessonTitle key) to
+                      match how SectionBlock surfaces it. Falls back to empty string
+                      so discovery still fires, just with a weaker query. */}
+                  {moduleId && (() => {
+                    let sectionTitle = "";
+                    try {
+                      const p = JSON.parse(activeLesson.paramsJson) as Record<string, unknown>;
+                      const t = p.lessonTitle ?? p.lesson_title;
+                      if (typeof t === "string") sectionTitle = t;
+                    } catch { /* keep empty */ }
+                    return (
+                      <ReferenceVideoPanel
+                        moduleId={moduleId}
+                        sectionId={activeLesson.id}
+                        sectionTitle={sectionTitle}
+                      />
+                    );
+                  })()}
                   <div
                     key={activeLesson.id}
                     data-active="true"
@@ -566,11 +588,8 @@ export function ModuleView() {
                     </div>
                   </div>
 
-                  {/* Phase 11 — Related videos panel (D-01 additive, after prev/next nav).
-                      Panel self-suppresses when no key or no videos (D-06/D-09 via empty-
-                      array → null in RelatedVideosPanel). Generation pipeline untouched. */}
-                  {moduleId && <RelatedVideosPanel moduleId={moduleId} />}
                 </>
+
               )}
             </div>
           )}

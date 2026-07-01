@@ -30,9 +30,20 @@ vi.mock("@/lib/tauri-commands", () => ({
   getAuthStatus: vi.fn(),
   getModuleProgress: vi.fn(),
   getPath: vi.fn(),
+  // Phase 11: video IPC (ReferenceVideoPanel calls these; mock here to prevent
+  // real IPC invocations during ModuleView integration tests).
+  getLessonVideos: vi.fn().mockResolvedValue({ videos: [] }),
+  refreshLessonVideos: vi.fn().mockResolvedValue({ videos: [] }),
 }));
 
 // ─── Mock child components to isolate ModuleView ─────────────────────────────
+
+// Phase 11: stub ReferenceVideoPanel so ModuleView tests don't trigger video
+// IPC or depend on video fetch state. The panel's own unit tests cover it fully.
+vi.mock("@/components/learning/ReferenceVideoPanel", () => ({
+  ReferenceVideoPanel: () => <div data-testid="reference-video-panel-stub" />,
+}));
+
 vi.mock("@/components/learning/BlockRenderer", () => ({
   BlockRenderer: ({ block }: { block: { id: string; blockType: string } }) => (
     <div data-testid={`block-renderer-${block.id}`} data-block-type={block.blockType}>
