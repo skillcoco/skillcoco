@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as commands from "@/lib/tauri-commands";
-import { Key, Loader2 } from "lucide-react";
+import { Key, Loader2, CheckCircle2 } from "lucide-react";
 
 /**
  * Phase 11 — YouTube Data API v3 key field (D-05/D-06).
@@ -11,6 +11,11 @@ import { Key, Loader2 } from "lucide-react";
  *
  * Security: input type="password" masks the key on screen (T-11-09 mitigate).
  * Key is never echoed to console.log. Stored only via the credential store.
+ *
+ * UAT fix (Phase 11): reflects whether a key is configured on mount via
+ * `is_youtube_key_configured` (fail-soft: treats IPC errors as not-configured).
+ * Shows a "Key configured" indicator when true, "Key removed." confirmation
+ * after removal, and "Key saved." after a successful save.
  */
 
 interface SettingsYouTubeSectionProps {
@@ -27,6 +32,27 @@ export function SettingsYouTubeSection({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [removed, setRemoved] = useState(false);
+  // `configured` reflects whether a key is currently stored in the credential
+  // store. Null = still loading (mount check in progress).
+  const [configured, setConfigured] = useState<boolean | null>(null);
+
+  // On mount: check whether a YouTube key is already configured.
+  // Fail-soft: any IPC error is treated as not-configured (false).
+  useEffect(() => {
+    let cancelled = false;
+    commands
+      .isYoutubeKeyConfigured()
+      .then((result) => {
+        if (!cancelled) setConfigured(result);
+      })
+      .catch(() => {
+        if (!cancelled) setConfigured(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSaveYouTubeKey() {
     const key = ytKeyInput.trim();
@@ -34,6 +60,7 @@ export function SettingsYouTubeSection({
 
     setError(null);
     setSaved(false);
+    setRemoved(false);
     setLoading(true);
     try {
       await commands.loginProvider({
@@ -43,6 +70,7 @@ export function SettingsYouTubeSection({
       });
       setYtKeyInput("");
       setSaved(true);
+      setConfigured(true);
       onKeySaved?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -55,9 +83,13 @@ export function SettingsYouTubeSection({
   async function handleRemoveYouTubeKey() {
     setError(null);
     setSaved(false);
+    setRemoved(false);
     setLoading(true);
     try {
       await commands.logoutProvider("youtube");
+      setConfigured(false);
+      setYtKeyInput("");
+      setRemoved(true);
       onKeyRemoved?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -95,6 +127,17 @@ export function SettingsYouTubeSection({
           </div>
         </div>
 
+        {/* Configured indicator — shown when a key is stored */}
+        {configured && (
+          <p
+            data-testid="yt-key-configured-indicator"
+            className="flex items-center gap-1.5 text-xs text-emerald-500"
+          >
+            <CheckCircle2 size={13} />
+            Key configured
+          </p>
+        )}
+
         {/* Key input — type="password" masks the value on screen (T-11-09) */}
         <div className="flex gap-2">
           <input
@@ -125,21 +168,29 @@ export function SettingsYouTubeSection({
           <p className="text-xs text-emerald-500">Key saved. Related videos will appear on next lesson visit.</p>
         )}
 
+        {removed && (
+          <p data-testid="yt-key-removed-msg" className="text-xs text-muted-foreground">
+            YouTube key removed.
+          </p>
+        )}
+
         {error && (
           <p className="text-xs text-destructive">{error}</p>
         )}
 
-        {/* Remove key — calls logoutProvider("youtube") */}
-        <div className="border-t border-border pt-3">
-          <button
-            type="button"
-            onClick={() => void handleRemoveYouTubeKey()}
-            disabled={loading}
-            className="text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-destructive disabled:opacity-50"
-          >
-            Remove YouTube key
-          </button>
-        </div>
+        {/* Remove key — only shown when a key is currently configured */}
+        {configured && (
+          <div className="border-t border-border pt-3">
+            <button
+              type="button"
+              onClick={() => void handleRemoveYouTubeKey()}
+              disabled={loading}
+              className="text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-destructive disabled:opacity-50"
+            >
+              Remove YouTube key
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );

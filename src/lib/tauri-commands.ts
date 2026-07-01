@@ -208,6 +208,13 @@ export async function detectSystemProviders(): Promise<import("@/types/ai").Dete
   return invoke("detect_system_providers");
 }
 
+/// Return true iff a YouTube Data API v3 key is currently stored in the
+/// credential store. Used by SettingsYouTubeSection on mount (fail-soft:
+/// callers treat any IPC error as not-configured).
+export async function isYoutubeKeyConfigured(): Promise<boolean> {
+  return invoke("is_youtube_key_configured");
+}
+
 // ── Spaced Repetition ──
 
 export async function getDueCards(): Promise<SRCard[]> {

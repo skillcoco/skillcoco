@@ -284,6 +284,23 @@ pub fn logout_provider(auth: State<AuthState>, provider: String) -> Result<(), S
     auth.remove_credential(&provider)
 }
 
+/// Inner logic for `is_youtube_key_configured` — testable without `tauri::State`.
+pub(crate) fn is_youtube_key_configured_inner(auth: &AuthState) -> Result<bool, String> {
+    let configured = auth
+        .get_credential("youtube")?
+        .and_then(|c| c.api_key)
+        .is_some();
+    Ok(configured)
+}
+
+/// Return `true` iff a YouTube Data API v3 key is currently stored in the
+/// credential store. Used by the Settings page to reflect key state after
+/// mount, save, and remove without requiring a full `get_auth_status` reload.
+#[tauri::command]
+pub fn is_youtube_key_configured(auth: State<AuthState>) -> Result<bool, String> {
+    is_youtube_key_configured_inner(&auth)
+}
+
 /// Report which providers are already configured in the credential store.
 /// Does NOT auto-import from environment variables — BYOK must be explicit.
 #[tauri::command]
@@ -314,6 +331,32 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state = AuthState::new(&dir.path().to_path_buf());
         (state, dir)
+    }
+
+    // ── is_youtube_key_configured ────────────────────────────────────────────
+
+    #[test]
+    fn youtube_key_configured_returns_false_when_no_credential() {
+        let (auth, _dir) = temp_auth();
+        let result = is_youtube_key_configured_inner(&auth);
+        assert_eq!(result, Ok(false));
+    }
+
+    #[test]
+    fn youtube_key_configured_returns_true_when_api_key_stored() {
+        let (auth, _dir) = temp_auth();
+        auth.store_api_key("youtube", "AIza-test-key", None).unwrap();
+        let result = is_youtube_key_configured_inner(&auth);
+        assert_eq!(result, Ok(true));
+    }
+
+    #[test]
+    fn youtube_key_configured_returns_false_after_removal() {
+        let (auth, _dir) = temp_auth();
+        auth.store_api_key("youtube", "AIza-test-key", None).unwrap();
+        auth.remove_credential("youtube").unwrap();
+        let result = is_youtube_key_configured_inner(&auth);
+        assert_eq!(result, Ok(false));
     }
 
     // ── resolve_ollama_base_url ──────────────────────────────────────────────

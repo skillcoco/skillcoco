@@ -32,6 +32,8 @@ vi.mock("@/lib/tauri-commands", () => ({
   reloadSkills: vi.fn(),
   // WR-06 — Ollama connection probe (replaces fake setTimeout stub)
   checkOllamaConnection: vi.fn(),
+  // Phase 11 UAT fix — YouTube key configured-state check (SettingsYouTubeSection)
+  isYoutubeKeyConfigured: vi.fn().mockResolvedValue(false),
 }));
 
 import {
