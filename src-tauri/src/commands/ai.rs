@@ -19,17 +19,31 @@ fn extract_json(text: &str) -> Result<serde_json::Value, String> {
         return Ok(v);
     }
 
-    // Strip markdown code fences: ```json\n...\n``` or ```\n...\n```
-    let stripped = if let Some(start) = trimmed.find('{') {
-        if let Some(end) = trimmed.rfind('}') {
-            &trimmed[start..=end]
+    // Fallback for responses wrapped in markdown fences or prose: extract the
+    // outermost JSON container. The container may be an object (`{...}`) OR a
+    // top-level array (`[...]`). Choose by whichever opener appears FIRST, then
+    // slice to the matching last closer of the SAME kind. This preserves arrays
+    // (video-ranking returns a top-level array) instead of stripping their `[` `]`
+    // brackets, while keeping objects-with-inner-arrays parsing as objects.
+    let obj_start = trimmed.find('{');
+    let arr_start = trimmed.find('[');
+    let slice = |start: usize, is_array: bool| -> Option<&str> {
+        let close = if is_array { trimmed.rfind(']') } else { trimmed.rfind('}') }?;
+        if close >= start {
+            Some(&trimmed[start..=close])
         } else {
-            trimmed
+            None
         }
-    } else {
-        trimmed
+    };
+    let candidate = match (obj_start, arr_start) {
+        (Some(o), Some(a)) if a < o => slice(a, true),
+        (Some(o), Some(_)) => slice(o, false),
+        (Some(o), None) => slice(o, false),
+        (None, Some(a)) => slice(a, true),
+        (None, None) => None,
     };
 
+    let stripped = candidate.unwrap_or(trimmed);
     serde_json::from_str(stripped)
         .map_err(|e| format!("{} (first 200 chars: {:?})", e, &trimmed[..trimmed.len().min(200)]))
 }
@@ -996,6 +1010,51 @@ pub async fn evaluate_response(
 mod tests {
     use super::*;
     use learnforge_core::bkt::{update_mastery, BKTParams};
+
+    // ── extract_json: top-level array handling (Phase 11 video-ranking bug) ──
+    // The LLM video-ranking call (commands/videos.rs) is the only caller that
+    // expects a TOP-LEVEL JSON array. The markdown-fence fallback was written
+    // for objects and corrupted arrays by stripping the enclosing `[` `]`,
+    // making every video-discovery call return Err → empty panel. These tests
+    // lock the array contract; object cases guard against regression.
+
+    #[test]
+    fn extract_json_parses_bare_array() {
+        let v = extract_json(r#"[{"videoId":"a","relevanceScore":0.9}]"#).unwrap();
+        assert!(v.is_array(), "bare array must parse as array; got {:?}", v);
+        assert_eq!(v.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn extract_json_parses_fenced_array() {
+        // Claude (esp. haiku) routinely wraps JSON in ```json fences.
+        let text = "```json\n[{\"videoId\":\"a\",\"relevanceScore\":0.9},{\"videoId\":\"b\",\"relevanceScore\":0.7}]\n```";
+        let v = extract_json(text).unwrap();
+        assert!(v.is_array(), "fenced array must parse as array; got {:?}", v);
+        assert_eq!(v.as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn extract_json_parses_array_with_preamble() {
+        let text = "Here are the scores:\n[{\"videoId\":\"a\",\"relevanceScore\":0.9}]";
+        let v = extract_json(text).unwrap();
+        assert!(v.is_array(), "array with prose preamble must parse as array; got {:?}", v);
+        assert_eq!(v.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn extract_json_still_parses_fenced_object() {
+        // Regression guard: object callers (block generation) must keep working.
+        let v = extract_json("```json\n{\"blocks\":[1,2]}\n```").unwrap();
+        assert!(v.is_object(), "fenced object must still parse as object; got {:?}", v);
+    }
+
+    #[test]
+    fn extract_json_prefers_outer_container_by_first_opener() {
+        // An object whose values contain arrays must not be mistaken for an array.
+        let v = extract_json("```json\n{\"items\":[{\"x\":1}]}\n```").unwrap();
+        assert!(v.is_object(), "outer object with inner arrays must parse as object; got {:?}", v);
+    }
 
     #[test]
     fn test_bkt_mastery_update_logic() {
