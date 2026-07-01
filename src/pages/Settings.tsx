@@ -832,18 +832,45 @@ export function Settings() {
             <label className="mb-1.5 block text-xs font-medium text-foreground">
               Model
             </label>
-            <input
-              type="text"
-              value={ollamaModel}
-              onChange={(e) => setOllamaModel(e.target.value)}
-              placeholder="llama3"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
+            {ollamaModels.length > 0 ? (
+              <select
+                value={ollamaModel}
+                onChange={(e) => setOllamaModel(e.target.value)}
+                data-testid="ollama-model-select"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {/* Preserve a previously-set model even if it isn't in the
+                    detected list (e.g. it was pulled elsewhere). */}
+                {ollamaModel && !ollamaModels.includes(ollamaModel) && (
+                  <option value={ollamaModel}>{ollamaModel}</option>
+                )}
+                {ollamaModels.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={ollamaModel}
+                onChange={(e) => setOllamaModel(e.target.value)}
+                placeholder="llama3"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            )}
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Enter the model name as shown by{" "}
-              <code className="rounded bg-secondary px-1 py-0.5 text-[11px]">
-                ollama list
-              </code>
+              {ollamaModels.length > 0 ? (
+                <>Choose from the models detected on your Ollama server.</>
+              ) : (
+                <>
+                  Enter the model name as shown by{" "}
+                  <code className="rounded bg-secondary px-1 py-0.5 text-[11px]">
+                    ollama list
+                  </code>
+                  , or click Check to load the list.
+                </>
+              )}
             </p>
           </div>
 
