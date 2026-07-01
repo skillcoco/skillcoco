@@ -180,6 +180,17 @@ pub async fn fetch_and_rank_videos(
 ) -> Result<Vec<LessonVideo>, String> {
     let query = build_search_query(section_title, &[]);
 
+    // WR-03: never fire a YouTube search.list + LLM ranking on a blank query.
+    // When the section title is empty/whitespace, `q=""` returns arbitrary,
+    // irrelevant results and burns API quota plus a full LLM ranking call on
+    // noise. Short-circuit to an empty result (fail-soft, no API calls). The
+    // markdown excerpt is only used as ranking CONTEXT, never as the search
+    // query, so an empty title means there is nothing meaningful to search for.
+    if query.trim().is_empty() {
+        log::info!("video discovery: blank search query — skipping YouTube + LLM (WR-03)");
+        return Ok(vec![]);
+    }
+
     // Step 1: search.list — get up to 10 video candidates.
     let client = reqwest::Client::new();
     let search_resp = client
@@ -1518,6 +1529,43 @@ mod tests {
         let second = do_insert("vid1", "row-a"); // same PK — should be ignored
         assert_eq!(first, 1, "first insert writes one row");
         assert_eq!(second, 0, "duplicate PK is ignored by INSERT OR IGNORE");
+    }
+
+    // ── WR-03: blank query short-circuits before any API call ─────────────────
+
+    #[tokio::test]
+    async fn blank_section_title_returns_empty_without_fetching() {
+        // WR-03: an empty/whitespace section title must NOT fire search.list
+        // (q="") + LLM ranking. fetch_and_rank_videos must short-circuit to an
+        // empty result BEFORE any network call. If the guard were missing, the
+        // reqwest call would run and (offline / bad key) return Err, not Ok([]).
+        let dir = tempfile::tempdir().unwrap();
+        let auth = AuthState::new(&dir.path().to_path_buf());
+
+        for blank in ["", "   ", "\t\n  "] {
+            let result = fetch_and_rank_videos(
+                "unused-key",
+                blank,
+                "some markdown excerpt used only as context",
+                &auth,
+                None,
+            )
+            .await;
+            assert!(
+                matches!(result, Ok(ref v) if v.is_empty()),
+                "blank title {:?} must return Ok([]) with no API call; got {:?}",
+                blank,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn build_search_query_is_empty_for_blank_title() {
+        // The query the guard inspects is empty/whitespace for a blank title.
+        assert!(build_search_query("", &[]).trim().is_empty());
+        assert!(build_search_query("   ", &[]).trim().is_empty());
+        assert!(!build_search_query("Pods", &[]).trim().is_empty());
     }
 
     // ── WR-01: refresh discovers first, preserves cache on empty result ───────
