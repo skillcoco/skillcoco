@@ -514,10 +514,22 @@ export async function getLessonVideos(
 /// Re-run discovery for a specific lesson section, discarding only that
 /// section's cached row first. Used by the manual Refresh control in
 /// ReferenceVideoPanel (D-04 revised — per-section invalidation only).
+///
+/// `excludeVideoId`: when provided, the ranking step drops that video so the
+/// replacement is a different pick. Used by the "Replace" button to avoid
+/// returning the currently-shown video. Pass `undefined` / omit for normal
+/// Refresh behaviour. Always forwarded as `null` when undefined so the Tauri
+/// deserializer can match the `Option<String>` field correctly.
 export async function refreshLessonVideos(
   moduleId: string,
   sectionId: string,
   sectionTitle: string,
+  excludeVideoId?: string,
 ): Promise<LessonVideosResult> {
-  return invoke("refresh_lesson_videos", { moduleId, sectionId, sectionTitle });
+  return invoke("refresh_lesson_videos", {
+    moduleId,
+    sectionId,
+    sectionTitle,
+    excludeVideoId: excludeVideoId ?? null,
+  });
 }

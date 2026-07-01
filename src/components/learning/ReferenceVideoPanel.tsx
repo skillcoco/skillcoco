@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getLessonVideos, refreshLessonVideos } from "@/lib/tauri-commands";
 import type { LessonVideo } from "@/types/videos";
-import { RefreshCw, Maximize2, X } from "lucide-react";
+import { RefreshCw, Maximize2, X, Shuffle, Undo2 } from "lucide-react";
 
 /**
  * Phase 11 (acceptance revision) — Single Reference Video
@@ -16,9 +16,14 @@ import { RefreshCw, Maximize2, X } from "lucide-react";
  * - Full content width — the card spans the same width as the lesson text
  *   above/below it (no max-width cap).
  * - Per-SECTION keying: re-fetches independently for every lesson/section
- *   block. `key={sectionId}` on the iframe forces a full remount so no prior
- *   video lingers on Next-lesson clicks.
+ *   block. `key` on the iframe includes the current video id so switching
+ *   Replace/Back also remounts the player.
  * - Single video: backend returns at most 1 (VIDEO_RESULT_LIMIT=1).
+ * - Replace button: re-runs discovery excluding the currently-shown video so
+ *   the learner gets a different pick. New YouTube + LLM quota (same as
+ *   Refresh). On empty result, keeps the current video.
+ * - Back button: client-side only, pops the previous video from a history
+ *   stack. No quota consumed. Absent when history is empty.
  * - Custom Expand: YouTube's native fullscreen button is unreliable inside
  *   Tauri's macOS WKWebView, so we provide our own Expand control that blows
  *   the player up to a large in-app overlay. The SAME iframe node stays
@@ -43,13 +48,16 @@ export function ReferenceVideoPanel({
   sectionTitle,
 }: ReferenceVideoPanelProps) {
   const [video, setVideo] = useState<LessonVideo | null>(null);
+  const [history, setHistory] = useState<LessonVideo[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   const cancelledRef = useRef(false);
 
   useEffect(() => {
     setVideo(null);
+    setHistory([]);
     let cancelled = false;
     cancelledRef.current = false;
 
@@ -91,12 +99,13 @@ export function ReferenceVideoPanel({
   }
 
   async function handleRefresh() {
-    if (refreshing) return;
+    if (refreshing || replacing) return;
     setRefreshing(true);
     try {
       const result = await refreshLessonVideos(moduleId, sectionId, sectionTitle);
       if (!cancelledRef.current) {
         setVideo(result.videos[0] ?? null);
+        setHistory([]);
       }
     } catch {
     } finally {
@@ -104,6 +113,40 @@ export function ReferenceVideoPanel({
         setRefreshing(false);
       }
     }
+  }
+
+  async function handleReplace() {
+    if (replacing || refreshing || !video) return;
+    const currentVideo = video;
+    setReplacing(true);
+    try {
+      const result = await refreshLessonVideos(
+        moduleId,
+        sectionId,
+        sectionTitle,
+        currentVideo.videoId,
+      );
+      if (!cancelledRef.current) {
+        if (result.videos[0]) {
+          // Push the current video onto history before swapping.
+          setHistory((h) => [...h, currentVideo]);
+          setVideo(result.videos[0]);
+        }
+        // If empty result: keep the current video as-is (no state change).
+      }
+    } catch {
+    } finally {
+      if (!cancelledRef.current) {
+        setReplacing(false);
+      }
+    }
+  }
+
+  function handleBack() {
+    if (history.length === 0) return;
+    const prev = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    setVideo(prev);
   }
 
   return (
@@ -128,11 +171,33 @@ export function ReferenceVideoPanel({
             <Maximize2 size={12} />
             Expand
           </button>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={handleBack}
+              aria-label="Go back to previous video"
+              className="mt-0.5 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Undo2 size={12} />
+              Back
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleReplace}
+            disabled={replacing || refreshing}
+            aria-label="Replace with a different video"
+            className="mt-0.5 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+          >
+            <Shuffle size={12} className={replacing ? "animate-spin" : ""} />
+            Replace
+          </button>
           <button
             type="button"
             onClick={handleRefresh}
-            disabled={refreshing}
+            disabled={refreshing || replacing}
             aria-label="Refresh reference video"
+            title="Fetch fresh videos from YouTube"
             className="mt-0.5 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
           >
             <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
@@ -177,7 +242,7 @@ export function ReferenceVideoPanel({
         )}
         <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
           <iframe
-            key={sectionId}
+            key={`${sectionId}-${video.videoId}`}
             src={`https://www.youtube-nocookie.com/embed/${video.videoId}`}
             title={video.title}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture"
