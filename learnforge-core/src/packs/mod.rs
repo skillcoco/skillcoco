@@ -38,6 +38,7 @@
 //! violating the D-02 anti-leakage invariant.
 
 pub mod error;
+pub mod export;
 pub mod loader;
 pub mod model;
 pub mod persistence;
