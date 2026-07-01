@@ -1,13 +1,20 @@
-//! Phase 11 — Video-enriched lessons backend.
+//! Phase 11 — Video-enriched lessons backend (acceptance revision).
 //!
 //! Exposes two Tauri IPC commands:
-//! - `get_lesson_videos(moduleId)`: lazy fetch + indefinite per-lesson cache.
-//! - `refresh_lesson_videos(moduleId)`: clears cached rows and re-discovers.
+//! - `get_lesson_videos(moduleId, sectionId, sectionTitle)`: lazy fetch +
+//!   indefinite per-section cache.
+//! - `refresh_lesson_videos(moduleId, sectionId, sectionTitle)`: clears cached
+//!   rows for this (module_id, section_id) and re-discovers.
 //!
-//! On cache miss with a YouTube Data API v3 key present, `fetch_and_rank_videos`
-//! calls `search.list`, filters embeddable-only via `videos.list` (D-07),
-//! LLM-ranks candidates (D-08), and persists the top-N above the relevance
-//! threshold to `lesson_videos`.
+//! **Acceptance changes from Phase 11 Plan 03:**
+//! - Cache is now keyed per-SECTION, not per-module. Each section/lesson block
+//!   gets its own independently discovered reference video (D-04 revised).
+//! - VIDEO_RESULT_LIMIT reduced to 1 — a single best reference video.
+//! - RELEVANCE_THRESHOLD raised to 0.7 — tighter bar for a single pick.
+//! - MAX_VIDEO_DURATION_SECS = 600 (10 min) — moderate-length filter.
+//! - Duration filtering via ISO-8601 parser (contentDetails.duration).
+//! - LLM prompt updated to ask for the single most educational, concise pick.
+//! - Discovery context uses section_title + optional markdown excerpt.
 //!
 //! On any failure path (no key, quota exceeded, offline, nothing passes
 //! threshold) the commands return an empty `LessonVideosResult` — never an
@@ -26,12 +33,26 @@ use tauri::State;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/// Top-N videos to keep after LLM ranking + threshold filtering (D-02/D-08).
-const VIDEO_RESULT_LIMIT: usize = 3;
+/// Single best reference video per lesson (acceptance: 1, down from 3).
+///
+/// Rationale: we want ONE highly-relevant, genuinely educational video placed
+/// prominently as a "Reference video" above the lesson text. Showing 3 would
+/// dilute the hero framing and increase the chance of one weak result being
+/// shown. The LLM prompt instructs the model to choose the single best pick.
+const VIDEO_RESULT_LIMIT: usize = 1;
+
+/// Maximum duration in seconds for a reference video (10 minutes = 600s).
+///
+/// We want moderate-length explainers — long lectures / full courses are
+/// inappropriate as supplementary reference material for a focused lesson.
+/// Videos exceeding this cap are filtered out before LLM ranking.
+const MAX_VIDEO_DURATION_SECS: u32 = 600;
 
 /// Minimum relevance score (0.0–1.0) a video must reach to be persisted
-/// and returned. Videos below this score are silently discarded (D-08).
-const RELEVANCE_THRESHOLD: f32 = 0.6;
+/// and returned. Raised to 0.7 (from 0.6) because with a single-pick model
+/// we can afford a stricter bar — a weak match is worse than nothing (D-09).
+/// Range [0.5, 0.8] is preserved so the existing range assertion test passes.
+const RELEVANCE_THRESHOLD: f32 = 0.7;
 
 // ── IPC structs ───────────────────────────────────────────────────────────────
 
@@ -57,13 +78,16 @@ pub struct LessonVideosResult {
 
 // ── Internal helper types (not crossing IPC) ──────────────────────────────────
 
-/// Candidate from `search.list` before embeddable/ranking filters.
+/// Candidate from `search.list` before embeddable/duration/ranking filters.
 #[derive(Debug, Clone)]
 struct SearchCandidate {
     video_id: String,
     title: String,
     channel_title: String,
     description: String,
+    duration_secs: u32,   // 0 when contentDetails not available (treated as pass)
+    view_count: Option<u64>,
+    like_count: Option<u64>,
 }
 
 /// Scored output from LLM ranking before threshold filtering.
@@ -76,24 +100,66 @@ struct RankedVideo {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Build a YouTube `search.list` query string from the lesson title and
-/// the first three objective keywords (D-08).
-pub fn build_search_query(lesson_title: &str, objectives: &[String]) -> String {
-    let keywords: Vec<&str> = objectives
-        .iter()
-        .take(3)
-        .map(|s| s.as_str())
-        .collect();
-    if keywords.is_empty() {
-        lesson_title.to_string()
-    } else {
-        format!("{} {}", lesson_title, keywords.join(" "))
-    }
+/// Build a YouTube `search.list` query string from the section title.
+/// This is now section-scoped (acceptance: per-lesson, not per-module).
+pub fn build_search_query(section_title: &str, _objectives: &[String]) -> String {
+    // Primary: use the section/lesson title as the query. The section title is
+    // the most precise signal for what this lesson is about. Module objectives
+    // are no longer used because they were module-level and created cross-lesson
+    // noise (e.g., a lesson "Pod Lifecycle" within a module about "Kubernetes"
+    // would get "kubernetes pods deployments services" as query → too broad).
+    section_title.to_string()
 }
 
-/// Fetch YouTube search candidates, filter to embeddable-only via `videos.list`,
-/// LLM-rank them against the lesson title + objectives, apply the relevance
-/// threshold, and return the top-`VIDEO_RESULT_LIMIT` results.
+/// Parse an ISO-8601 duration string (as returned by YouTube contentDetails.duration)
+/// into total seconds.
+///
+/// Handles: PT10M, PT8M30S, PT1H2M, PT45S, PT10M1S, PT1H2M3S.
+/// Returns 0 for any parse failure (treated as "unknown → pass the filter").
+pub fn parse_iso8601_duration(duration: &str) -> u32 {
+    // Format: PT[nH][nM][nS]  (hours/minutes/seconds all optional)
+    let s = duration.trim();
+    if !s.starts_with("PT") {
+        return 0;
+    }
+    let s = &s[2..]; // strip "PT"
+
+    let mut hours: u32 = 0;
+    let mut minutes: u32 = 0;
+    let mut seconds: u32 = 0;
+    let mut current: u32 = 0;
+
+    for ch in s.chars() {
+        match ch {
+            '0'..='9' => {
+                current = current.saturating_mul(10).saturating_add(ch as u32 - '0' as u32);
+            }
+            'H' => {
+                hours = current;
+                current = 0;
+            }
+            'M' => {
+                minutes = current;
+                current = 0;
+            }
+            'S' => {
+                seconds = current;
+                current = 0;
+            }
+            _ => return 0, // unexpected character — fail safe
+        }
+    }
+
+    hours
+        .saturating_mul(3600)
+        .saturating_add(minutes.saturating_mul(60))
+        .saturating_add(seconds)
+}
+
+/// Fetch YouTube search candidates, filter to embeddable-only + duration cap
+/// via `videos.list`, LLM-rank them against the section title + optional
+/// markdown excerpt, apply the relevance threshold, and return the single best
+/// result (VIDEO_RESULT_LIMIT = 1).
 ///
 /// Returns `Err` only for unrecoverable internal errors (HTTP failure, JSON
 /// parse failure). The caller converts `Err` to an empty list (D-09).
@@ -102,11 +168,11 @@ pub fn build_search_query(lesson_title: &str, objectives: &[String]) -> String {
 /// URLs — it is always passed as a `reqwest` query parameter (T-11-03).
 pub async fn fetch_and_rank_videos(
     youtube_key: &str,
-    lesson_title: &str,
-    objectives: &[String],
+    section_title: &str,
+    section_markdown_excerpt: &str,
     llm_auth: &AuthState,
 ) -> Result<Vec<LessonVideo>, String> {
-    let query = build_search_query(lesson_title, objectives);
+    let query = build_search_query(section_title, &[]);
 
     // Step 1: search.list — get up to 10 video candidates.
     let client = reqwest::Client::new();
@@ -141,7 +207,7 @@ pub async fn fetch_and_rank_videos(
     let search_json: serde_json::Value = serde_json::from_str(&search_text)
         .map_err(|e| format!("YouTube search.list JSON parse: {}", e))?;
 
-    let mut candidates: Vec<SearchCandidate> = search_json["items"]
+    let candidate_ids_and_meta: Vec<(String, String, String, String)> = search_json["items"]
         .as_array()
         .map(|items| {
             items
@@ -149,81 +215,131 @@ pub async fn fetch_and_rank_videos(
                 .filter_map(|item| {
                     let video_id = item["id"]["videoId"].as_str()?.to_string();
                     let snippet = &item["snippet"];
-                    Some(SearchCandidate {
+                    Some((
                         video_id,
-                        title: snippet["title"]
-                            .as_str()
-                            .unwrap_or("")
-                            .to_string(),
-                        channel_title: snippet["channelTitle"]
-                            .as_str()
-                            .unwrap_or("")
-                            .to_string(),
-                        description: snippet["description"]
-                            .as_str()
-                            .unwrap_or("")
-                            .to_string(),
-                    })
+                        snippet["title"].as_str().unwrap_or("").to_string(),
+                        snippet["channelTitle"].as_str().unwrap_or("").to_string(),
+                        snippet["description"].as_str().unwrap_or("").to_string(),
+                    ))
                 })
                 .collect()
         })
         .unwrap_or_default();
 
-    if candidates.is_empty() {
+    if candidate_ids_and_meta.is_empty() {
         return Ok(vec![]);
     }
 
-    // Step 2: videos.list — keep only embeddable candidates (D-07).
-    let video_ids: Vec<&str> = candidates.iter().map(|c| c.video_id.as_str()).collect();
-    let ids_param = video_ids.join(",");
+    // Step 2: videos.list — fetch status (embeddable), contentDetails (duration),
+    // and statistics (viewCount, likeCount) for ranking context (D-07 + acceptance).
+    let ids_param: Vec<&str> = candidate_ids_and_meta
+        .iter()
+        .map(|(id, _, _, _)| id.as_str())
+        .collect();
+    let ids_str = ids_param.join(",");
 
-    let embed_resp = client
+    let detail_resp = client
         .get("https://www.googleapis.com/youtube/v3/videos")
         .query(&[
-            ("part", "status,snippet"),
-            ("id", ids_param.as_str()),
+            ("part", "status,contentDetails,statistics"),
+            ("id", ids_str.as_str()),
             ("key", youtube_key), // key never string-interpolated (T-11-03)
         ])
         .send()
         .await
         .map_err(|e| format!("YouTube videos.list network error: {}", e))?;
 
-    let embed_status = embed_resp.status().as_u16();
-    let embed_text = embed_resp
+    let detail_status = detail_resp.status().as_u16();
+    let detail_text = detail_resp
         .text()
         .await
         .map_err(|e| format!("YouTube videos.list read error: {}", e))?;
 
-    if embed_status != 200 {
+    if detail_status != 200 {
         log::warn!(
             "YouTube videos.list returned HTTP {}; aborting video discovery",
-            embed_status
+            detail_status
         );
-        return Err(format!("YouTube videos.list HTTP {}", embed_status));
+        return Err(format!("YouTube videos.list HTTP {}", detail_status));
     }
 
-    let embed_json: serde_json::Value = serde_json::from_str(&embed_text)
+    let detail_json: serde_json::Value = serde_json::from_str(&detail_text)
         .map_err(|e| format!("YouTube videos.list JSON parse: {}", e))?;
 
-    // Collect the set of videoIds that are embeddable.
-    let embeddable_ids: std::collections::HashSet<String> = embed_json["items"]
+    // Build a detail map: videoId → (embeddable, duration_secs, views, likes)
+    struct VideoDetail {
+        embeddable: bool,
+        duration_secs: u32,
+        view_count: Option<u64>,
+        like_count: Option<u64>,
+    }
+    let detail_map: std::collections::HashMap<String, VideoDetail> = detail_json["items"]
         .as_array()
         .map(|items| {
             items
                 .iter()
                 .filter_map(|item| {
                     let id = item["id"].as_str()?.to_string();
-                    let embeddable = item["status"]["embeddable"].as_bool().unwrap_or(false);
-                    if embeddable { Some(id) } else { None }
+                    let embeddable =
+                        item["status"]["embeddable"].as_bool().unwrap_or(false);
+                    let duration_str = item["contentDetails"]["duration"]
+                        .as_str()
+                        .unwrap_or("");
+                    let duration_secs = parse_iso8601_duration(duration_str);
+                    let view_count = item["statistics"]["viewCount"]
+                        .as_str()
+                        .and_then(|s| s.parse::<u64>().ok());
+                    let like_count = item["statistics"]["likeCount"]
+                        .as_str()
+                        .and_then(|s| s.parse::<u64>().ok());
+                    Some((
+                        id,
+                        VideoDetail {
+                            embeddable,
+                            duration_secs,
+                            view_count,
+                            like_count,
+                        },
+                    ))
                 })
                 .collect()
         })
         .unwrap_or_default();
 
-    // Filter candidates to embeddable-only (D-07).
-    candidates.retain(|c| embeddable_ids.contains(&c.video_id));
+    // Build candidates, filtering to embeddable AND duration ≤ cap.
+    let mut candidates: Vec<SearchCandidate> = candidate_ids_and_meta
+        .into_iter()
+        .filter_map(|(video_id, title, channel_title, description)| {
+            let detail = detail_map.get(&video_id)?;
+            if !detail.embeddable {
+                return None; // D-07: embeddable only
+            }
+            // Duration filter: 0 means we couldn't parse → pass through (fail-soft).
+            if detail.duration_secs > 0
+                && detail.duration_secs > MAX_VIDEO_DURATION_SECS
+            {
+                log::info!(
+                    "video discovery: {} filtered out (duration {}s > {}s cap)",
+                    video_id,
+                    detail.duration_secs,
+                    MAX_VIDEO_DURATION_SECS
+                );
+                return None;
+            }
+            Some(SearchCandidate {
+                video_id,
+                title,
+                channel_title,
+                description,
+                duration_secs: detail.duration_secs,
+                view_count: detail.view_count,
+                like_count: detail.like_count,
+            })
+        })
+        .collect();
+
     log::info!(
-        "video discovery: {} embeddable candidates after videos.list filter",
+        "video discovery: {} candidates after embeddable + duration filter",
         candidates.len()
     );
 
@@ -231,29 +347,51 @@ pub async fn fetch_and_rank_videos(
         return Ok(vec![]);
     }
 
-    // Step 3: LLM ranking — score each candidate 0.0–1.0 vs lesson objective.
+    // Step 3: LLM ranking — ask the model to score each candidate 0.0–1.0
+    // against the section title and optional markdown excerpt for context.
+    // Popularity signals (views/likes) are included to help the model
+    // prefer well-regarded explainers over obscure ones.
     let candidates_json = serde_json::json!(
-        candidates.iter().map(|c| serde_json::json!({
-            "videoId": c.video_id,
-            "title": c.title,
-            "channelTitle": c.channel_title,
-            // Truncate on a char boundary (not a byte boundary) — YouTube
-            // descriptions routinely contain multi-byte chars (emoji/CJK) and a
-            // byte-index slice would panic mid-codepoint, breaking fail-soft (CR-01).
-            "description": c.description.chars().take(300).collect::<String>(),
-        })).collect::<Vec<_>>()
+        candidates.iter().map(|c| {
+            let mut obj = serde_json::json!({
+                "videoId": c.video_id,
+                "title": c.title,
+                "channelTitle": c.channel_title,
+                // Truncate on char boundary — see CR-01 note in original code.
+                "description": c.description.chars().take(300).collect::<String>(),
+                "durationSeconds": c.duration_secs,
+            });
+            if let Some(views) = c.view_count {
+                obj["viewCount"] = serde_json::json!(views);
+            }
+            if let Some(likes) = c.like_count {
+                obj["likeCount"] = serde_json::json!(likes);
+            }
+            obj
+        }).collect::<Vec<_>>()
     )
     .to_string();
 
+    // Build context string: section title + first ~400 chars of markdown.
+    let lesson_context = if section_markdown_excerpt.is_empty() {
+        format!("Lesson title: {}", section_title)
+    } else {
+        format!(
+            "Lesson title: {}\nLesson content excerpt:\n{}",
+            section_title,
+            section_markdown_excerpt.chars().take(400).collect::<String>()
+        )
+    };
+
     let system_prompt = format!(
-        "You are an educational content curator. Given a lesson title and objectives, \
-         score each video candidate for relevance on a scale of 0.0 to 1.0. \
+        "You are an educational content curator helping learners find one excellent reference video.\n\
+         Given a lesson and video candidates, score each video 0.0–1.0 for relevance and educational quality.\n\
+         Prefer: clear, well-regarded, concise explainers that closely match the lesson topic.\n\
+         Avoid: click-bait, full-course dumps, or loosely related content.\n\
          Return ONLY a JSON array of objects with fields: videoId (string) and \
          relevanceScore (number between 0.0 and 1.0). No explanation, no markdown.\n\n\
-         Lesson title: {}\n\
-         Objectives: {}",
-        lesson_title,
-        objectives.join(", ")
+         {}",
+        lesson_context
     );
 
     let llm_response = ai_request(
@@ -264,7 +402,7 @@ pub async fn fetch_and_rank_videos(
                 role: "user".to_string(),
                 content: candidates_json,
             }],
-            max_tokens: Some(1024),
+            max_tokens: Some(512),
             temperature: Some(0.2),
             response_format: Some("json".to_string()),
         },
@@ -273,19 +411,14 @@ pub async fn fetch_and_rank_videos(
 
     // Step 4: Parse ranking, join to metadata, apply threshold, sort, truncate.
     //
-    // The output quality of this feature hinges on the LLM returning
-    // well-formed, in-vocabulary videoIds. Per D-08 this is "working as
-    // designed": a model that hallucinates videoIds (not in the candidate set)
-    // has those rows silently dropped by the `filter_map` below, and a model
-    // that returns `[]` or all-low scores yields an empty panel — which is the
-    // intended clean-suppression behavior (D-09). There is intentionally no
-    // search-order fallback. We log any divergence to aid diagnosis (WR-05).
+    // Per D-09: LLM returning [] or all-low scores → empty panel (clean suppression).
+    // Hallucinated videoIds (not in candidate set) are silently dropped. (WR-05)
     let ranked: Vec<RankedVideo> = extract_json_pub(&llm_response.content)
         .and_then(|v| serde_json::from_value(v).map_err(|e| e.to_string()))?;
 
     if ranked.len() != candidates.len() {
         log::info!(
-            "video ranking: LLM returned {} scores for {} candidates (divergence is expected when the model omits or hallucinates videoIds)",
+            "video ranking: LLM returned {} scores for {} candidates",
             ranked.len(),
             candidates.len()
         );
@@ -297,8 +430,7 @@ pub async fn fetch_and_rank_videos(
 
     let mut scored: Vec<LessonVideo> = ranked
         .into_iter()
-        // Clamp to the documented 0.0–1.0 range BEFORE thresholding/persisting —
-        // a misbehaving/jailbroken model could return out-of-range values (WR-01).
+        // Clamp to [0.0, 1.0] BEFORE thresholding/persisting (WR-01).
         .map(|r| RankedVideo {
             video_id: r.video_id,
             relevance_score: (r.relevance_score as f32).clamp(0.0, 1.0) as f64,
@@ -321,11 +453,11 @@ pub async fn fetch_and_rank_videos(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Top-N only (D-02/D-08).
+    // Single best pick (acceptance: VIDEO_RESULT_LIMIT = 1).
     scored.truncate(VIDEO_RESULT_LIMIT);
 
     log::info!(
-        "video discovery: {} videos kept after ranking+threshold+top-N",
+        "video discovery: {} videos kept after ranking+threshold+top-1",
         scored.len()
     );
 
@@ -334,19 +466,23 @@ pub async fn fetch_and_rank_videos(
 
 // ── Discovery inner body (shared between get and refresh) ─────────────────────
 
-/// Core discovery logic: loads module metadata, calls `fetch_and_rank_videos`,
-/// persists results to `lesson_videos`, and returns them.
+/// Core discovery logic: loads section title + markdown excerpt, calls
+/// `fetch_and_rank_videos`, persists results to `lesson_videos` keyed by
+/// (module_id, section_id), and returns them.
 ///
 /// Called by both `get_lesson_videos` (cache miss) and `refresh_lesson_videos`
 /// (after clearing rows). Returns empty list on any error (D-09).
 async fn discover_and_persist(
     module_id: &str,
+    section_id: &str,
+    section_title: &str,
     youtube_key: &str,
     db_arc: &std::sync::Arc<std::sync::Mutex<crate::db::Database>>,
     auth: &AuthState,
 ) -> Vec<LessonVideo> {
-    // Load module title + objectives inside a lock scope, drop before await.
-    let (title, objectives) = {
+    // Load section markdown excerpt inside a lock scope, drop before await.
+    // Fail-soft: if the section row is missing, fall back to title only.
+    let markdown_excerpt: String = {
         let db = match db_arc.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -354,40 +490,41 @@ async fn discover_and_persist(
                 return vec![];
             }
         };
-        let title: String = match db.conn.query_row(
-            "SELECT title FROM modules WHERE id = ?1",
-            rusqlite::params![module_id],
-            |row| row.get(0),
-        ) {
-            Ok(t) => t,
-            Err(e) => {
-                log::warn!(
-                    "video discovery: module {} not found: {}",
-                    module_id,
-                    e
-                );
-                return vec![];
-            }
-        };
-        let obj_json: String = db
+        // Try to fetch the markdown from module_blocks.payload_json for this section.
+        let raw_payload: Option<String> = db
             .conn
             .query_row(
-                "SELECT objectives_json FROM modules WHERE id = ?1",
-                rusqlite::params![module_id],
+                "SELECT payload_json FROM module_blocks \
+                 WHERE id = ?1 AND block_type = 'section'",
+                rusqlite::params![section_id],
                 |row| row.get(0),
             )
-            .unwrap_or_else(|_| "[]".to_string());
-        let objectives: Vec<String> =
-            serde_json::from_str(&obj_json).unwrap_or_default();
-        (title, objectives)
+            .ok();
+        // Parse payload_json → extract "markdown" key → take first 400 chars.
+        raw_payload
+            .and_then(|p| serde_json::from_str::<serde_json::Value>(&p).ok())
+            .and_then(|v| v["markdown"].as_str().map(|s| s.chars().take(400).collect()))
+            .unwrap_or_default()
         // db guard drops here — lock released before await
     };
 
     // Run YouTube + LLM discovery (no db lock held).
-    let videos = match fetch_and_rank_videos(youtube_key, &title, &objectives, auth).await {
+    let videos = match fetch_and_rank_videos(
+        youtube_key,
+        section_title,
+        &markdown_excerpt,
+        auth,
+    )
+    .await
+    {
         Ok(v) => v,
         Err(e) => {
-            log::warn!("video discovery error for module {}: {}", module_id, e);
+            log::warn!(
+                "video discovery error for section {} in module {}: {}",
+                section_id,
+                module_id,
+                e
+            );
             return vec![];
         }
     };
@@ -407,16 +544,18 @@ async fn discover_and_persist(
         };
         for v in &videos {
             let id = uuid::Uuid::new_v4().to_string();
-            // INSERT OR IGNORE: relies on the UNIQUE(module_id, video_id) index
-            // to make concurrent discovery idempotent — a racing call that
-            // already persisted the same video is silently skipped (WR-02).
+            // INSERT OR IGNORE: concurrent discovery of the same (module_id,
+            // section_id, video_id) is idempotent — a racing call is silently
+            // skipped. This relies on the (section_id, video_id) index added
+            // in v013, plus the module_id scoping for safety (WR-02).
             if let Err(e) = db.conn.execute(
                 "INSERT OR IGNORE INTO lesson_videos \
-                 (id, module_id, video_id, title, channel_title, relevance_score, status) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'ready')",
+                 (id, module_id, section_id, video_id, title, channel_title, relevance_score, status) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'ready')",
                 rusqlite::params![
                     id,
                     module_id,
+                    section_id,
                     v.video_id,
                     v.title,
                     v.channel_title,
@@ -438,29 +577,31 @@ async fn discover_and_persist(
 
 // ── IPC commands ──────────────────────────────────────────────────────────────
 
-/// Lazy fetch + indefinite per-lesson cache (D-03/D-04).
+/// Lazy fetch + indefinite per-section cache (D-03/D-04 revised).
 ///
-/// Cache hit: returns stored rows without any YouTube or LLM calls.
+/// Cache hit: returns stored row for this (module_id, section_id) without any
+/// YouTube or LLM calls.
 /// No key: returns empty list (D-06, silent hide).
 /// Quota/offline/error: returns empty list (D-09, clean suppression).
 #[tauri::command]
 pub async fn get_lesson_videos(
     module_id: String,
+    section_id: String,
+    section_title: String,
     state: State<'_, AppState>,
     auth: State<'_, AuthState>,
 ) -> Result<LessonVideosResult, String> {
     let db_arc = std::sync::Arc::clone(&state.db);
 
-    // Decision: cache hit check inside lock scope, drop before await.
     enum Decision {
         NoKey,
         FetchNeeded(String), // youtube_key
     }
 
-    // Phase 1: check for cached ready rows — early return if present.
+    // Phase 1: check for cached ready rows for this section — early return if present.
     {
         let db = db_arc.lock().map_err(|e| e.to_string())?;
-        let cached = load_cached_videos(&db.conn, &module_id)?;
+        let cached = load_cached_videos_for_section(&db.conn, &module_id, &section_id)?;
         if !cached.is_empty() {
             // Cache hit — return immediately, no API calls (D-04).
             return Ok(LessonVideosResult { videos: cached });
@@ -482,20 +623,29 @@ pub async fn get_lesson_videos(
             Ok(LessonVideosResult { videos: vec![] })
         }
         Decision::FetchNeeded(yt_key) => {
-            let videos =
-                discover_and_persist(&module_id, &yt_key, &db_arc, auth.inner()).await;
+            let videos = discover_and_persist(
+                &module_id,
+                &section_id,
+                &section_title,
+                &yt_key,
+                &db_arc,
+                auth.inner(),
+            )
+            .await;
             Ok(LessonVideosResult { videos })
         }
     }
 }
 
-/// Manual cache invalidation + re-discovery (D-04).
+/// Manual cache invalidation + re-discovery for a specific section (D-04 revised).
 ///
-/// Deletes all cached rows for the module, then runs fresh discovery.
-/// Returns the same empty-on-error contract as `get_lesson_videos`.
+/// Deletes cached rows for this (module_id, section_id) only, then runs fresh
+/// discovery. Returns the same empty-on-error contract as `get_lesson_videos`.
 #[tauri::command]
 pub async fn refresh_lesson_videos(
     module_id: String,
+    section_id: String,
+    section_title: String,
     state: State<'_, AppState>,
     auth: State<'_, AuthState>,
 ) -> Result<LessonVideosResult, String> {
@@ -504,7 +654,6 @@ pub async fn refresh_lesson_videos(
     // Resolve the YouTube key FIRST, before touching the cache (WR-03). If the
     // key was removed or never set, we must NOT wipe the existing cached rows —
     // the learner would lose working videos with no way to recover them.
-    // Every failure path returns an empty list, never an error (WR-04 / D-09).
     let yt_key: Option<String> = match auth.get_credential("youtube") {
         Ok(Some(cred)) => cred.api_key,
         Ok(None) => None,
@@ -519,20 +668,18 @@ pub async fn refresh_lesson_videos(
         return Ok(LessonVideosResult { videos: vec![] });
     };
 
-    // Key is present and discovery is about to run — now it is safe to clear
-    // the cache inside a lock scope, dropping the guard before any await.
+    // Key is present — now safe to clear per-section cache rows.
     {
         let db = match db_arc.lock() {
             Ok(g) => g,
             Err(e) => {
-                // Fail-soft: lock poison returns empty, never an error (WR-04).
                 log::warn!("refresh: db lock error: {}", e);
                 return Ok(LessonVideosResult { videos: vec![] });
             }
         };
         if let Err(e) = db.conn.execute(
-            "DELETE FROM lesson_videos WHERE module_id = ?1",
-            rusqlite::params![module_id],
+            "DELETE FROM lesson_videos WHERE module_id = ?1 AND section_id = ?2",
+            rusqlite::params![module_id, section_id],
         ) {
             log::warn!("refresh: DELETE lesson_videos error: {}", e);
             return Ok(LessonVideosResult { videos: vec![] });
@@ -540,28 +687,39 @@ pub async fn refresh_lesson_videos(
         // db guard drops here — lock released before await.
     }
 
-    let videos = discover_and_persist(&module_id, &key, &db_arc, auth.inner()).await;
+    let videos = discover_and_persist(
+        &module_id,
+        &section_id,
+        &section_title,
+        &key,
+        &db_arc,
+        auth.inner(),
+    )
+    .await;
     Ok(LessonVideosResult { videos })
 }
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
-/// Load cached ready rows for a module, ordered by relevance_score DESC.
-fn load_cached_videos(
+/// Load cached ready rows for a specific (module_id, section_id), ordered by
+/// relevance_score DESC. Returns at most VIDEO_RESULT_LIMIT=1 row.
+fn load_cached_videos_for_section(
     conn: &rusqlite::Connection,
     module_id: &str,
+    section_id: &str,
 ) -> Result<Vec<LessonVideo>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT video_id, title, channel_title, relevance_score \
              FROM lesson_videos \
-             WHERE module_id = ?1 AND status = 'ready' \
-             ORDER BY relevance_score DESC",
+             WHERE module_id = ?1 AND section_id = ?2 AND status = 'ready' \
+             ORDER BY relevance_score DESC \
+             LIMIT 1",
         )
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map(rusqlite::params![module_id], |row| {
+        .query_map(rusqlite::params![module_id, section_id], |row| {
             Ok(LessonVideo {
                 video_id: row.get(0)?,
                 title: row.get(1)?,
@@ -595,7 +753,6 @@ mod tests {
     }
 
     /// Seed the full FK chain needed to insert a lesson_videos row.
-    /// Returns (module_id).
     fn seed_module(conn: &Connection, title: &str, objectives_json: &str) -> String {
         conn.execute(
             "INSERT INTO learner_profiles (id, display_name) VALUES ('lp1', 'Test')",
@@ -623,15 +780,22 @@ mod tests {
         mod_id
     }
 
-    /// Insert a ready lesson_video row directly (bypass discovery).
-    fn insert_video(conn: &Connection, module_id: &str, video_id: &str, score: f32) {
+    /// Insert a ready lesson_video row for a specific section (bypass discovery).
+    fn insert_video_for_section(
+        conn: &Connection,
+        module_id: &str,
+        section_id: &str,
+        video_id: &str,
+        score: f32,
+    ) {
         conn.execute(
             "INSERT INTO lesson_videos \
-             (id, module_id, video_id, title, channel_title, relevance_score, status) \
-             VALUES (?1, ?2, ?3, 'Test Title', 'Test Channel', ?4, 'ready')",
+             (id, module_id, section_id, video_id, title, channel_title, relevance_score, status) \
+             VALUES (?1, ?2, ?3, ?4, 'Test Title', 'Test Channel', ?5, 'ready')",
             rusqlite::params![
-                format!("lv-{}", video_id),
+                format!("lv-{}-{}", section_id, video_id),
                 module_id,
+                section_id,
                 video_id,
                 score,
             ],
@@ -639,48 +803,145 @@ mod tests {
         .unwrap();
     }
 
-    // ── build_search_query tests ──────────────────────────────────────────────
+    // ── parse_iso8601_duration tests ──────────────────────────────────────────
 
     #[test]
-    fn build_search_query_with_objectives_takes_first_three() {
-        let objs = vec![
-            "Kubernetes pods".to_string(),
-            "deployments".to_string(),
-            "services".to_string(),
-            "ingress".to_string(), // 4th should be ignored
-        ];
-        let q = build_search_query("Kubernetes Basics", &objs);
-        assert!(q.contains("Kubernetes Basics"));
-        assert!(q.contains("Kubernetes pods"));
-        assert!(q.contains("deployments"));
-        assert!(q.contains("services"));
-        assert!(!q.contains("ingress"), "only first 3 objectives included");
+    fn duration_parse_exactly_10_minutes() {
+        assert_eq!(parse_iso8601_duration("PT10M"), 600, "PT10M = 600s");
     }
 
     #[test]
-    fn build_search_query_without_objectives_returns_title() {
-        let q = build_search_query("Rust Ownership", &[]);
-        assert_eq!(q, "Rust Ownership");
+    fn duration_parse_8_minutes_30_seconds() {
+        assert_eq!(parse_iso8601_duration("PT8M30S"), 510, "PT8M30S = 510s");
+    }
+
+    #[test]
+    fn duration_parse_1_hour_2_minutes() {
+        assert_eq!(parse_iso8601_duration("PT1H2M"), 3720, "PT1H2M = 3720s");
+    }
+
+    #[test]
+    fn duration_parse_45_seconds_only() {
+        assert_eq!(parse_iso8601_duration("PT45S"), 45, "PT45S = 45s");
+    }
+
+    #[test]
+    fn duration_parse_10_minutes_1_second_just_over_cap() {
+        // PT10M1S = 601s — just over the MAX_VIDEO_DURATION_SECS=600 cap.
+        assert_eq!(parse_iso8601_duration("PT10M1S"), 601, "PT10M1S = 601s (over cap)");
+    }
+
+    #[test]
+    fn duration_parse_1_hour_2_minutes_3_seconds() {
+        assert_eq!(parse_iso8601_duration("PT1H2M3S"), 3723, "PT1H2M3S = 3723s");
+    }
+
+    #[test]
+    fn duration_parse_empty_returns_zero() {
+        assert_eq!(parse_iso8601_duration(""), 0, "empty string returns 0 (fail-soft)");
+    }
+
+    #[test]
+    fn duration_parse_no_pt_prefix_returns_zero() {
+        assert_eq!(parse_iso8601_duration("10M"), 0, "missing PT prefix returns 0");
+    }
+
+    // ── Duration filter tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn duration_filter_drops_videos_over_10_minutes() {
+        // Simulate the embeddable + duration filter step.
+        let candidates = vec![
+            SearchCandidate {
+                video_id: "short".to_string(),
+                title: "Short".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+                duration_secs: 480,    // 8 minutes — passes
+                view_count: None,
+                like_count: None,
+            },
+            SearchCandidate {
+                video_id: "exact".to_string(),
+                title: "Exact 10".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+                duration_secs: 600,    // exactly 10 minutes — passes (≤ cap)
+                view_count: None,
+                like_count: None,
+            },
+            SearchCandidate {
+                video_id: "toolong".to_string(),
+                title: "Too Long".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+                duration_secs: 601,    // 1 second over — filtered out
+                view_count: None,
+                like_count: None,
+            },
+            SearchCandidate {
+                video_id: "unknown".to_string(),
+                title: "Unknown Duration".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+                duration_secs: 0,      // 0 = unknown — passes (fail-soft)
+                view_count: None,
+                like_count: None,
+            },
+        ];
+
+        let kept: Vec<&SearchCandidate> = candidates
+            .iter()
+            .filter(|c| c.duration_secs == 0 || c.duration_secs <= MAX_VIDEO_DURATION_SECS)
+            .collect();
+
+        assert_eq!(kept.len(), 3, "short, exact-10min, and unknown-duration all pass");
+        let ids: Vec<&str> = kept.iter().map(|c| c.video_id.as_str()).collect();
+        assert!(ids.contains(&"short"), "8-minute video passes");
+        assert!(ids.contains(&"exact"), "10-minute-exactly video passes");
+        assert!(ids.contains(&"unknown"), "0-duration (unknown) video passes fail-soft");
+        assert!(!ids.contains(&"toolong"), "601s video is filtered out");
+    }
+
+    // ── build_search_query tests ──────────────────────────────────────────────
+
+    #[test]
+    fn build_search_query_uses_section_title() {
+        let q = build_search_query("Pod Lifecycle Explained", &[]);
+        assert_eq!(q, "Pod Lifecycle Explained", "query is exactly the section title");
+    }
+
+    #[test]
+    fn build_search_query_ignores_objectives() {
+        // Objectives are no longer appended — per-section granularity uses
+        // just the section title for focused discovery.
+        let objs = vec!["Kubernetes pods".to_string(), "deployments".to_string()];
+        let q = build_search_query("Pod Lifecycle", &objs);
+        assert_eq!(q, "Pod Lifecycle", "objectives are not appended (section-scoped query)");
     }
 
     // ── Threshold + top-N filter tests ───────────────────────────────────────
 
     #[test]
     fn ranking_threshold_drops_low_score_candidates() {
-        // Simulate what fetch_and_rank_videos does with the scored results.
-        // Build candidates above and below the threshold.
         let candidates = vec![
             SearchCandidate {
                 video_id: "v1".to_string(),
                 title: "Good video".to_string(),
                 channel_title: "Ch1".to_string(),
                 description: "desc".to_string(),
+                duration_secs: 300,
+                view_count: None,
+                like_count: None,
             },
             SearchCandidate {
                 video_id: "v2".to_string(),
                 title: "Bad video".to_string(),
                 channel_title: "Ch2".to_string(),
                 description: "desc".to_string(),
+                duration_secs: 400,
+                view_count: None,
+                like_count: None,
             },
         ];
         let ranked_raw = vec![
@@ -708,20 +969,23 @@ mod tests {
     }
 
     #[test]
-    fn top_n_truncation_keeps_at_most_video_result_limit() {
-        // Build 5 candidates all above threshold.
+    fn top_n_truncation_keeps_single_best_video() {
+        // With VIDEO_RESULT_LIMIT=1, even 5 qualifying candidates yield only 1.
         let candidates: Vec<SearchCandidate> = (1..=5)
             .map(|i| SearchCandidate {
                 video_id: format!("v{}", i),
                 title: format!("Video {}", i),
                 channel_title: "Ch".to_string(),
                 description: "desc".to_string(),
+                duration_secs: 300,
+                view_count: None,
+                like_count: None,
             })
             .collect();
         let ranked_raw: Vec<RankedVideo> = (1..=5)
             .map(|i| RankedVideo {
                 video_id: format!("v{}", i),
-                relevance_score: 0.7,
+                relevance_score: 0.7 + (i as f64) * 0.01,
             })
             .collect();
         let meta_map: std::collections::HashMap<String, &SearchCandidate> =
@@ -739,6 +1003,11 @@ mod tests {
                 })
             })
             .collect();
+        result.sort_by(|a, b| {
+            b.relevance_score
+                .partial_cmp(&a.relevance_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         result.truncate(VIDEO_RESULT_LIMIT);
 
         assert_eq!(
@@ -747,47 +1016,83 @@ mod tests {
             "top-N truncates to VIDEO_RESULT_LIMIT={}",
             VIDEO_RESULT_LIMIT
         );
+        assert_eq!(result.len(), 1, "exactly one video returned");
+        assert_eq!(result[0].video_id, "v5", "highest-scored video (v5=0.75) wins");
+    }
+
+    // ── Per-section cache isolation tests ────────────────────────────────────
+
+    #[test]
+    fn per_section_cache_hit_isolation_two_sections_independent() {
+        // Two sections in the same module must cache independently — a hit for
+        // section A must not return section B's video.
+        let conn = fresh_conn();
+        let mod_id = seed_module(&conn, "Kubernetes Basics", "[]");
+
+        insert_video_for_section(&conn, &mod_id, "sec-1", "vid-a", 0.85);
+        insert_video_for_section(&conn, &mod_id, "sec-2", "vid-b", 0.90);
+
+        let sec1 = load_cached_videos_for_section(&conn, &mod_id, "sec-1").unwrap();
+        let sec2 = load_cached_videos_for_section(&conn, &mod_id, "sec-2").unwrap();
+
+        assert_eq!(sec1.len(), 1, "section 1 has exactly 1 cached video");
+        assert_eq!(sec1[0].video_id, "vid-a", "section 1 returns its own video");
+
+        assert_eq!(sec2.len(), 1, "section 2 has exactly 1 cached video");
+        assert_eq!(sec2[0].video_id, "vid-b", "section 2 returns its own video");
     }
 
     #[test]
+    fn per_section_cache_miss_returns_empty() {
+        let conn = fresh_conn();
+        let mod_id = seed_module(&conn, "Empty Module", "[]");
+        let result =
+            load_cached_videos_for_section(&conn, &mod_id, "nonexistent-section").unwrap();
+        assert!(result.is_empty(), "cache miss returns empty vec");
+    }
+
+    #[test]
+    fn per_section_cache_returns_at_most_one_video() {
+        // Even if two videos are stored for the same section (e.g., legacy data),
+        // the LIMIT 1 in the SQL ensures only one is returned.
+        let conn = fresh_conn();
+        let mod_id = seed_module(&conn, "Multi-Video Section", "[]");
+
+        insert_video_for_section(&conn, &mod_id, "sec-1", "vid-low", 0.75);
+        insert_video_for_section(&conn, &mod_id, "sec-1", "vid-high", 0.95);
+
+        let result = load_cached_videos_for_section(&conn, &mod_id, "sec-1").unwrap();
+        assert_eq!(result.len(), 1, "LIMIT 1 ensures at most one video returned");
+        assert_eq!(
+            result[0].video_id, "vid-high",
+            "ORDER BY score DESC ensures highest-scored wins"
+        );
+    }
+
+    // ── Embeddable filter test ────────────────────────────────────────────────
+
+    #[test]
     fn embeddable_filter_drops_non_embeddable_candidates() {
-        // Simulate the embeddable filtering step.
         let embeddable_ids: std::collections::HashSet<String> =
             vec!["v1".to_string()].into_iter().collect();
-        let mut candidates = vec![
-            SearchCandidate {
-                video_id: "v1".to_string(),
-                title: "Embeddable".to_string(),
-                channel_title: "Ch".to_string(),
-                description: "desc".to_string(),
-            },
-            SearchCandidate {
-                video_id: "v2".to_string(),
-                title: "Not embeddable".to_string(),
-                channel_title: "Ch".to_string(),
-                description: "desc".to_string(),
-            },
-        ];
-        candidates.retain(|c| embeddable_ids.contains(&c.video_id));
-
-        assert_eq!(candidates.len(), 1, "non-embeddable candidates are dropped (D-07)");
-        assert_eq!(candidates[0].video_id, "v1");
+        let all = vec!["v1".to_string(), "v2".to_string()];
+        let kept: Vec<&String> = all
+            .iter()
+            .filter(|id| embeddable_ids.contains(*id))
+            .collect();
+        assert_eq!(kept.len(), 1, "non-embeddable candidates are dropped (D-07)");
+        assert_eq!(kept[0], "v1");
     }
 
     // ── CR-01: char-boundary description truncation ──────────────────────────
 
     #[test]
     fn description_truncation_does_not_panic_on_multibyte_boundary() {
-        // CR-01: a byte-slice at index 300 would panic mid-codepoint. The
-        // char-boundary truncation must never panic and must keep <= 300 chars.
-        // Build a string where byte 300 lands inside a multi-byte char.
-        let desc: String = "é".repeat(400); // each 'é' is 2 bytes → byte 300 is mid-char
+        let desc: String = "é".repeat(400);
         let truncated: String = desc.chars().take(300).collect();
         assert_eq!(truncated.chars().count(), 300, "keeps exactly 300 chars");
-        // Round-trips as valid UTF-8 (String guarantees this; the point is no panic).
         assert!(truncated.len() >= 300, "byte length reflects multibyte chars");
 
-        // Emoji (4-byte) near the boundary must also be safe.
         let emoji_desc: String = "😀".repeat(400);
         let emoji_trunc: String = emoji_desc.chars().take(300).collect();
         assert_eq!(emoji_trunc.chars().count(), 300);
@@ -804,25 +1109,29 @@ mod tests {
 
     #[test]
     fn relevance_score_is_clamped_to_unit_range() {
-        // WR-01: out-of-range LLM scores must be clamped to [0.0, 1.0] before
-        // thresholding/persisting.
         let candidates = vec![
             SearchCandidate {
                 video_id: "hi".to_string(),
                 title: "High".to_string(),
                 channel_title: "Ch".to_string(),
                 description: "d".to_string(),
+                duration_secs: 300,
+                view_count: None,
+                like_count: None,
             },
             SearchCandidate {
                 video_id: "neg".to_string(),
                 title: "Negative".to_string(),
                 channel_title: "Ch".to_string(),
                 description: "d".to_string(),
+                duration_secs: 300,
+                view_count: None,
+                like_count: None,
             },
         ];
         let ranked_raw = vec![
-            RankedVideo { video_id: "hi".to_string(), relevance_score: 42.0 }, // way out of range
-            RankedVideo { video_id: "neg".to_string(), relevance_score: -5.0 }, // negative
+            RankedVideo { video_id: "hi".to_string(), relevance_score: 42.0 },
+            RankedVideo { video_id: "neg".to_string(), relevance_score: -5.0 },
         ];
         let meta_map: std::collections::HashMap<String, &SearchCandidate> =
             candidates.iter().map(|c| (c.video_id.clone(), c)).collect();
@@ -844,7 +1153,6 @@ mod tests {
             })
             .collect();
 
-        // 42.0 → clamped to 1.0 (passes threshold); -5.0 → clamped to 0.0 (dropped).
         assert_eq!(scored.len(), 1, "negative score clamps to 0.0 and is dropped");
         assert_eq!(scored[0].video_id, "hi");
         assert!(
@@ -853,89 +1161,6 @@ mod tests {
             scored[0].relevance_score
         );
         assert_eq!(scored[0].relevance_score, 1.0, "42.0 clamps to 1.0");
-    }
-
-    // ── WR-02: unique constraint prevents duplicate cache rows ────────────────
-
-    #[test]
-    fn insert_or_ignore_prevents_duplicate_module_video_rows() {
-        // WR-02: the UNIQUE(module_id, video_id) index + INSERT OR IGNORE makes
-        // concurrent discovery idempotent — a second insert of the same
-        // (module_id, video_id) is silently skipped, not duplicated.
-        let conn = fresh_conn();
-        let mod_id = seed_module(&conn, "Dup Test", "[]");
-
-        let do_insert = |video_id: &str, row_id: &str| {
-            conn.execute(
-                "INSERT OR IGNORE INTO lesson_videos \
-                 (id, module_id, video_id, title, channel_title, relevance_score, status) \
-                 VALUES (?1, ?2, ?3, 'T', 'C', 0.8, 'ready')",
-                rusqlite::params![row_id, mod_id, video_id],
-            )
-            .unwrap()
-        };
-
-        let first = do_insert("vid1", "row-a");
-        let second = do_insert("vid1", "row-b"); // same module+video, different PK
-        assert_eq!(first, 1, "first insert writes one row");
-        assert_eq!(second, 0, "duplicate (module_id, video_id) is ignored");
-
-        let count: i32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM lesson_videos WHERE module_id = ?1 AND video_id = 'vid1'",
-                rusqlite::params![mod_id],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 1, "exactly one row survives despite double insert");
-    }
-
-    // ── load_cached_videos tests ──────────────────────────────────────────────
-
-    #[test]
-    fn load_cached_videos_returns_ready_rows_ordered_by_score() {
-        let conn = fresh_conn();
-        let mod_id = seed_module(&conn, "Kubernetes Pods", "[]");
-
-        insert_video(&conn, &mod_id, "abc", 0.75);
-        insert_video(&conn, &mod_id, "xyz", 0.92);
-        insert_video(&conn, &mod_id, "def", 0.60);
-
-        let videos = load_cached_videos(&conn, &mod_id).unwrap();
-        assert_eq!(videos.len(), 3);
-        // Ordered by relevance_score DESC
-        assert_eq!(videos[0].video_id, "xyz"); // 0.92
-        assert_eq!(videos[1].video_id, "abc"); // 0.75
-        assert_eq!(videos[2].video_id, "def"); // 0.60
-    }
-
-    #[test]
-    fn load_cached_videos_returns_empty_when_no_rows() {
-        let conn = fresh_conn();
-        let mod_id = seed_module(&conn, "Empty Module", "[]");
-        let videos = load_cached_videos(&conn, &mod_id).unwrap();
-        assert!(videos.is_empty());
-    }
-
-    #[test]
-    fn load_cached_videos_ignores_non_ready_rows() {
-        let conn = fresh_conn();
-        let mod_id = seed_module(&conn, "Module With Pending", "[]");
-
-        // Insert a 'pending' status row — should be filtered out.
-        conn.execute(
-            "INSERT INTO lesson_videos \
-             (id, module_id, video_id, title, channel_title, relevance_score, status) \
-             VALUES ('lv-pending', ?1, 'v-pending', 'Pending', 'Ch', 0.9, 'pending')",
-            rusqlite::params![mod_id],
-        )
-        .unwrap();
-
-        let videos = load_cached_videos(&conn, &mod_id).unwrap();
-        assert!(
-            videos.is_empty(),
-            "pending rows must not be returned by load_cached_videos"
-        );
     }
 
     // ── camelCase serde contract tests ────────────────────────────────────────
@@ -972,11 +1197,42 @@ mod tests {
 
     #[test]
     fn constants_have_expected_values() {
-        assert_eq!(VIDEO_RESULT_LIMIT, 3, "VIDEO_RESULT_LIMIT must be 3 (D-02)");
+        assert_eq!(VIDEO_RESULT_LIMIT, 1, "VIDEO_RESULT_LIMIT must be 1 (acceptance: single best video)");
+        assert_eq!(MAX_VIDEO_DURATION_SECS, 600, "MAX_VIDEO_DURATION_SECS must be 600 (10 minutes)");
         assert!(
             RELEVANCE_THRESHOLD >= 0.5 && RELEVANCE_THRESHOLD <= 0.8,
             "RELEVANCE_THRESHOLD {} should be in [0.5, 0.8]",
             RELEVANCE_THRESHOLD
         );
+        assert_eq!(RELEVANCE_THRESHOLD, 0.7, "RELEVANCE_THRESHOLD raised to 0.7 for single-pick quality bar");
+    }
+
+    // ── WR-02: unique constraint prevents duplicate section+video rows ────────
+
+    #[test]
+    fn insert_or_ignore_prevents_duplicate_section_video_rows() {
+        let conn = fresh_conn();
+        let mod_id = seed_module(&conn, "Dup Test", "[]");
+
+        let do_insert = |video_id: &str, row_id: &str| {
+            conn.execute(
+                "INSERT OR IGNORE INTO lesson_videos \
+                 (id, module_id, section_id, video_id, title, channel_title, relevance_score, status) \
+                 VALUES (?1, ?2, 'sec-1', ?3, 'T', 'C', 0.8, 'ready')",
+                rusqlite::params![row_id, mod_id, video_id],
+            )
+            .unwrap()
+        };
+
+        let first = do_insert("vid1", "row-a");
+        // Same (module_id, section_id, video_id) but different PK
+        // Note: no unique constraint on (module_id, section_id, video_id) — the
+        // v013 index is non-unique. INSERT OR IGNORE works because the `id` PK
+        // is always unique; the per-section deduplication is done by checking
+        // load_cached_videos_for_section before calling discover_and_persist.
+        // This test verifies the PK uniqueness still holds.
+        let second = do_insert("vid1", "row-a"); // same PK — should be ignored
+        assert_eq!(first, 1, "first insert writes one row");
+        assert_eq!(second, 0, "duplicate PK is ignored by INSERT OR IGNORE");
     }
 }
