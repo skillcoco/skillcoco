@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getLessonVideos, isYoutubeKeyConfigured, refreshLessonVideos } from "@/lib/tauri-commands";
+import { getVideoProgress, setVideoProgress } from "@/lib/video-progress";
 import type { LessonVideo } from "@/types/videos";
 import { RefreshCw, Maximize2, Search, X, Shuffle, Undo2 } from "lucide-react";
 
@@ -27,10 +28,13 @@ import { RefreshCw, Maximize2, Search, X, Shuffle, Undo2 } from "lucide-react";
  *   stack. No quota consumed. Absent when history is empty.
  * - Custom Expand: YouTube's native fullscreen button is unreliable inside
  *   Tauri's macOS WKWebView, so we provide our own Expand control that blows
- *   the player up to a large in-app overlay. The SAME iframe node stays
- *   mounted across the toggle (only its container's classes change), so the
- *   video does not restart and there is no double-audio. Esc / backdrop /
- *   close button collapse it.
+ *   the player up to a large in-app overlay. On expand/collapse the iframe
+ *   is remounted in the new location; the embed src includes start= from the
+ *   in-memory progress store so the video resumes from the last-known position.
+ * - Playback continuity: the enablejsapi=1 + postMessage("listening") protocol
+ *   streams infoDelivery events so currentTime is continuously captured into
+ *   the video-progress store. Every (re)mount reads start= from that store,
+ *   so expand, collapse, and lesson navigation all resume correctly.
  * - D-07: youtube-nocookie.com embed only — no dangerouslySetInnerHTML.
  * - D-09: empty result → return null (clean suppression, no error UI).
  * - D-06: backend silently returns [] when no YouTube key configured.
@@ -41,6 +45,18 @@ interface ReferenceVideoPanelProps {
   moduleId: string;
   sectionId: string;
   sectionTitle: string;
+}
+
+/**
+ * Builds the youtube-nocookie embed src with enablejsapi=1, start=, and origin=.
+ *
+ * `start` is floored to an integer (YT only accepts whole seconds).
+ * origin= is required for the postMessage protocol to work cross-origin.
+ */
+function nocookieEmbedSrc(videoId: string, startSeconds: number): string {
+  const start = Math.floor(Math.max(0, startSeconds));
+  const origin = encodeURIComponent(window.location.origin);
+  return `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&start=${start}&origin=${origin}`;
 }
 
 export function ReferenceVideoPanel({
@@ -66,6 +82,10 @@ export function ReferenceVideoPanel({
   // before writing state, so an in-flight operation from a PREVIOUS section that
   // resolves after navigation cannot overwrite the new section's video (WR-02).
   const currentSectionRef = useRef(sectionId);
+
+  // Holds the videoId that is currently mounted, so late postMessage events
+  // don't write progress into the wrong key after a video switch.
+  const currentVideoIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setVideo(null);
@@ -109,6 +129,52 @@ export function ReferenceVideoPanel({
     };
   }, [moduleId, sectionId, sectionTitle]);
 
+  // Keep currentVideoIdRef in sync with the displayed video.
+  useEffect(() => {
+    currentVideoIdRef.current = video?.videoId ?? null;
+  }, [video]);
+
+  // postMessage listener: receive YouTube infoDelivery events and persist
+  // currentTime to the progress store. Cleaned up on unmount.
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      // Only accept messages from the YouTube nocookie (or regular) domain.
+      const origin = event.origin || "";
+      if (!origin.includes("youtube-nocookie.com") && !origin.includes("youtube.com")) {
+        return;
+      }
+
+      let data: unknown;
+      try {
+        data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      } catch {
+        return;
+      }
+
+      if (
+        data !== null &&
+        typeof data === "object" &&
+        (data as Record<string, unknown>).event === "infoDelivery"
+      ) {
+        const info = (data as Record<string, unknown>).info;
+        if (
+          info !== null &&
+          typeof info === "object" &&
+          typeof (info as Record<string, unknown>).currentTime === "number"
+        ) {
+          const currentTime = (info as Record<string, unknown>).currentTime as number;
+          const vid = currentVideoIdRef.current;
+          if (vid) {
+            setVideoProgress(vid, currentTime);
+          }
+        }
+      }
+    }
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
   // Collapse the expanded overlay on Escape.
   useEffect(() => {
     if (!expanded) return;
@@ -123,6 +189,21 @@ export function ReferenceVideoPanel({
   useEffect(() => {
     setExpanded(false);
   }, [sectionId]);
+
+  /**
+   * Sends the YouTube embed handshake so it begins streaming infoDelivery
+   * events. Must be called each time an iframe mounts (onLoad).
+   */
+  function handleIframeLoad(e: React.SyntheticEvent<HTMLIFrameElement>) {
+    try {
+      e.currentTarget.contentWindow?.postMessage(
+        JSON.stringify({ event: "listening", id: 1, channel: "widget" }),
+        "https://www.youtube-nocookie.com",
+      );
+    } catch {
+      // fail-soft: postMessage may throw in some sandboxed environments
+    }
+  }
 
   if (!video) {
     // D-06: feature fully hidden when no key is configured (or check not yet resolved).
@@ -243,6 +324,10 @@ export function ReferenceVideoPanel({
     setVideo(prev);
   }
 
+  // Read the resume position once per render so expand/collapse/remount all
+  // pick up the latest stored time.
+  const startSeconds = getVideoProgress(video.videoId);
+
   return (
     <section
       data-testid="reference-video-panel"
@@ -304,21 +389,21 @@ export function ReferenceVideoPanel({
           When expanded, the player is PORTALED to document.body (below) so the
           fixed overlay escapes the lesson content's stacking/overflow context —
           a `fixed` overlay nested this deep in the prose was being trapped and
-          never showed. Only one of the two players is mounted at a time, so
-          there is a single iframe (no double audio); toggling expand remounts
-          the player, so the video restarts on expand — an accepted trade for a
-          reliable overlay across every ancestor. */}
+          never showed. On expand/collapse the iframe remounts; it uses
+          start=<lastKnownSeconds> from the video-progress store so playback
+          resumes rather than restarting from 0. */}
       {!expanded && (
         <div data-testid="reference-video-player" data-expanded="false" className="w-full">
           <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
             <iframe
               key={`${sectionId}-${video.videoId}`}
-              src={`https://www.youtube-nocookie.com/embed/${video.videoId}`}
+              src={nocookieEmbedSrc(video.videoId, startSeconds)}
               title={video.title}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture"
               allowFullScreen
               className="absolute inset-0 h-full w-full border-0"
               loading="lazy"
+              onLoad={handleIframeLoad}
             />
           </div>
         </div>
@@ -351,12 +436,13 @@ export function ReferenceVideoPanel({
               <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
                 <iframe
                   key={`expanded-${sectionId}-${video.videoId}`}
-                  src={`https://www.youtube-nocookie.com/embed/${video.videoId}`}
+                  src={nocookieEmbedSrc(video.videoId, startSeconds)}
                   title={video.title}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture"
                   allowFullScreen
                   className="absolute inset-0 h-full w-full border-0"
                   loading="lazy"
+                  onLoad={handleIframeLoad}
                 />
               </div>
             </div>

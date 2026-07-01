@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ── Mock Tauri IPC ─────────────────────────────────────────────────────────────
@@ -15,6 +15,17 @@ vi.mock("@/lib/tauri-commands", () => ({
   getLessonVideos: mockGetLessonVideos,
   refreshLessonVideos: mockRefreshLessonVideos,
   isYoutubeKeyConfigured: mockIsYoutubeKeyConfigured,
+}));
+
+// ── Mock video-progress store for playback-continuity tests ──────────────────
+// The store is a module-level singleton; mocking lets tests seed stored
+// values and assert what gets written, without cross-test contamination.
+const mockGetVideoProgress = vi.hoisted(() => vi.fn().mockReturnValue(0));
+const mockSetVideoProgress = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/video-progress", () => ({
+  getVideoProgress: mockGetVideoProgress,
+  setVideoProgress: mockSetVideoProgress,
 }));
 
 import { ReferenceVideoPanel } from "../ReferenceVideoPanel";
@@ -589,6 +600,218 @@ describe("ReferenceVideoPanel (acceptance)", () => {
       );
       // Button should still be present (now labelled "Try again")
       expect(screen.getByTestId("ref-vid-generate-btn")).toBeInTheDocument();
+    });
+  });
+
+  // ── Playback continuity ──────────────────────────────────────────────────────
+  // Tests for the resume-from-last-position feature added in Phase 11.
+  // These tests mock the video-progress store (vi.mock above) so they are
+  // deterministic and don't depend on localStorage or module singleton state.
+
+  describe("playback continuity (resume position)", () => {
+    beforeEach(() => {
+      // Reset to default (0) before each continuity test
+      mockGetVideoProgress.mockReturnValue(0);
+      mockSetVideoProgress.mockClear();
+    });
+
+    afterEach(() => {
+      mockGetVideoProgress.mockReturnValue(0);
+    });
+
+    it("vp_iframe_src_has_enablejsapi — inline iframe src includes enablejsapi=1", async () => {
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        const iframe = screen.getByTitle(VIDEO_A.title) as HTMLIFrameElement;
+        expect(iframe.src).toContain("enablejsapi=1");
+      });
+    });
+
+    it("vp_iframe_src_has_start_zero — inline iframe src includes start=0 when no progress stored", async () => {
+      mockGetVideoProgress.mockReturnValue(0);
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        const iframe = screen.getByTitle(VIDEO_A.title) as HTMLIFrameElement;
+        expect(iframe.src).toContain("start=0");
+      });
+    });
+
+    it("vp_iframe_src_uses_stored_progress — inline iframe src uses start= from stored progress", async () => {
+      mockGetVideoProgress.mockReturnValue(137);
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        const iframe = screen.getByTitle(VIDEO_A.title) as HTMLIFrameElement;
+        // start= must be floored integer of the stored seconds
+        expect(iframe.src).toContain("start=137");
+        // getVideoProgress must have been called with the correct videoId
+        expect(mockGetVideoProgress).toHaveBeenCalledWith(VIDEO_A.videoId);
+      });
+    });
+
+    it("vp_iframe_src_has_origin — inline iframe src includes origin= param", async () => {
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        const iframe = screen.getByTitle(VIDEO_A.title) as HTMLIFrameElement;
+        expect(iframe.src).toContain("origin=");
+      });
+    });
+
+    it("vp_message_event_stores_current_time — infoDelivery message from nocookie origin updates the store", async () => {
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        expect(screen.getByTitle(VIDEO_A.title)).toBeInTheDocument();
+      });
+
+      // Simulate YouTube infoDelivery postMessage event
+      act(() => {
+        const event = new MessageEvent("message", {
+          origin: "https://www.youtube-nocookie.com",
+          data: JSON.stringify({
+            event: "infoDelivery",
+            info: { currentTime: 42 },
+          }),
+        });
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetVideoProgress).toHaveBeenCalledWith(VIDEO_A.videoId, 42);
+    });
+
+    it("vp_message_event_ignores_non_youtube_origin — message from unrelated origin does NOT update store", async () => {
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        expect(screen.getByTitle(VIDEO_A.title)).toBeInTheDocument();
+      });
+
+      act(() => {
+        const event = new MessageEvent("message", {
+          origin: "https://evil.com",
+          data: JSON.stringify({
+            event: "infoDelivery",
+            info: { currentTime: 99 },
+          }),
+        });
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetVideoProgress).not.toHaveBeenCalled();
+    });
+
+    it("vp_message_event_ignores_non_infodelivery — non-infoDelivery events do NOT update store", async () => {
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        expect(screen.getByTitle(VIDEO_A.title)).toBeInTheDocument();
+      });
+
+      act(() => {
+        const event = new MessageEvent("message", {
+          origin: "https://www.youtube-nocookie.com",
+          data: JSON.stringify({
+            event: "onStateChange",
+            info: 1,
+          }),
+        });
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetVideoProgress).not.toHaveBeenCalled();
+    });
+
+    it("vp_message_event_ignores_missing_currentTime — infoDelivery without currentTime does NOT update store", async () => {
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        expect(screen.getByTitle(VIDEO_A.title)).toBeInTheDocument();
+      });
+
+      act(() => {
+        const event = new MessageEvent("message", {
+          origin: "https://www.youtube-nocookie.com",
+          data: JSON.stringify({
+            event: "infoDelivery",
+            info: { duration: 300 }, // no currentTime
+          }),
+        });
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetVideoProgress).not.toHaveBeenCalled();
+    });
+
+    it("vp_expanded_iframe_src_uses_stored_progress — expanded overlay iframe also uses start= from stored progress", async () => {
+      mockGetVideoProgress.mockReturnValue(55);
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("reference-video-player")).toHaveAttribute(
+          "data-expanded",
+          "false",
+        );
+      });
+
+      // Click Expand to portal the player
+      fireEvent.click(screen.getByLabelText("Expand reference video"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("reference-video-player")).toHaveAttribute(
+          "data-expanded",
+          "true",
+        );
+      });
+
+      const iframe = screen.getByTitle(VIDEO_A.title) as HTMLIFrameElement;
+      expect(iframe.src).toContain("start=55");
+      expect(iframe.src).toContain("enablejsapi=1");
+    });
+
+    it("vp_listener_cleaned_up_on_unmount — message listener does not fire after component unmounts", async () => {
+      mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+      const { unmount } = render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+      await waitFor(() => {
+        expect(screen.getByTitle(VIDEO_A.title)).toBeInTheDocument();
+      });
+
+      unmount();
+
+      act(() => {
+        const event = new MessageEvent("message", {
+          origin: "https://www.youtube-nocookie.com",
+          data: JSON.stringify({
+            event: "infoDelivery",
+            info: { currentTime: 200 },
+          }),
+        });
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetVideoProgress).not.toHaveBeenCalled();
     });
   });
 });
