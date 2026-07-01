@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ModuleBlock, SectionPayload } from "@/types/learning";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { useLearningStore } from "@/stores/useLearningStore";
+import { splitMarkdownForInsert } from "@/lib/markdown-split";
 
 interface SectionBlockProps {
   block: ModuleBlock;
@@ -17,6 +18,14 @@ interface SectionBlockProps {
    * and the prop has zero behavioral effect.
    */
   onComplete?: () => void;
+  /**
+   * Phase 11 — optional mid-content slot (e.g. ReferenceVideoPanel).
+   * When present, the markdown is split at a natural paragraph boundary near
+   * the 50% character midpoint and the slot is injected between the two halves.
+   * When the content is too short to split sensibly, the slot renders AFTER
+   * the full content. When absent, no change to existing render behavior.
+   */
+  referenceSlot?: React.ReactNode;
 }
 
 /**
@@ -36,6 +45,7 @@ export function SectionBlock({
   priorCompletedCount = 0,
   onMarkComplete,
   onComplete,
+  referenceSlot,
 }: SectionBlockProps) {
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
@@ -122,7 +132,18 @@ export function SectionBlock({
         </header>
       )}
 
-      <MarkdownRenderer content={payload.markdown} />
+      {referenceSlot ? (() => {
+        const [firstHalf, secondHalf] = splitMarkdownForInsert(payload.markdown);
+        return (
+          <>
+            <MarkdownRenderer content={firstHalf} />
+            {referenceSlot}
+            {secondHalf ? <MarkdownRenderer content={secondHalf} /> : null}
+          </>
+        );
+      })() : (
+        <MarkdownRenderer content={payload.markdown} />
+      )}
 
       {/* Phase 10-02 (D-05): the standalone ModuleView "Mark complete" button
           was relocated to the lesson footer in ModuleView. SectionBlock only

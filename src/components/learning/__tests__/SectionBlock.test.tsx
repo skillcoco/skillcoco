@@ -153,4 +153,49 @@ describe("SectionBlock Phase 3 scaffolds", () => {
     await user.click(screen.getByTestId("mark-complete-btn"));
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
+
+  // ── Phase 11: referenceSlot mid-content injection ─────────────────────────
+
+  it("section_reference_slot_absent_renders_single_markdown — no referenceSlot: full markdown rendered as one block", () => {
+    const block = makeBlock('{"markdown":"# Title\\n\\nParagraph one.\\n\\nParagraph two.","word_count":5}');
+    render(<SectionBlock block={block} />);
+
+    // Both paragraphs present
+    expect(screen.getByText(/paragraph one/i)).toBeInTheDocument();
+    expect(screen.getByText(/paragraph two/i)).toBeInTheDocument();
+    // No reference slot placeholder
+    expect(screen.queryByTestId("reference-slot")).not.toBeInTheDocument();
+  });
+
+  it("section_reference_slot_present_injects_between_two_renderers — referenceSlot renders between first and second half", () => {
+    // Generate enough markdown to be worth splitting (> 400 chars, > 1 block)
+    const longMarkdown = [
+      "Introduction paragraph that provides enough context to make splitting worthwhile.",
+      "Background paragraph that adds more content and pushes past the character threshold.",
+      "## Key Section",
+      "This paragraph follows the heading and sits in what will be the second half.",
+      "Final paragraph that wraps up the section with a concluding thought.",
+    ].join("\\n\\n");
+
+    const block = makeBlock(`{"markdown":"${longMarkdown}","word_count":50}`);
+    const slot = <div data-testid="reference-slot">VIDEO HERE</div>;
+
+    render(<SectionBlock block={block} referenceSlot={slot} />);
+
+    expect(screen.getByTestId("reference-slot")).toBeInTheDocument();
+    expect(screen.getByText("VIDEO HERE")).toBeInTheDocument();
+  });
+
+  it("section_reference_slot_short_content_slot_after_content — short markdown: slot renders after (not between) the content", () => {
+    // Short content — split helper returns ("content", "") so slot goes after
+    const block = makeBlock('{"markdown":"# Hello\\n\\nBrief.","word_count":2}');
+    const slot = <div data-testid="reference-slot">VIDEO HERE</div>;
+
+    render(<SectionBlock block={block} referenceSlot={slot} />);
+
+    // Content still present
+    expect(screen.getByRole("heading", { name: /hello/i })).toBeInTheDocument();
+    // Slot still rendered (after content)
+    expect(screen.getByTestId("reference-slot")).toBeInTheDocument();
+  });
 });

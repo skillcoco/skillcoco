@@ -15,6 +15,11 @@ interface BlockRendererProps {
   priorCompletedCount?: number;
   /** Reserved for future use — passed through to QuizBlock when Quiz support lands (03-06). */
   trackId?: string;
+  /**
+   * Phase 11 — optional mid-content slot forwarded to SectionBlock only.
+   * Other block types (quiz, text, callout, lab) ignore this prop.
+   */
+  referenceSlot?: React.ReactNode;
 }
 
 /**
@@ -39,6 +44,7 @@ export function BlockRenderer({
   lessonIndex,
   priorCompletedCount,
   trackId,
+  referenceSlot,
 }: BlockRendererProps) {
   const regenerateLesson = useLearningStore((s) => s.regenerateLesson);
 
@@ -85,6 +91,7 @@ export function BlockRenderer({
           moduleId={moduleId}
           lessonIndex={lessonIndex}
           priorCompletedCount={priorCompletedCount}
+          referenceSlot={referenceSlot}
         />
       );
     case "text":
