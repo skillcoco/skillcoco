@@ -44,8 +44,14 @@ fn extract_json(text: &str) -> Result<serde_json::Value, String> {
     };
 
     let stripped = candidate.unwrap_or(trimmed);
-    serde_json::from_str(stripped)
-        .map_err(|e| format!("{} (first 200 chars: {:?})", e, &trimmed[..trimmed.len().min(200)]))
+    serde_json::from_str(stripped).map_err(|e| {
+        // Build the preview on a CHAR boundary. `trimmed.len()` is a BYTE
+        // length; slicing `&trimmed[..200]` panics when byte 200 lands mid
+        // multibyte codepoint (common with emoji, smart quotes, accented text,
+        // CJK). Taking 200 chars can never split a codepoint. (CR-02)
+        let preview: String = trimmed.chars().take(200).collect();
+        format!("{} (first 200 chars: {:?})", e, preview)
+    })
 }
 
 // get_ai_config and update_ai_config removed in FIX-03.
@@ -1054,6 +1060,32 @@ mod tests {
         // An object whose values contain arrays must not be mistaken for an array.
         let v = extract_json("```json\n{\"items\":[{\"x\":1}]}\n```").unwrap();
         assert!(v.is_object(), "outer object with inner arrays must parse as object; got {:?}", v);
+    }
+
+    #[test]
+    fn extract_json_does_not_panic_on_multibyte_boundary_in_error_path() {
+        // CR-02: the parse-failure error preview must be built on a char
+        // boundary. A non-JSON multibyte string > 200 chars where byte index
+        // 200 falls MID-codepoint would panic if sliced by byte index.
+        //
+        // "é" is 2 bytes (U+00E9). Prefix with a single ASCII "x" so every "é"
+        // starts at an ODD byte offset; byte index 200 then falls MID-codepoint.
+        // ("x" + 150×"é" = 1 + 300 = 301 bytes; byte 200 = "x"(1) + 199 → inside
+        // the 100th "é".) This is NOT valid JSON, so extract_json errors —
+        // exercising the char-boundary preview in the error path.
+        let multibyte = format!("x{}", "é".repeat(150));
+        assert!(multibyte.len() >= 300, "fixture must exceed 200 bytes");
+        assert!(!multibyte.is_char_boundary(200), "byte 200 must be mid-codepoint");
+
+        // Must return Err (not panic) — fail-soft contract (D-09).
+        let result = extract_json(&multibyte);
+        assert!(result.is_err(), "non-JSON multibyte input must return Err, not panic");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("first 200 chars"),
+            "error message must include the char-boundary preview; got: {}",
+            msg
+        );
     }
 
     #[test]
