@@ -91,6 +91,8 @@ export function Settings() {
   const [ollamaStatus, setOllamaStatus] = useState<
     "idle" | "checking" | "connected" | "error"
   >("idle");
+  const [ollamaCheckError, setOllamaCheckError] = useState<string | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [oauthPending, setOauthPending] = useState<string | null>(null);
   const [setupTokenExpanded, setSetupTokenExpanded] = useState(false);
   const [setupTokenInput, setSetupTokenInput] = useState("");
@@ -293,12 +295,23 @@ export function Settings() {
     }
   }
 
-  function handleOllamaCheck() {
+  async function handleOllamaCheck() {
     setOllamaStatus("checking");
-    // TODO: Invoke a Tauri command to test the Ollama connection
-    setTimeout(() => {
-      setOllamaStatus("connected");
-    }, 1200);
+    setOllamaCheckError(null);
+    setOllamaModels([]);
+    try {
+      const result = await commands.checkOllamaConnection(ollamaHost);
+      if (result.connected) {
+        setOllamaStatus("connected");
+        setOllamaModels(result.models);
+      } else {
+        setOllamaStatus("error");
+        setOllamaCheckError(result.error ?? "Ollama not reachable");
+      }
+    } catch (err) {
+      setOllamaStatus("error");
+      setOllamaCheckError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleSaveSetupToken() {
@@ -793,6 +806,25 @@ export function Settings() {
                       : "Test Connection"}
               </button>
             </div>
+            {/* Connection status feedback */}
+            {ollamaStatus === "connected" && (
+              <p
+                data-testid="ollama-connected-msg"
+                className="mt-1.5 text-xs text-emerald-500"
+              >
+                {ollamaModels.length > 0
+                  ? `Connected — ${ollamaModels.length} model${ollamaModels.length === 1 ? "" : "s"} available`
+                  : "Connected"}
+              </p>
+            )}
+            {ollamaStatus === "error" && ollamaCheckError && (
+              <p
+                data-testid="ollama-error-msg"
+                className="mt-1.5 text-xs text-destructive"
+              >
+                {ollamaCheckError}
+              </p>
+            )}
           </div>
 
           {/* Model */}

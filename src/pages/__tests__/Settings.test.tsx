@@ -30,6 +30,8 @@ vi.mock("@/lib/tauri-commands", () => ({
   listTopicPacksAdmin: vi.fn().mockResolvedValue([]),
   setTopicPackEnabled: vi.fn(),
   reloadSkills: vi.fn(),
+  // WR-06 — Ollama connection probe (replaces fake setTimeout stub)
+  checkOllamaConnection: vi.fn(),
 }));
 
 import {
@@ -41,6 +43,7 @@ import {
   getAuthStatus,
   setDailyChallengeEnabled,
   updateProfile,
+  checkOllamaConnection,
 } from "@/lib/tauri-commands";
 
 // Mock useAppStore to prevent Tauri state dependencies
@@ -307,6 +310,121 @@ describe("Settings", () => {
       expect(
         await screen.findByText(/db locked/i),
       ).toBeInTheDocument();
+    });
+  });
+
+  // ── WR-06: Ollama connection probe (replaces fake setTimeout stub) ──────────
+  //
+  // Verifies that handleOllamaCheck calls checkOllamaConnection and correctly
+  // maps connected:true → "connected" status and connected:false → "error"
+  // status with the returned error message shown in the UI.
+  describe("Ollama connection probe (WR-06)", () => {
+    it("shows 'Connected' and model count when probe returns connected:true", async () => {
+      vi.mocked(checkOllamaConnection).mockResolvedValue({
+        connected: true,
+        models: ["llama3", "mistral"],
+        version: "0.3.0",
+        error: null,
+      });
+
+      renderSettings();
+      // Wait for the page to load
+      await waitFor(() => {
+        expect(screen.getAllByText(/ollama/i).length).toBeGreaterThan(0);
+      });
+
+      // Click the "Test Connection" button
+      const testBtn = screen.getByRole("button", { name: /test connection/i });
+      await userEvent.click(testBtn);
+
+      // The IPC should have been called with the current host value
+      await waitFor(() => {
+        expect(checkOllamaConnection).toHaveBeenCalledWith("http://localhost:11434");
+      });
+
+      // Connected status message should appear
+      await waitFor(() => {
+        expect(screen.getByTestId("ollama-connected-msg")).toBeInTheDocument();
+      });
+      expect(screen.getByTestId("ollama-connected-msg")).toHaveTextContent(
+        /connected.*2 models/i,
+      );
+    });
+
+    it("shows error message when probe returns connected:false", async () => {
+      vi.mocked(checkOllamaConnection).mockResolvedValue({
+        connected: false,
+        models: [],
+        version: null,
+        error: "Ollama not reachable at http://localhost:11434: connection refused",
+      });
+
+      renderSettings();
+      await waitFor(() => {
+        expect(screen.getAllByText(/ollama/i).length).toBeGreaterThan(0);
+      });
+
+      const testBtn = screen.getByRole("button", { name: /test connection/i });
+      await userEvent.click(testBtn);
+
+      await waitFor(() => {
+        expect(checkOllamaConnection).toHaveBeenCalled();
+      });
+
+      // Error message should be surfaced in the UI
+      await waitFor(() => {
+        expect(screen.getByTestId("ollama-error-msg")).toBeInTheDocument();
+      });
+      expect(screen.getByTestId("ollama-error-msg")).toHaveTextContent(
+        /connection refused/i,
+      );
+    });
+
+    it("shows error message when IPC throws unexpectedly", async () => {
+      vi.mocked(checkOllamaConnection).mockRejectedValue(
+        new Error("IPC bridge failure"),
+      );
+
+      renderSettings();
+      await waitFor(() => {
+        expect(screen.getAllByText(/ollama/i).length).toBeGreaterThan(0);
+      });
+
+      const testBtn = screen.getByRole("button", { name: /test connection/i });
+      await userEvent.click(testBtn);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("ollama-error-msg")).toBeInTheDocument();
+      });
+      expect(screen.getByTestId("ollama-error-msg")).toHaveTextContent(
+        /ipc bridge failure/i,
+      );
+    });
+
+    it("does not show 'Connected' when probe returns connected:false", async () => {
+      vi.mocked(checkOllamaConnection).mockResolvedValue({
+        connected: false,
+        models: [],
+        version: null,
+        error: "Timeout",
+      });
+
+      renderSettings();
+      await waitFor(() => {
+        expect(screen.getAllByText(/ollama/i).length).toBeGreaterThan(0);
+      });
+
+      const testBtn = screen.getByRole("button", { name: /test connection/i });
+      await userEvent.click(testBtn);
+
+      await waitFor(() => {
+        expect(checkOllamaConnection).toHaveBeenCalled();
+      });
+
+      // Verify no connected message appears
+      await waitFor(() => {
+        expect(screen.queryByTestId("ollama-connected-msg")).not.toBeInTheDocument();
+      });
     });
   });
 

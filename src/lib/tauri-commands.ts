@@ -484,6 +484,31 @@ export async function fingerprintFromPublicPem(
   });
 }
 
+// ── Ollama connection probe ──────────────────────────────────────────────────
+//
+// WR-06: replaces the fake setTimeout stub in Settings.tsx.
+// Calls `check_ollama_connection` which probes GET {base}/api/tags with a
+// 3 s timeout and no redirect-following. Returns connected:false + error message
+// for any unreachable / invalid-scheme / non-200 case. NEVER throws for the
+// normal "not reachable" path.
+
+export interface OllamaConnectionStatus {
+  connected: boolean;
+  models: string[];
+  version?: string | null;
+  error?: string | null;
+}
+
+/// Probe Ollama at `baseUrl` (or stored config / default if omitted).
+/// Always resolves — never rejects for the "not reachable" case.
+export async function checkOllamaConnection(
+  baseUrl?: string,
+): Promise<OllamaConnectionStatus> {
+  return invoke("check_ollama_connection", {
+    baseUrl: baseUrl ?? null,
+  });
+}
+
 // ── Phase 11 — Video-Enriched Lessons IPC wrappers (acceptance revision) ──
 //
 // Both wrappers invoke the Rust commands registered in

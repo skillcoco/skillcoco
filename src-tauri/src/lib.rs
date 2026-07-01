@@ -246,6 +246,7 @@ pub fn run() {
             auth::commands::set_active_provider,
             auth::commands::logout_provider,
             auth::commands::detect_system_providers,
+            auth::commands::check_ollama_connection,
             auth::oauth::start_oauth_login,
             auth::oauth::check_oauth_status,
             auth::oauth::save_setup_token,
