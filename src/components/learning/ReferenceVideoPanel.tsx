@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { getLessonVideos, isYoutubeKeyConfigured, refreshLessonVideos } from "@/lib/tauri-commands";
 import type { LessonVideo } from "@/types/videos";
 import { RefreshCw, Maximize2, Search, X, Shuffle, Undo2 } from "lucide-react";
@@ -299,52 +300,69 @@ export function ReferenceVideoPanel({
         </div>
       </div>
 
-      {/* Backdrop for the expanded overlay (sibling of the player so the iframe
-          node stays put and does not remount when expanding). */}
-      {expanded && (
-        <div
-          data-testid="reference-video-backdrop"
-          onClick={() => setExpanded(false)}
-          className="fixed inset-0 z-40 bg-black/80"
-          aria-hidden="true"
-        />
+      {/* Collapsed: inline 16:9 player at full content width.
+          When expanded, the player is PORTALED to document.body (below) so the
+          fixed overlay escapes the lesson content's stacking/overflow context —
+          a `fixed` overlay nested this deep in the prose was being trapped and
+          never showed. Only one of the two players is mounted at a time, so
+          there is a single iframe (no double audio); toggling expand remounts
+          the player, so the video restarts on expand — an accepted trade for a
+          reliable overlay across every ancestor. */}
+      {!expanded && (
+        <div data-testid="reference-video-player" data-expanded="false" className="w-full">
+          <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
+            <iframe
+              key={`${sectionId}-${video.videoId}`}
+              src={`https://www.youtube-nocookie.com/embed/${video.videoId}`}
+              title={video.title}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="absolute inset-0 h-full w-full border-0"
+              loading="lazy"
+            />
+          </div>
+        </div>
       )}
 
-      {/* Player wrapper. Collapsed: inline 16:9 box at full content width.
-          Expanded: fixed, centered, large. The iframe below is the SAME node in
-          both states (only these classes change) → no remount, no restart. */}
-      <div
-        data-testid="reference-video-player"
-        data-expanded={expanded ? "true" : "false"}
-        className={
-          expanded
-            ? "fixed left-1/2 top-1/2 z-50 w-[min(92vw,1200px)] -translate-x-1/2 -translate-y-1/2"
-            : "w-full"
-        }
-      >
-        {expanded && (
-          <button
-            type="button"
+      {expanded &&
+        createPortal(
+          <div
+            data-testid="reference-video-overlay"
             onClick={() => setExpanded(false)}
-            aria-label="Close expanded video"
-            className="absolute -top-10 right-0 z-10 flex items-center gap-1.5 rounded-md bg-black/60 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-black/80"
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4"
           >
-            <X size={14} />
-            Close
-          </button>
+            <div
+              data-testid="reference-video-player"
+              data-expanded="true"
+              className="relative w-[min(92vw,1200px)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                aria-label="Close expanded video"
+                className="absolute -top-10 right-0 z-10 flex items-center gap-1.5 rounded-md bg-black/60 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-black/80"
+              >
+                <X size={14} />
+                Close
+              </button>
+              <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
+                <iframe
+                  key={`expanded-${sectionId}-${video.videoId}`}
+                  src={`https://www.youtube-nocookie.com/embed/${video.videoId}`}
+                  title={video.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="absolute inset-0 h-full w-full border-0"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          </div>,
+          document.body,
         )}
-        <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
-          <iframe
-            key={`${sectionId}-${video.videoId}`}
-            src={`https://www.youtube-nocookie.com/embed/${video.videoId}`}
-            title={video.title}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture"
-            allowFullScreen
-            className="absolute inset-0 h-full w-full border-0"
-            loading="lazy"
-          />
-        </div>
-      </div>
 
       <div className="px-4 py-3">
         <p className="text-xs font-medium text-foreground line-clamp-2">{video.title}</p>
