@@ -29,6 +29,18 @@ const LONG_WITH_HEADING_MIDPOINT = [
   "Final paragraph that wraps up and summarises the key points covered throughout this particular lesson section.",
 ].join("\n\n");
 
+// Content where a heading sits at block index 1, immediately after a short
+// opening line. The naive algorithm's heading-preference pulls the split back
+// to index 1, placing the video after ONLY the tiny opening block — almost at
+// the very top of the lesson (WR-04). The intro floor must push it forward.
+const SHORT_OPENER_THEN_EARLY_HEADING = [
+  "A short opener.", // tiny opening line (~15 chars) — block 0
+  "## Getting Started", // heading at block index 1 → naive splitAt = 1
+  "This is a substantial body paragraph that carries the real weight of the lesson and goes on for a while to build character count past the threshold.",
+  "Another substantial body paragraph continuing the explanation with plenty of additional detail so the total content is comfortably above the minimum.",
+  "A third weighty paragraph rounding out the body of the lesson with even more supporting text to exercise the intro-floor logic properly here now.",
+].join("\n\n");
+
 describe("splitMarkdownForInsert", () => {
   // ── Short content: no split ──────────────────────────────────────────────
 
@@ -91,6 +103,31 @@ describe("splitMarkdownForInsert", () => {
     const [first, second] = splitMarkdownForInsert(LONG_WITH_HEADING_MIDPOINT);
     expect(first.length).toBeGreaterThan(0);
     expect(second.length).toBeGreaterThan(0);
+  });
+
+  // ── WR-04: minimum intro floor (not after a single short block) ──────────
+
+  it("wr04_min_intro_floor — heading preference does not place the video after a single tiny block", () => {
+    const [first, second] = splitMarkdownForInsert(SHORT_OPENER_THEN_EARLY_HEADING);
+    // Both halves must still be non-empty.
+    expect(first.length).toBeGreaterThan(0);
+    expect(second.length).toBeGreaterThan(0);
+    // The naive algorithm would split at the block-1 heading, leaving the first
+    // half as just "A short opener." (~15 chars). The intro floor must push the
+    // split forward so the first half clears ~15% of the total.
+    expect(first.length).toBeGreaterThanOrEqual(
+      SHORT_OPENER_THEN_EARLY_HEADING.length * 0.15,
+    );
+    // The video must NOT sit immediately after the single tiny opener.
+    expect(first).not.toBe("A short opener.");
+  });
+
+  it("wr04_still_early_not_midpoint — long no-heading content still splits early, above the floor", () => {
+    const [first] = splitMarkdownForInsert(LONG_NO_HEADINGS);
+    expect(first.length).toBeGreaterThanOrEqual(
+      LONG_NO_HEADINGS.length * 0.15,
+    );
+    expect(first.length).toBeLessThan(LONG_NO_HEADINGS.length * 0.4);
   });
 
   // ── Near-empty content edge case ─────────────────────────────────────────
