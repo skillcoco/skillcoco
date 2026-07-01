@@ -103,6 +103,158 @@ describe("ReferenceVideoPanel (acceptance)", () => {
     expect(screen.queryByText(VIDEO_B.title)).not.toBeInTheDocument();
   });
 
+  // ── Replace button ────────────────────────────────────────────────────────
+
+  it("ref_vid_replace_calls_refresh_with_exclude_id — Replace calls refreshLessonVideos with current video id", async () => {
+    const VIDEO_B = { ...VIDEO_A, videoId: "vidB", title: "Different Pod Video" };
+    mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+    mockRefreshLessonVideos.mockResolvedValue(makeResult([VIDEO_B]));
+
+    const user = userEvent.setup();
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
+    });
+
+    const replaceBtn = screen.getByRole("button", { name: /replace with a different video/i });
+    await user.click(replaceBtn);
+
+    await waitFor(() => {
+      expect(mockRefreshLessonVideos).toHaveBeenCalledWith(
+        DEFAULT_PROPS.moduleId,
+        DEFAULT_PROPS.sectionId,
+        DEFAULT_PROPS.sectionTitle,
+        VIDEO_A.videoId, // current video id passed as excludeVideoId
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_B.title)).toBeInTheDocument();
+    });
+  });
+
+  it("ref_vid_replace_empty_keeps_current — Replace returning empty keeps current video", async () => {
+    mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+    mockRefreshLessonVideos.mockResolvedValue(makeResult([])); // no replacement found
+
+    const user = userEvent.setup();
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
+    });
+
+    const replaceBtn = screen.getByRole("button", { name: /replace with a different video/i });
+    await user.click(replaceBtn);
+
+    await waitFor(() => {
+      expect(mockRefreshLessonVideos).toHaveBeenCalledTimes(1);
+    });
+
+    // Current video should still be shown (not blanked)
+    expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
+  });
+
+  // ── Back button ───────────────────────────────────────────────────────────
+
+  it("ref_vid_back_absent_initially — Back button not visible when history is empty", async () => {
+    mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("reference-video-panel")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole("button", { name: /go back to previous video/i })).toBeNull();
+  });
+
+  it("ref_vid_back_appears_after_replace — Back available after successful Replace", async () => {
+    const VIDEO_B = { ...VIDEO_A, videoId: "vidB", title: "Different Pod Video" };
+    mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+    mockRefreshLessonVideos.mockResolvedValue(makeResult([VIDEO_B]));
+
+    const user = userEvent.setup();
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /replace with a different video/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_B.title)).toBeInTheDocument();
+    });
+
+    // Back should now be available
+    expect(screen.getByRole("button", { name: /go back to previous video/i })).toBeInTheDocument();
+  });
+
+  it("ref_vid_back_restores_previous_no_ipc — Back restores previous video instantly without IPC call", async () => {
+    const VIDEO_B = { ...VIDEO_A, videoId: "vidB", title: "Different Pod Video" };
+    mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+    mockRefreshLessonVideos.mockResolvedValue(makeResult([VIDEO_B]));
+
+    const user = userEvent.setup();
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
+    });
+
+    // Replace current video
+    await user.click(screen.getByRole("button", { name: /replace with a different video/i }));
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_B.title)).toBeInTheDocument();
+    });
+
+    const callCountBeforeBack = mockRefreshLessonVideos.mock.calls.length;
+
+    // Click Back
+    await user.click(screen.getByRole("button", { name: /go back to previous video/i }));
+
+    // Should restore VIDEO_A without any new IPC calls
+    expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
+    expect(mockRefreshLessonVideos.mock.calls.length).toBe(callCountBeforeBack);
+  });
+
+  it("ref_vid_back_absent_after_section_change — history cleared on section change", async () => {
+    const VIDEO_B = { ...VIDEO_A, videoId: "vidB", title: "Different Pod Video" };
+    const VIDEO_C = { ...VIDEO_A, videoId: "vidC", title: "Service Mesh Deep Dive" };
+    mockGetLessonVideos
+      .mockResolvedValueOnce(makeResult([VIDEO_A])) // sec-1
+      .mockResolvedValueOnce(makeResult([VIDEO_C])); // sec-2
+    mockRefreshLessonVideos.mockResolvedValue(makeResult([VIDEO_B]));
+
+    const user = userEvent.setup();
+    const { rerender } = render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
+    });
+
+    // Replace to build up history
+    await user.click(screen.getByRole("button", { name: /replace with a different video/i }));
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_B.title)).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /go back to previous video/i })).toBeInTheDocument();
+
+    // Navigate to a new section
+    rerender(
+      <ReferenceVideoPanel moduleId="mod-1" sectionId="sec-2" sectionTitle="Service Mesh" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_C.title)).toBeInTheDocument();
+    });
+
+    // Back should be gone (history cleared)
+    expect(screen.queryByRole("button", { name: /go back to previous video/i })).toBeNull();
+  });
+
   // ── "Reference" / "optional" framing copy ────────────────────────────────
 
   it("ref_vid_reference_heading — renders 'Reference video' heading", async () => {

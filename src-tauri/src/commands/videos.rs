@@ -161,6 +161,11 @@ pub fn parse_iso8601_duration(duration: &str) -> u32 {
 /// markdown excerpt, apply the relevance threshold, and return the single best
 /// result (VIDEO_RESULT_LIMIT = 1).
 ///
+/// `exclude_video_id`: when `Some(id)`, that video is dropped after sorting and
+/// before `truncate(1)` so the returned replacement is a different pick. If
+/// excluding leaves nothing, returns `Ok(vec![])` — the frontend keeps the
+/// current video on empty results (fail-soft D-09).
+///
 /// Returns `Err` only for unrecoverable internal errors (HTTP failure, JSON
 /// parse failure). The caller converts `Err` to an empty list (D-09).
 ///
@@ -171,6 +176,7 @@ pub async fn fetch_and_rank_videos(
     section_title: &str,
     section_markdown_excerpt: &str,
     llm_auth: &AuthState,
+    exclude_video_id: Option<&str>,
 ) -> Result<Vec<LessonVideo>, String> {
     let query = build_search_query(section_title, &[]);
 
@@ -453,6 +459,12 @@ pub async fn fetch_and_rank_videos(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    // Drop the excluded video (for "Replace" — returns a different pick).
+    // Applied AFTER sorting so we still take the best remaining candidate.
+    if let Some(ex_id) = exclude_video_id {
+        scored.retain(|v| v.video_id != ex_id);
+    }
+
     // Single best pick (acceptance: VIDEO_RESULT_LIMIT = 1).
     scored.truncate(VIDEO_RESULT_LIMIT);
 
@@ -470,8 +482,10 @@ pub async fn fetch_and_rank_videos(
 /// `fetch_and_rank_videos`, persists results to `lesson_videos` keyed by
 /// (module_id, section_id), and returns them.
 ///
-/// Called by both `get_lesson_videos` (cache miss) and `refresh_lesson_videos`
-/// (after clearing rows). Returns empty list on any error (D-09).
+/// `exclude_video_id`: forwarded to `fetch_and_rank_videos` for "Replace" flow.
+/// Called by both `get_lesson_videos` (cache miss, exclude=None) and
+/// `refresh_lesson_videos` (after clearing rows). Returns empty list on any
+/// error (D-09).
 async fn discover_and_persist(
     module_id: &str,
     section_id: &str,
@@ -479,6 +493,7 @@ async fn discover_and_persist(
     youtube_key: &str,
     db_arc: &std::sync::Arc<std::sync::Mutex<crate::db::Database>>,
     auth: &AuthState,
+    exclude_video_id: Option<&str>,
 ) -> Vec<LessonVideo> {
     // Load section markdown excerpt inside a lock scope, drop before await.
     // Fail-soft: if the section row is missing, fall back to title only.
@@ -514,6 +529,7 @@ async fn discover_and_persist(
         section_title,
         &markdown_excerpt,
         auth,
+        exclude_video_id,
     )
     .await
     {
@@ -630,6 +646,7 @@ pub async fn get_lesson_videos(
                 &yt_key,
                 &db_arc,
                 auth.inner(),
+                None, // cache miss: no exclusion
             )
             .await;
             Ok(LessonVideosResult { videos })
@@ -641,11 +658,16 @@ pub async fn get_lesson_videos(
 ///
 /// Deletes cached rows for this (module_id, section_id) only, then runs fresh
 /// discovery. Returns the same empty-on-error contract as `get_lesson_videos`.
+///
+/// `exclude_video_id`: optional camelCase field. When `Some(id)`, the ranking
+/// step drops that video so the returned replacement is a different pick
+/// ("Replace" UX). Callers that do not need exclusion pass `None` / `null`.
 #[tauri::command]
 pub async fn refresh_lesson_videos(
     module_id: String,
     section_id: String,
     section_title: String,
+    exclude_video_id: Option<String>,
     state: State<'_, AppState>,
     auth: State<'_, AuthState>,
 ) -> Result<LessonVideosResult, String> {
@@ -694,6 +716,7 @@ pub async fn refresh_lesson_videos(
         &key,
         &db_arc,
         auth.inner(),
+        exclude_video_id.as_deref(),
     )
     .await;
     Ok(LessonVideosResult { videos })
@@ -1205,6 +1228,192 @@ mod tests {
             RELEVANCE_THRESHOLD
         );
         assert_eq!(RELEVANCE_THRESHOLD, 0.7, "RELEVANCE_THRESHOLD raised to 0.7 for single-pick quality bar");
+    }
+
+    // ── excludeVideoId ("Replace") tests ─────────────────────────────────────
+
+    /// When exclude_video_id is set and multiple candidates exist, the best
+    /// non-excluded video is returned (not the excluded one).
+    #[test]
+    fn exclude_video_id_skips_excluded_and_returns_next_best() {
+        let candidates = vec![
+            SearchCandidate {
+                video_id: "v1".to_string(),
+                title: "Best video".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+                duration_secs: 300,
+                view_count: None,
+                like_count: None,
+            },
+            SearchCandidate {
+                video_id: "v2".to_string(),
+                title: "Second best".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+                duration_secs: 300,
+                view_count: None,
+                like_count: None,
+            },
+        ];
+        let ranked_raw = vec![
+            RankedVideo { video_id: "v1".to_string(), relevance_score: 0.85 },
+            RankedVideo { video_id: "v2".to_string(), relevance_score: 0.75 },
+        ];
+        let meta_map: std::collections::HashMap<String, &SearchCandidate> =
+            candidates.iter().map(|c| (c.video_id.clone(), c)).collect();
+
+        let exclude_video_id: Option<&str> = Some("v1");
+
+        let mut scored: Vec<LessonVideo> = ranked_raw
+            .into_iter()
+            .map(|r| RankedVideo {
+                video_id: r.video_id,
+                relevance_score: (r.relevance_score as f32).clamp(0.0, 1.0) as f64,
+            })
+            .filter(|r| r.relevance_score as f32 >= RELEVANCE_THRESHOLD)
+            .filter_map(|r| {
+                meta_map.get(&r.video_id).map(|c| LessonVideo {
+                    video_id: c.video_id.clone(),
+                    title: c.title.clone(),
+                    channel_title: c.channel_title.clone(),
+                    relevance_score: r.relevance_score as f32,
+                })
+            })
+            .collect();
+        scored.sort_by(|a, b| {
+            b.relevance_score
+                .partial_cmp(&a.relevance_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Apply exclude after sort, before truncate.
+        if let Some(ex) = exclude_video_id {
+            scored.retain(|v| v.video_id != ex);
+        }
+        scored.truncate(VIDEO_RESULT_LIMIT);
+
+        assert_eq!(scored.len(), 1, "one video returned after excluding the best");
+        assert_eq!(scored[0].video_id, "v2", "excluded v1 → returns next-best v2");
+    }
+
+    /// When exclude_video_id is the only candidate above the threshold,
+    /// excluding it yields an empty result (panel keeps current video on frontend).
+    #[test]
+    fn exclude_video_id_only_candidate_returns_empty() {
+        let candidates = vec![SearchCandidate {
+            video_id: "v1".to_string(),
+            title: "Only video".to_string(),
+            channel_title: "Ch".to_string(),
+            description: "d".to_string(),
+            duration_secs: 300,
+            view_count: None,
+            like_count: None,
+        }];
+        let ranked_raw = vec![RankedVideo {
+            video_id: "v1".to_string(),
+            relevance_score: 0.85,
+        }];
+        let meta_map: std::collections::HashMap<String, &SearchCandidate> =
+            candidates.iter().map(|c| (c.video_id.clone(), c)).collect();
+
+        let exclude_video_id: Option<&str> = Some("v1");
+
+        let mut scored: Vec<LessonVideo> = ranked_raw
+            .into_iter()
+            .map(|r| RankedVideo {
+                video_id: r.video_id,
+                relevance_score: (r.relevance_score as f32).clamp(0.0, 1.0) as f64,
+            })
+            .filter(|r| r.relevance_score as f32 >= RELEVANCE_THRESHOLD)
+            .filter_map(|r| {
+                meta_map.get(&r.video_id).map(|c| LessonVideo {
+                    video_id: c.video_id.clone(),
+                    title: c.title.clone(),
+                    channel_title: c.channel_title.clone(),
+                    relevance_score: r.relevance_score as f32,
+                })
+            })
+            .collect();
+        scored.sort_by(|a, b| {
+            b.relevance_score
+                .partial_cmp(&a.relevance_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if let Some(ex) = exclude_video_id {
+            scored.retain(|v| v.video_id != ex);
+        }
+        scored.truncate(VIDEO_RESULT_LIMIT);
+
+        assert!(
+            scored.is_empty(),
+            "excluding the only qualifying candidate → empty (frontend keeps current video)"
+        );
+    }
+
+    /// When exclude_video_id is None (normal Refresh, no exclusion), the best
+    /// video is returned as usual.
+    #[test]
+    fn exclude_video_id_none_returns_best_as_usual() {
+        let candidates = vec![
+            SearchCandidate {
+                video_id: "v1".to_string(),
+                title: "Best".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+                duration_secs: 300,
+                view_count: None,
+                like_count: None,
+            },
+            SearchCandidate {
+                video_id: "v2".to_string(),
+                title: "Second".to_string(),
+                channel_title: "Ch".to_string(),
+                description: "d".to_string(),
+                duration_secs: 300,
+                view_count: None,
+                like_count: None,
+            },
+        ];
+        let ranked_raw = vec![
+            RankedVideo { video_id: "v1".to_string(), relevance_score: 0.90 },
+            RankedVideo { video_id: "v2".to_string(), relevance_score: 0.80 },
+        ];
+        let meta_map: std::collections::HashMap<String, &SearchCandidate> =
+            candidates.iter().map(|c| (c.video_id.clone(), c)).collect();
+
+        let exclude_video_id: Option<&str> = None;
+
+        let mut scored: Vec<LessonVideo> = ranked_raw
+            .into_iter()
+            .map(|r| RankedVideo {
+                video_id: r.video_id,
+                relevance_score: (r.relevance_score as f32).clamp(0.0, 1.0) as f64,
+            })
+            .filter(|r| r.relevance_score as f32 >= RELEVANCE_THRESHOLD)
+            .filter_map(|r| {
+                meta_map.get(&r.video_id).map(|c| LessonVideo {
+                    video_id: c.video_id.clone(),
+                    title: c.title.clone(),
+                    channel_title: c.channel_title.clone(),
+                    relevance_score: r.relevance_score as f32,
+                })
+            })
+            .collect();
+        scored.sort_by(|a, b| {
+            b.relevance_score
+                .partial_cmp(&a.relevance_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if let Some(ex) = exclude_video_id {
+            scored.retain(|v| v.video_id != ex);
+        }
+        scored.truncate(VIDEO_RESULT_LIMIT);
+
+        assert_eq!(scored.len(), 1, "no exclusion → best video returned");
+        assert_eq!(scored[0].video_id, "v1", "best video (v1) returned when no exclusion");
     }
 
     // ── WR-02: unique constraint prevents duplicate section+video rows ────────
