@@ -39,6 +39,7 @@ pub mod v010_cert_simplification;
 pub mod v011_track_browse_mode;
 pub mod v012_lesson_videos;
 pub mod v013_section_video_granularity;
+pub mod v014_drop_module_video_unique_index;
 
 /// A single schema migration.
 pub struct Migration {
@@ -115,6 +116,11 @@ fn registered_migrations() -> Vec<Migration> {
             version: v013_section_video_granularity::VERSION,
             name: v013_section_video_granularity::NAME,
             up: v013_section_video_granularity::up,
+        },
+        Migration {
+            version: v014_drop_module_video_unique_index::VERSION,
+            name: v014_drop_module_video_unique_index::NAME,
+            up: v014_drop_module_video_unique_index::up,
         },
     ]
 }
@@ -205,7 +211,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 13, "After all migrations, version must be 13 (v1..v12 + v13 section_video_granularity)");
+        assert_eq!(version, 14, "After all migrations, version must be 14 (v1..v13 + v14 drop_module_video_unique_index)");
     }
 
     #[test]
@@ -222,7 +228,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 13, "Idempotent: exactly thirteen rows in schema_migrations (v1..v12 + v13 section_video_granularity)");
+        assert_eq!(count, 14, "Idempotent: exactly fourteen rows in schema_migrations (v1..v13 + v14 drop_module_video_unique_index)");
     }
 
     #[test]
@@ -246,9 +252,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3..v13.
-        // Max is now 13.
-        assert_eq!(version, 13, "current_version returns MAX(version) = 13 after v3..v13 applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3..v14.
+        // Max is now 14.
+        assert_eq!(version, 14, "current_version returns MAX(version) = 14 after v3..v14 applied");
     }
 
     #[test]

@@ -96,7 +96,7 @@ mod tests {
         let conn = fresh_conn();
         apply_migrations(&conn).expect("migrations must succeed");
         let version = current_version(&conn).unwrap();
-        assert_eq!(version, 13, "current_version must be 13 after v013 is applied");
+        assert_eq!(version, 14, "current_version must be 14 after all migrations (through v014) are applied");
     }
 
     #[test]
@@ -115,8 +115,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            count, 13,
-            "exactly 13 rows in schema_migrations after idempotent double-apply"
+            count, 14,
+            "exactly 14 rows in schema_migrations after idempotent double-apply"
         );
     }
 
