@@ -1,22 +1,30 @@
 /**
- * splitMarkdownForInsert — split a markdown string into two halves at a natural
- * paragraph boundary near the 50% character midpoint.
+ * splitMarkdownForInsert — split a markdown string into two halves near the
+ * EARLY portion of the content (~first fifth) at a natural paragraph boundary,
+ * so an injected element (the reference video) sits one or two scrolls down
+ * from the lesson start rather than buried in the exact middle.
  *
  * Algorithm:
  * 1. Split the markdown into "blocks" (double-newline-separated chunks).
  * 2. If the content is too short (< 400 chars or < 2 blocks) return
  *    [content, ""] — caller renders the slot AFTER the full content.
  * 3. Walk blocks accumulating character lengths. Find the block index where
- *    cumulative length first reaches or exceeds 50% of the total.
+ *    cumulative length first reaches or exceeds ~20% of the total (the "early"
+ *    target) — after the opening intro but well before the middle.
  * 4. If a Markdown heading block (starting with "#") exists within a ±2 block
- *    window around that midpoint, prefer to split immediately BEFORE that
- *    heading so the video lands at a natural section break.
+ *    window around that point, prefer to split immediately BEFORE that heading
+ *    so the video lands at a natural section break.
  * 5. Guarantee both halves are non-empty: if the split index is 0 or equals
  *    the last block, fall back to [content, ""].
  *
  * Returns [firstHalf, secondHalf].  secondHalf may be an empty string when
  * the content is not worth splitting.
  */
+// Fraction of the lesson content to keep ABOVE the injected reference video.
+// ~0.2 places it one or two scrolls from the lesson start (past the intro,
+// well before the middle) so learners find it early without hunting.
+const EARLY_SPLIT_FRACTION = 0.2;
+
 export function splitMarkdownForInsert(markdown: string): [string, string] {
   if (!markdown) return ["", ""];
 
@@ -27,8 +35,9 @@ export function splitMarkdownForInsert(markdown: string): [string, string] {
   const tooShort = totalChars < 400 || blocks.length < 2;
   if (tooShort) return [markdown, ""];
 
-  // Find the block index where cumulative char count reaches ~50%.
-  const target = totalChars / 2;
+  // Find the block index where cumulative char count reaches the EARLY target
+  // (~20%), so the video sits high up rather than at the 50% midpoint.
+  const target = totalChars * EARLY_SPLIT_FRACTION;
   let cumulative = 0;
   let midIndex = 0; // index of the FIRST block in the second half
 

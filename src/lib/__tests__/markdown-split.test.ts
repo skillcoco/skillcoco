@@ -53,6 +53,14 @@ describe("splitMarkdownForInsert", () => {
     expect(second.length).toBeGreaterThan(0);
   });
 
+  it("early_split_placement — first half is well under half the content (video sits high up, ~1-2 scrolls)", () => {
+    const [first] = splitMarkdownForInsert(LONG_NO_HEADINGS);
+    // The video should land early — the content above it must be clearly less
+    // than half of the total (guards against regressing to a 50% midpoint).
+    expect(first.length).toBeLessThan(LONG_NO_HEADINGS.length * 0.4);
+    expect(first.length).toBeGreaterThan(0);
+  });
+
   it("long_content_reconstructs — joining the two halves (double newline) reconstructs the original", () => {
     const [first, second] = splitMarkdownForInsert(LONG_NO_HEADINGS);
     const reconstructed = second ? `${first}\n\n${second}` : first;
