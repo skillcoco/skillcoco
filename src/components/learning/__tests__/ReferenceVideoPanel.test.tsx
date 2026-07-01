@@ -9,10 +9,12 @@ import userEvent from "@testing-library/user-event";
 
 const mockGetLessonVideos = vi.hoisted(() => vi.fn());
 const mockRefreshLessonVideos = vi.hoisted(() => vi.fn());
+const mockIsYoutubeKeyConfigured = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/tauri-commands", () => ({
   getLessonVideos: mockGetLessonVideos,
   refreshLessonVideos: mockRefreshLessonVideos,
+  isYoutubeKeyConfigured: mockIsYoutubeKeyConfigured,
 }));
 
 import { ReferenceVideoPanel } from "../ReferenceVideoPanel";
@@ -42,6 +44,9 @@ const DEFAULT_PROPS = {
 describe("ReferenceVideoPanel (acceptance)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: no YouTube key configured — preserves D-06 behaviour for all
+    // existing tests that do not explicitly set up the key mock.
+    mockIsYoutubeKeyConfigured.mockResolvedValue(false);
   });
 
   // ── D-09: null-on-empty ────────────────────────────────────────────────────
@@ -504,6 +509,86 @@ describe("ReferenceVideoPanel (acceptance)", () => {
     await waitFor(() => {
       const iframe = screen.getByTitle(VIDEO_A.title) as HTMLIFrameElement;
       expect(iframe.getAttribute("allow")).toContain("fullscreen");
+    });
+  });
+
+  // ── Empty-state generate affordance (key configured) ─────────────────────
+
+  it("ref_vid_empty_key_configured_shows_generate_btn — when key is configured and backend returns empty, generate button is visible", async () => {
+    mockIsYoutubeKeyConfigured.mockResolvedValue(true);
+    mockGetLessonVideos.mockResolvedValue(makeResult([]));
+
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("ref-vid-generate-btn")).toBeInTheDocument();
+    });
+  });
+
+  it("ref_vid_empty_no_key_returns_null — when key is NOT configured and backend returns empty, component returns null (D-06)", async () => {
+    mockIsYoutubeKeyConfigured.mockResolvedValue(false);
+    mockGetLessonVideos.mockResolvedValue(makeResult([]));
+
+    const { container } = render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(mockGetLessonVideos).toHaveBeenCalledTimes(1);
+      expect(mockIsYoutubeKeyConfigured).toHaveBeenCalledTimes(1);
+    });
+
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByTestId("ref-vid-generate-btn")).toBeNull();
+  });
+
+  it("ref_vid_generate_btn_click_returns_video — clicking generate button calls refreshLessonVideos and shows returned video", async () => {
+    mockIsYoutubeKeyConfigured.mockResolvedValue(true);
+    mockGetLessonVideos.mockResolvedValue(makeResult([]));
+    mockRefreshLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+    const user = userEvent.setup();
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("ref-vid-generate-btn")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("ref-vid-generate-btn"));
+
+    await waitFor(() => {
+      expect(mockRefreshLessonVideos).toHaveBeenCalledWith(
+        DEFAULT_PROPS.moduleId,
+        DEFAULT_PROPS.sectionId,
+        DEFAULT_PROPS.sectionTitle,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(VIDEO_A.title)).toBeInTheDocument();
+      expect(screen.getByText(VIDEO_A.channelTitle)).toBeInTheDocument();
+    });
+  });
+
+  it("ref_vid_generate_btn_empty_result_shows_retry — clicking generate when discovery returns empty shows 'No relevant video found' copy and retry button", async () => {
+    mockIsYoutubeKeyConfigured.mockResolvedValue(true);
+    mockGetLessonVideos.mockResolvedValue(makeResult([]));
+    mockRefreshLessonVideos.mockResolvedValue(makeResult([]));
+
+    const user = userEvent.setup();
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("ref-vid-generate-btn")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("ref-vid-generate-btn"));
+
+    await waitFor(() => {
+      // Should show the "no relevant video found" copy
+      expect(screen.getByTestId("reference-video-panel")).toHaveTextContent(
+        /no relevant video found/i,
+      );
+      // Button should still be present (now labelled "Try again")
+      expect(screen.getByTestId("ref-vid-generate-btn")).toBeInTheDocument();
     });
   });
 });

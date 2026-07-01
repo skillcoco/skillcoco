@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { getLessonVideos, refreshLessonVideos } from "@/lib/tauri-commands";
+import { getLessonVideos, isYoutubeKeyConfigured, refreshLessonVideos } from "@/lib/tauri-commands";
 import type { LessonVideo } from "@/types/videos";
-import { RefreshCw, Maximize2, X, Shuffle, Undo2 } from "lucide-react";
+import { RefreshCw, Maximize2, Search, X, Shuffle, Undo2 } from "lucide-react";
 
 /**
  * Phase 11 (acceptance revision) — Single Reference Video
@@ -52,6 +52,12 @@ export function ReferenceVideoPanel({
   const [refreshing, setRefreshing] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // null = key-check not yet resolved; true/false = resolved result.
+  const [keyConfigured, setKeyConfigured] = useState<boolean | null>(null);
+  // generating: true while the manual "Find a reference video" call is in flight.
+  const [generating, setGenerating] = useState(false);
+  // noneFound: true after a manual generate that returned an empty list.
+  const [noneFound, setNoneFound] = useState(false);
 
   const cancelledRef = useRef(false);
   // Tracks the section this panel is CURRENTLY showing. Async Replace/Refresh
@@ -63,6 +69,8 @@ export function ReferenceVideoPanel({
   useEffect(() => {
     setVideo(null);
     setHistory([]);
+    setGenerating(false);
+    setNoneFound(false);
     let cancelled = false;
     cancelledRef.current = false;
     currentSectionRef.current = sectionId;
@@ -76,6 +84,21 @@ export function ReferenceVideoPanel({
       .catch(() => {
         if (!cancelled) {
           setVideo(null);
+        }
+      });
+
+    // Check whether a YouTube key is stored so we can decide whether to show
+    // the manual empty-state affordance (D-06: hidden when no key configured).
+    isYoutubeKeyConfigured()
+      .then((configured) => {
+        if (!cancelled) {
+          setKeyConfigured(configured);
+        }
+      })
+      .catch(() => {
+        // Fail-soft: treat IPC errors as "not configured".
+        if (!cancelled) {
+          setKeyConfigured(false);
         }
       });
 
@@ -101,7 +124,65 @@ export function ReferenceVideoPanel({
   }, [sectionId]);
 
   if (!video) {
-    return null;
+    // D-06: feature fully hidden when no key is configured (or check not yet resolved).
+    if (keyConfigured !== true) {
+      return null;
+    }
+
+    // Key is configured — show a compact empty-state card with a generate button.
+    async function handleGenerate() {
+      if (generating) return;
+      const issuedForSection = sectionId;
+      setGenerating(true);
+      try {
+        const result = await refreshLessonVideos(moduleId, sectionId, sectionTitle);
+        if (!cancelledRef.current && currentSectionRef.current === issuedForSection) {
+          if (result.videos[0]) {
+            setNoneFound(false);
+            setVideo(result.videos[0]);
+          } else {
+            setNoneFound(true);
+          }
+        }
+      } catch {
+        // Fail-soft: keep the empty state on error.
+      } finally {
+        if (!cancelledRef.current && currentSectionRef.current === issuedForSection) {
+          setGenerating(false);
+        }
+      }
+    }
+
+    const emptyMsg = noneFound
+      ? "No relevant video found for this lesson."
+      : "No reference video loaded for this lesson yet.";
+
+    const btnLabel = noneFound ? "Try again" : "Find a reference video";
+
+    return (
+      <section
+        data-testid="reference-video-panel"
+        className="not-prose my-8 w-full overflow-hidden rounded-lg border border-border bg-secondary/20"
+      >
+        <div className="px-4 pt-4 pb-4">
+          <h2 className="text-sm font-semibold text-foreground">Reference video</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
+            Optional — an extra resource for this lesson.
+          </p>
+          <p className="mt-3 text-xs text-muted-foreground">{emptyMsg}</p>
+          <button
+            type="button"
+            data-testid="ref-vid-generate-btn"
+            onClick={handleGenerate}
+            disabled={generating}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
+          >
+            <Search size={12} className={generating ? "animate-spin" : ""} />
+            {btnLabel}
+          </button>
+        </div>
+      </section>
+    );
   }
 
   async function handleRefresh() {
