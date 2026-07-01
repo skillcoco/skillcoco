@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // ── Mock Tauri IPC ─────────────────────────────────────────────────────────────
@@ -121,11 +121,48 @@ describe("ReferenceVideoPanel (acceptance)", () => {
     render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
 
     await waitFor(() => {
-      // The framing copy must mention "Optional" and "primary"
+      // The framing copy must mark the video as an optional extra resource.
       const panel = screen.getByTestId("reference-video-panel");
       expect(panel.textContent).toMatch(/optional/i);
-      expect(panel.textContent).toMatch(/primary/i);
+      expect(panel.textContent).toMatch(/extra resource/i);
     });
+  });
+
+  it("ref_vid_full_width — panel is not width-capped (spans content width)", async () => {
+    mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      const panel = screen.getByTestId("reference-video-panel");
+      expect(panel.className).toContain("w-full");
+      expect(panel.className).not.toContain("max-w-lg");
+    });
+  });
+
+  it("ref_vid_expand_toggle — Expand blows player to overlay; Close/Escape collapses", async () => {
+    mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+
+    render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("reference-video-player")).toHaveAttribute(
+        "data-expanded",
+        "false",
+      );
+    });
+
+    fireEvent.click(screen.getByLabelText("Expand reference video"));
+    expect(screen.getByTestId("reference-video-player")).toHaveAttribute(
+      "data-expanded",
+      "true",
+    );
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByTestId("reference-video-player")).toHaveAttribute(
+      "data-expanded",
+      "false",
+    );
   });
 
   // ── youtube-nocookie embed (D-07) ─────────────────────────────────────────
