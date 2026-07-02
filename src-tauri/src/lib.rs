@@ -298,8 +298,9 @@ pub fn run() {
             // Video-enriched lessons (Phase 11 — Plan 02)
             commands::videos::get_lesson_videos,
             commands::videos::refresh_lesson_videos,
-            // Course import/export (Phase 12 — Plan 02)
+            // Course import/export (Phase 12 — Plans 02 & 03)
             commands::course_io::export_course,
+            commands::course_io::import_course,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
