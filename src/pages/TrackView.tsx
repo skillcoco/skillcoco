@@ -13,6 +13,8 @@ import {
   Target,
   ChevronRight,
   X,
+  Download,
+  Loader2,
 } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
@@ -23,8 +25,37 @@ import {
   pickNextModule,
   computeCertGate,
 } from "@/lib/learning-path";
-import { listTopicPacksAdmin } from "@/lib/tauri-commands";
+import { listTopicPacksAdmin, exportCourse } from "@/lib/tauri-commands";
+import { save } from "@tauri-apps/plugin-dialog";
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
+
+// ── D-10 UI mirror: exportability predicate ──
+//
+// Mirrors the Rust is_course_exportable allowlist in course_io.rs (Plan 02).
+// Fail-closed: unknown / empty / null → not exportable.
+// This is UX-only — the backend export_course command is the authoritative gate
+// (T-12-17). A hidden/disabled button does not substitute for the backend check.
+//
+// Exportable classes:
+//   "topic-pack:<id>"   — content derived from a topic pack
+//   "imported:<id>"     — previously imported course (D-11 preserves class)
+//   <non-empty string>  — AI-generated model name (bare model name, not a reserved prefix)
+//
+// Non-exportable reserved prefixes: "licensed:", "curated:", ""
+
+const RESERVED_NON_EXPORTABLE_PREFIXES = ["licensed:", "curated:"] as const;
+
+export function isCourseExportable(generatedByModel?: string | null): boolean {
+  if (!generatedByModel || generatedByModel.trim() === "") return false;
+  const model = generatedByModel.trim();
+  if (model.startsWith("topic-pack:")) return true;
+  if (model.startsWith("imported:")) return true;
+  for (const prefix of RESERVED_NON_EXPORTABLE_PREFIXES) {
+    if (model.startsWith(prefix)) return false;
+  }
+  // Non-empty string that is not a reserved prefix → AI-generated model name
+  return true;
+}
 
 // ── Track color helper (matches TrackCard pattern) ──
 
@@ -334,6 +365,12 @@ export function TrackView() {
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // ── Phase 12 Plan 04 — Export course state ──
+  const [exportStatus, setExportStatus] = useState<
+    "idle" | "exporting" | "success" | "error"
+  >("idle");
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+
   // Phase 5 Plan 05 (Wave 4) — R1 / T-05-17 mitigation: when this track was
   // generated from a Topic Pack AND the pack's source is "skill" (i.e.
   // user-authored), surface a "From skill: <id>" attribution badge so
@@ -453,6 +490,36 @@ export function TrackView() {
     return browseMode === "free" ? true : status !== "locked";
   }
 
+  // ── Phase 12 Plan 04 — Export handler ──
+  //
+  // Opens the native save dialog, then calls the backend export_course command.
+  // The backend is the authoritative gate (D-10); the UI hides/disables the
+  // button for non-exportable courses as a UX convenience only (T-12-17).
+  async function handleExport() {
+    if (!trackId || !currentTrack) return;
+    setExportStatus("exporting");
+    setExportMessage(null);
+    try {
+      const savePath = await save({
+        filters: [{ name: "LearnForge Course", extensions: ["json"] }],
+        defaultPath: `${currentTrack.topic.replace(/[^a-z0-9]/gi, "_")}.json`,
+      });
+      if (!savePath) {
+        // User cancelled
+        setExportStatus("idle");
+        return;
+      }
+      const result = await exportCourse({ trackId, savePath });
+      setExportStatus("success");
+      setExportMessage(
+        `Saved to ${result.savedPath} (${result.moduleCount} modules, ${result.blockCount} blocks)`,
+      );
+    } catch (err) {
+      setExportStatus("error");
+      setExportMessage(String(err));
+    }
+  }
+
   // "Continue learning" CTA target: next actionable module (in_progress →
   // first available → none). When the path is fully complete we offer review
   // of the first module.
@@ -508,11 +575,38 @@ export function TrackView() {
               </p>
             )}
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-foreground">
-              {Math.round(currentTrack.progressPercent)}%
+          <div className="flex items-center gap-3">
+            {/* Phase 12 Plan 04 — Export course button (D-10 UI mirror).
+                Hidden when the course provenance is non-exportable (fail-closed).
+                The backend export_course command is the authoritative gate. */}
+            {isCourseExportable(currentPath?.generatedByModel) && (
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={exportStatus === "exporting"}
+                data-testid="export-course-button"
+                title="Export this course to a .json file"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {exportStatus === "exporting" ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <Download size={13} />
+                    Export course
+                  </>
+                )}
+              </button>
+            )}
+            <div className="text-right">
+              <div className="text-2xl font-bold text-foreground">
+                {Math.round(currentTrack.progressPercent)}%
+              </div>
+              <div className="text-xs text-muted-foreground">complete</div>
             </div>
-            <div className="text-xs text-muted-foreground">complete</div>
           </div>
         </div>
 
@@ -526,6 +620,16 @@ export function TrackView() {
             }}
           />
         </div>
+
+        {/* Phase 12 Plan 04 — Export feedback message */}
+        {exportMessage && exportStatus === "success" && (
+          <p className="text-xs text-green-600 dark:text-green-400">
+            {exportMessage}
+          </p>
+        )}
+        {exportMessage && exportStatus === "error" && (
+          <p className="text-xs text-destructive">{exportMessage}</p>
+        )}
 
         {/* Phase 10 Plan 03 — browse-mode toggle (D-01/D-02).
             Default: "linear" (sequential lock rules active).

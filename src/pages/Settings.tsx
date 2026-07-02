@@ -11,6 +11,7 @@ import { SettingsYouTubeSection } from "@/pages/SettingsYouTubeSection";
 // `docs/OSS-VS-STUDIO.md` §"Certification (Phase 6 — split)" and
 // `pro/src/features/components/settings/SettingsVerifyCertSection.tsx`.
 import { SettingsVerifyCertSection } from "@pro/components/settings/SettingsVerifyCertSection";
+import { SettingsCourseImportSection } from "@/pages/SettingsCourseImportSection";
 import {
   Shield,
   Key,
@@ -947,6 +948,9 @@ export function Settings() {
         onKeySaved={loadAuthStatus}
         onKeyRemoved={loadAuthStatus}
       />
+
+      {/* ── Course Import (Phase 12 Plan 04 — D-05/D-09) ── */}
+      <SettingsCourseImportSection />
 
       {/* ── Preferences ── */}
       <section className="space-y-4">
