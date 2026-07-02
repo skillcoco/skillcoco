@@ -5,7 +5,7 @@
 //! ## How to add a new migration
 //!
 //! 1. Create `src-tauri/src/db/migrations/vNNN_descriptive_name.rs`:
-//!    ```rust
+//!    ```text
 //!    use rusqlite::{Connection, Result};
 //!    pub fn up(_conn: &Connection) -> Result<()> {
 //!        conn.execute_batch("ALTER TABLE foo ADD COLUMN bar TEXT")?;
@@ -15,7 +15,7 @@
 //!    pub const VERSION: i32 = NNN;
 //!    ```
 //! 2. Register the migration in `registered_migrations()` in this file:
-//!    ```rust
+//!    ```text
 //!    Migration { version: vNNN_descriptive_name::VERSION, name: vNNN_descriptive_name::NAME, up: vNNN_descriptive_name::up },
 //!    ```
 //! 3. The runner picks it up on the next app launch. ALTER TABLE runs once — never again.
