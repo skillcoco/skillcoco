@@ -393,6 +393,45 @@ export async function setDailyChallengeEnabled(enabled: boolean): Promise<void> 
 // `@tauri-apps/plugin-fs::writeFile` (A7 lock — Tauri sandbox-enforced
 // path; no path traversal possible per T-06-11).
 
+// ── Phase 12 (Course Import/Export) — Plan 04 IPC wrappers ──
+//
+// Both wrappers follow the `{ request: T }` envelope per CONVENTIONS.md Q9.
+// Dialog usage: `save` for export (native save-as), `open` for import (native
+// file picker). Both are already available from @tauri-apps/plugin-dialog.
+// The backend is the authoritative gate for exportability (D-10) and provenance
+// laundering (D-11) — the UI hide/disable is UX convenience only (T-12-17).
+
+import { open } from "@tauri-apps/plugin-dialog";
+import type {
+  ExportCourseRequest,
+  ExportCourseResult,
+  ImportCourseRequest,
+  ImportCourseResult,
+} from "@/types/course-io";
+
+/// Export a learning track to a .json course file.
+/// The caller is responsible for obtaining `savePath` via the native save dialog
+/// (e.g. `import { save } from "@tauri-apps/plugin-dialog"`).
+/// Returns ExportCourseResult on success; rejects with an error string on failure
+/// (including "CourseNotExportable" if the backend gate fires — D-10).
+export async function exportCourse(
+  request: ExportCourseRequest,
+): Promise<ExportCourseResult> {
+  return invoke("export_course", { request });
+}
+
+/// Import a course file (.json) and create a new namespaced learning track.
+/// The caller is responsible for obtaining `filePath` via the native open dialog.
+/// Returns ImportCourseResult with the new trackId + counts + any warnings.
+/// The open dialog helper is re-exported here for use by the Settings import section.
+export { open as openFileDialog };
+
+export async function importCourse(
+  request: ImportCourseRequest,
+): Promise<ImportCourseResult> {
+  return invoke("import_course", { request });
+}
+
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import type {
