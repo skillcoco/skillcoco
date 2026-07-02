@@ -1072,6 +1072,68 @@ mod tests {
         );
     }
 
+    /// Real runtime tracks carry bare-UUID ids (do NOT match the authored slug
+    /// pattern) and the onboarding wizard's default `domain_module` "general"
+    /// (not in the authored enum). Because these files carry `exportVersion`,
+    /// the schema must relax the authored id/domain constraints — import
+    /// re-namespaces every id anyway (D-06), so the format gate has no safety
+    /// value here. Round-trip (D-05) must not reject real exported courses.
+    #[test]
+    fn exported_file_with_runtime_uuid_ids_and_general_domain_validates() {
+        let json = serde_json::json!({
+            "id": "7cfb3736-2f14-41df-9707-54939b863574",
+            "title": "Real Course",
+            "description": "A real AI-generated course",
+            "domain_module": "general",
+            "modules": [{
+                "id": "7a862c91-cf13-4160-a13f-e60d361fa833",
+                "title": "Module 1",
+                "description": "desc",
+                "objectives": ["learn"]
+            }],
+            "edges": [{
+                "from": "7a862c91-cf13-4160-a13f-e60d361fa833",
+                "to": "7a862c91-cf13-4160-a13f-e60d361fa833"
+            }],
+            "exportVersion": "1.0.0",
+            "exportedAt": "2026-07-01T00:00:00Z",
+            "exportedFrom": "imported:7cfb3736"
+        })
+        .to_string();
+
+        let r = learnforge_core::packs::loader::parse_and_validate(&json);
+        assert!(
+            r.is_ok(),
+            "exported course with bare-UUID ids + 'general' domain must validate (D-05); got: {:?}",
+            r
+        );
+    }
+
+    /// Strictness must be preserved for AUTHORED packs (no `exportVersion`):
+    /// a bare-UUID id and a non-enum domain must still be rejected.
+    #[test]
+    fn authored_pack_with_uuid_id_still_rejected() {
+        let json = serde_json::json!({
+            "id": "7cfb3736-2f14-41df-9707-54939b863574",
+            "title": "Bad Authored Pack",
+            "description": "no exportVersion => strict authored rules apply",
+            "domain_module": "general",
+            "modules": [{
+                "id": "mod-1",
+                "title": "M",
+                "description": "d",
+                "objectives": ["o"]
+            }]
+        })
+        .to_string();
+
+        let r = learnforge_core::packs::loader::parse_and_validate(&json);
+        assert!(
+            r.is_err(),
+            "authored pack (no exportVersion) with UUID id + 'general' domain must be rejected"
+        );
+    }
+
     // ── Video export ──────────────────────────────────────────────────────────
 
     #[test]

@@ -6,11 +6,35 @@
   "type": "object",
   "required": ["id", "title", "description", "domain_module", "modules"],
   "additionalProperties": true,
+  "allOf": [
+    {
+      "$comment": "Authored packs (no exportVersion) keep strict kebab-case ids + a curated domain enum. Exported courses carry exportVersion and bare-UUID runtime ids + the wizard-default 'general' domain; import re-namespaces every id (D-06), so the format gate has no safety value there and would break the D-05 round-trip. This conditional applies the strict authored constraints only when exportVersion is absent.",
+      "if": { "not": { "required": ["exportVersion"] } },
+      "then": {
+        "properties": {
+          "id": { "pattern": "^[a-z][a-z0-9-]{2,63}$" },
+          "domain_module": { "enum": ["programming", "devops", "cloud", "concepts", "data"] },
+          "modules": {
+            "items": { "properties": { "id": { "pattern": "^[a-z][a-z0-9-]{2,63}$" } } }
+          },
+          "edges": {
+            "items": {
+              "properties": {
+                "from": { "pattern": "^[a-z][a-z0-9-]{2,63}$" },
+                "to": { "pattern": "^[a-z][a-z0-9-]{2,63}$" }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{2,63}$",
-      "description": "Kebab-case identifier; matches directory name."
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Identifier. Authored packs: kebab-case matching directory name (enforced by the authored-only conditional). Exported courses: bare runtime id (re-namespaced on import)."
     },
     "title": {
       "type": "string",
@@ -24,7 +48,9 @@
     },
     "domain_module": {
       "type": "string",
-      "enum": ["programming", "devops", "cloud", "concepts", "data"]
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Authored packs are restricted to the curated enum via the authored-only conditional. Exported courses carry the runtime value verbatim (e.g. the wizard default 'general')."
     },
     "estimated_hours": {
       "type": "integer",
@@ -59,15 +85,17 @@
       "default": [],
       "items": { "$ref": "#/$defs/Edge" }
     },
-    "export_version": {
+    "exportVersion": {
       "type": "string",
-      "description": "Semver of the exporter that produced this file. Absent on authored packs."
+      "maxLength": 32,
+      "description": "Semver of the exporter that produced this file. Absent on authored packs; its presence relaxes the authored id/domain constraints (see top-level allOf)."
     },
-    "exported_at": {
+    "exportedAt": {
       "type": "string",
+      "maxLength": 64,
       "description": "RFC3339 timestamp. Absent on authored packs."
     },
-    "exported_from": {
+    "exportedFrom": {
       "type": "string",
       "maxLength": 200,
       "description": "Provenance marker, e.g. 'imported:my-export.json'. D-06."
@@ -105,7 +133,9 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Authored packs: kebab-case (enforced by the authored-only conditional). Exported courses: bare runtime module id (re-namespaced on import, D-06)."
         },
         "title": {
           "type": "string",
@@ -154,11 +184,15 @@
       "properties": {
         "from": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Module id reference. Authored packs: kebab-case (enforced by the authored-only conditional). Exported courses: bare runtime module id."
         },
         "to": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Module id reference. Authored packs: kebab-case (enforced by the authored-only conditional). Exported courses: bare runtime module id."
         }
       }
     },
