@@ -165,7 +165,7 @@ export function Dashboard() {
         <StatsCard
           label="Points"
           value={profile?.points ?? 0}
-          subtitle="quizzes + milestones"
+          subtitle="quizzes + modules + milestones"
           icon={<Award size={18} />}
           accentColor="hsl(var(--warning))"
         />
