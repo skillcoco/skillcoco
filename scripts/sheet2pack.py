@@ -182,14 +182,14 @@ def quiz_payload(questions, module_slug):
     return {"questions": qs} if qs else None
 
 
-def block(bid, module_id, ordering, block_type, payload):
+def block(bid, module_id, ordering, block_type, payload, params=None):
     return {
         "id": bid,
         "moduleId": module_id,
         "ordering": ordering,
         "blockType": block_type,
         "status": "ready",
-        "paramsJson": "{}",
+        "paramsJson": json.dumps(params or {}, ensure_ascii=False),
         "payloadJson": json.dumps(payload, ensure_ascii=False),
         "sourceAnchorsJson": "[]",
         "metadataJson": "{}",
@@ -231,7 +231,14 @@ def convert(xlsx_path, pack_id, title, domain, channel):
         mblocks = []
         for i, lesson in enumerate(m["lessons"]):
             bid = f"blk-{lesson['num']}"
-            mblocks.append(block(bid, slug, i, "section", {"markdown": lesson_markdown(lesson)}))
+            mblocks.append(
+                block(
+                    bid, slug, i, "section",
+                    {"markdown": lesson_markdown(lesson)},
+                    # LessonNavList reads params.lesson_title for the sidebar label
+                    params={"lesson_title": lesson["title"][:MAX_TITLE_LEN]},
+                )
+            )
             if lesson["video_id"]:
                 videos_map[bid] = [
                     {
