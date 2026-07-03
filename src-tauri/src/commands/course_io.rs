@@ -266,29 +266,35 @@ pub fn export_course_impl(
             })
             .collect();
 
-        // Videos: SELECT WHERE module_id=? AND status='ready' (D-04)
+        // Videos: SELECT WHERE module_id=? AND status='ready' (D-04).
+        // Keyed by SECTION_ID (matching the schema description and the frontend
+        // cache lookup, which queries with sectionId = block.id) — import writes
+        // section_id = the namespaced block id so the lookup hits post-import.
         let mut stmt = conn.prepare(
-            "SELECT video_id, title, channel_title, relevance_score \
+            "SELECT section_id, video_id, title, channel_title, relevance_score \
              FROM lesson_videos WHERE module_id = ?1 AND status = 'ready'",
         ).map_err(|e| ExportCourseError::Db(e.to_string()))?;
 
-        let module_videos: Vec<ExportedVideo> = stmt.query_map(
+        let section_videos: Vec<(String, ExportedVideo)> = stmt.query_map(
             rusqlite::params![module_id],
             |row| {
-                Ok(ExportedVideo {
-                    video_id: row.get(0)?,
-                    title: row.get(1)?,
-                    channel_title: row.get(2)?,
-                    relevance_score: row.get(3)?,
-                })
+                Ok((
+                    row.get::<_, String>(0)?,
+                    ExportedVideo {
+                        video_id: row.get(1)?,
+                        title: row.get(2)?,
+                        channel_title: row.get(3)?,
+                        relevance_score: row.get(4)?,
+                    },
+                ))
             },
         ).map_err(|e| ExportCourseError::Db(e.to_string()))?
         .filter_map(|r| r.ok())
         .collect();
 
         blocks_map.insert(module_id.clone(), ready_blocks);
-        if !module_videos.is_empty() {
-            videos_map.insert(module_id, module_videos);
+        for (section_id, video) in section_videos {
+            videos_map.entry(section_id).or_default().push(video);
         }
     }
 
@@ -646,8 +652,9 @@ fn import_course_txn(
                     )));
                 }
 
+                let new_block_id = format!("{}_{}", namespaced_module_id, eb.id);
                 let block = ModuleBlock {
-                    id: format!("{}_{}", namespaced_module_id, eb.id),
+                    id: new_block_id.clone(),
                     module_id: namespaced_module_id.clone(),
                     ordering: eb.ordering,
                     block_type: eb.block_type.clone(),
@@ -664,10 +671,35 @@ fn import_course_txn(
                 SqliteBlockStore(conn).insert(&block)
                     .map_err(|e| ImportCourseError::Db(format!("block insert failed: {}", e)))?;
                 block_count += 1;
+
+                // Rehydrate SECTION-keyed videos: the export map is keyed by
+                // section_id == original block id. Write section_id = the NEW
+                // (namespaced) block id so the frontend cache lookup
+                // (module_id, sectionId=block.id) hits after import.
+                if let Some(section_vids) = payload.videos.get(&eb.id) {
+                    for ev in section_vids {
+                        conn.execute(
+                            "INSERT OR IGNORE INTO lesson_videos \
+                             (id, module_id, section_id, video_id, title, channel_title, relevance_score, status) \
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'ready')",
+                            rusqlite::params![
+                                format!("lv-{}-{}", new_block_id, ev.video_id),
+                                namespaced_module_id,
+                                new_block_id,
+                                ev.video_id,
+                                ev.title,
+                                ev.channel_title,
+                                ev.relevance_score,
+                            ],
+                        )
+                        .map_err(|e| ImportCourseError::Db(format!("video insert failed: {}", e)))?;
+                    }
+                }
             }
         }
 
-        // Rehydrate videos: INSERT OR IGNORE (idempotent for re-imports of same video)
+        // Legacy fallback: videos keyed by MODULE id (pre-section-keying exports).
+        // section_id = namespaced module id (original Plan 03 behavior).
         if let Some(exported_videos) = payload.videos.get(orig_module_id) {
             for ev in exported_videos {
                 conn.execute(
@@ -677,7 +709,7 @@ fn import_course_txn(
                     rusqlite::params![
                         format!("lv-{}-{}", namespaced_module_id, ev.video_id),
                         namespaced_module_id,
-                        namespaced_module_id, // section_id = module_id for imported content
+                        namespaced_module_id, // section_id = module_id for legacy imports
                         ev.video_id,
                         ev.title,
                         ev.channel_title,
@@ -1157,6 +1189,128 @@ mod tests {
             json_str.contains("dQw4w9WgXcQ"),
             "ready video must appear in export (D-04)"
         );
+    }
+
+    // ── Video section-keying tests (post-12 fix) ─────────────────────────────
+    //
+    // The frontend fetches videos with sectionId = block.id (ModuleView.tsx),
+    // so the export map must be keyed by section_id (as the schema describes)
+    // and import must write section_id = the NAMESPACED BLOCK ID so the cache
+    // lookup (module_id, section_id) hits after import. Module-keyed entries
+    // (legacy exports) still import with section_id = module_id as fallback.
+
+    #[test]
+    fn export_keys_videos_by_section_id() {
+        let conn = fresh_conn();
+        let modules_json = r#"[{"id":"mod-1","title":"Mod 1","description":"d","objectives":["o"]}]"#;
+        let (track_id, path_id) = seed_track(&conn, "claude-3-5-sonnet", modules_json, "[]");
+        seed_module(&conn, "mod-1", &path_id);
+        insert_block(&conn, "blk-1", "mod-1", "ready", 0);
+        // video attached to a specific section (block), not the module
+        insert_video_for_section_io(&conn, "mod-1", "blk-1", "vidsec1");
+
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let save_path = tmp.path().to_str().unwrap().to_string();
+        export_course_impl(&conn, &track_id, &save_path).expect("export must succeed");
+
+        let payload: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&save_path).unwrap()).unwrap();
+        assert!(
+            payload["videos"]["blk-1"].is_array(),
+            "videos map must be keyed by section_id (blk-1); got keys: {:?}",
+            payload["videos"].as_object().map(|o| o.keys().collect::<Vec<_>>())
+        );
+        assert_eq!(payload["videos"]["blk-1"][0]["videoId"], "vidsec1");
+    }
+
+    /// Insert a ready lesson_video row with an explicit section_id.
+    fn insert_video_for_section_io(conn: &Connection, module_id: &str, section_id: &str, video_id: &str) {
+        conn.execute(
+            "INSERT INTO lesson_videos \
+             (id, module_id, section_id, video_id, title, channel_title, relevance_score, status) \
+             VALUES (?1, ?2, ?3, ?4, 'SV', 'SC', 0.9, 'ready')",
+            rusqlite::params![format!("lv-{}", video_id), module_id, section_id, video_id],
+        ).unwrap();
+    }
+
+    #[test]
+    fn import_section_keyed_videos_land_on_namespaced_block_id() {
+        let conn = fresh_conn_with_learner();
+        // payload with one module, one ready section block "blk-101", video keyed by that block id
+        let json = serde_json::json!({
+            "id": "sec-video-pack",
+            "title": "Sec Video Course",
+            "description": "d",
+            "domain_module": "devops",
+            "modules": [{"id":"m1","title":"M1","description":"d","objectives":["o"]}],
+            "edges": [],
+            "exportVersion": "1.0.0",
+            "exportedAt": "2026-07-03T00:00:00Z",
+            "exportedFrom": "imported:src",
+            "blocks": {"m1": [{
+                "id":"blk-101","moduleId":"m1","ordering":0,"blockType":"section",
+                "status":"ready","paramsJson":"{}","payloadJson":"{\"markdown\":\"hi\"}",
+                "sourceAnchorsJson":"[]","metadataJson":"{}","retryCount":0,
+                "createdAt":"2026-07-03T00:00:00Z","updatedAt":"2026-07-03T00:00:00Z"
+            }]},
+            "videos": {"blk-101": [{
+                "videoId":"ytabc","title":"T","channelTitle":"C","relevanceScore":1.0
+            }]}
+        }).to_string();
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), &json).unwrap();
+
+        let result = import_course_impl(&conn, tmp.path().to_str().unwrap())
+            .expect("import must succeed");
+
+        // the imported block id is {ns_module}_{blk-101}; the video row's section_id must equal it
+        let (blk_id, blk_module): (String, String) = conn.query_row(
+            "SELECT id, module_id FROM module_blocks WHERE id LIKE '%blk-101'",
+            [], |r| Ok((r.get(0)?, r.get(1)?)),
+        ).expect("imported block exists");
+        let (sec_id, vid_module): (String, String) = conn.query_row(
+            "SELECT section_id, module_id FROM lesson_videos WHERE video_id='ytabc'",
+            [], |r| Ok((r.get(0)?, r.get(1)?)),
+        ).expect("imported video exists");
+        assert_eq!(sec_id, blk_id, "video section_id must equal the namespaced block id so the frontend cache lookup hits");
+        assert_eq!(vid_module, blk_module);
+        assert_eq!(result.module_count, 1);
+    }
+
+    #[test]
+    fn import_module_keyed_videos_still_work_as_fallback() {
+        let conn = fresh_conn_with_learner();
+        let json = serde_json::json!({
+            "id": "legacy-video-pack",
+            "title": "Legacy Video Course",
+            "description": "d",
+            "domain_module": "devops",
+            "modules": [{"id":"m1","title":"M1","description":"d","objectives":["o"]}],
+            "edges": [],
+            "exportVersion": "1.0.0",
+            "exportedAt": "2026-07-03T00:00:00Z",
+            "exportedFrom": "imported:src",
+            "blocks": {"m1": [{
+                "id":"blk-1","moduleId":"m1","ordering":0,"blockType":"section",
+                "status":"ready","paramsJson":"{}","payloadJson":"{\"markdown\":\"hi\"}",
+                "sourceAnchorsJson":"[]","metadataJson":"{}","retryCount":0,
+                "createdAt":"2026-07-03T00:00:00Z","updatedAt":"2026-07-03T00:00:00Z"
+            }]},
+            "videos": {"m1": [{
+                "videoId":"ytlegacy","title":"T","channelTitle":"C","relevanceScore":0.8
+            }]}
+        }).to_string();
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), &json).unwrap();
+
+        import_course_impl(&conn, tmp.path().to_str().unwrap()).expect("import must succeed");
+
+        let sec_id: String = conn.query_row(
+            "SELECT section_id FROM lesson_videos WHERE video_id='ytlegacy'",
+            [], |r| r.get(0),
+        ).expect("legacy video imported");
+        // legacy fallback: section_id = namespaced module id
+        assert!(sec_id.ends_with("__m1"), "legacy module-keyed video keeps section_id = ns module id; got {}", sec_id);
     }
 
     // ── import_course_impl tests (Phase 12, Plan 03, Task 2) ─────────────────
