@@ -27,3 +27,4 @@ Thumbs.db
 # Tauri
 src-tauri/gen/
 pro/src-tauri-pro/gen/
+.planning/private/
