@@ -144,7 +144,8 @@ def parse_quizzes(ws):
 
 
 def lesson_markdown(lesson):
-    parts = [f"# {lesson['title']}"]
+    # No H1 — the app already renders the lesson title from params.lesson_title.
+    parts = []
     if lesson["video_id"]:
         parts.append(
             "▶ **Video lesson** — the reference video for this lesson plays in the panel above."
@@ -157,6 +158,8 @@ def lesson_markdown(lesson):
                 parts.append(f"**{r['label']}** — {r['text']}")
         else:
             parts.append(f"**{r['label']}**")
+    if not parts:
+        parts.append("_Video for this lesson is coming soon._")
     return "\n\n".join(parts)
 
 
