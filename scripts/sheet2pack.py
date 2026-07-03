@@ -71,17 +71,23 @@ def is_number(s):
 
 
 def parse_tracker(ws):
-    """Return [{num, title, lessons: [{num, title, filename, video_id, resources: []}]}]."""
+    """Return ([{num, title, lessons: [...]}], warnings)."""
     modules = []
+    warnings = []
     current = None
     last_lesson = None
     for row in ws.iter_rows(values_only=True):
         if not row or not any(v is not None for v in row):
             continue
         a, b, c, d = cell(row, 0), cell(row, 1), cell(row, 2), cell(row, 3)
-        # module row: numeric col A + name in col C
-        if a and is_number(a) and c and not b:
-            current = {"num": int(float(a)), "title": c, "lessons": []}
+        # module row: numeric col A (name may be missing — placeholder + warn,
+        # otherwise its lessons would silently leak into the previous module)
+        if a and is_number(a) and not b:
+            num = int(float(a))
+            title = c or f"Module {num}"
+            if not c:
+                warnings.append(f"module {num} has no name in Tracker — using placeholder \"{title}\"")
+            current = {"num": num, "title": title, "lessons": []}
             modules.append(current)
             last_lesson = None
             continue
@@ -101,7 +107,7 @@ def parse_tracker(ws):
         # resource row: no lesson number, but has label text — attach to prev lesson
         if not b and c and last_lesson is not None:
             last_lesson["resources"].append({"label": c, "text": d})
-    return [m for m in modules if m["lessons"]]
+    return [m for m in modules if m["lessons"]], warnings
 
 
 def title_overlap(a, b):
@@ -208,13 +214,12 @@ def convert(xlsx_path, pack_id, title, domain, channel):
     wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
     if "Tracker" not in wb.sheetnames:
         sys.exit("ERROR: no 'Tracker' sheet found")
-    modules_raw = parse_tracker(wb["Tracker"])
+    modules_raw, warnings = parse_tracker(wb["Tracker"])
     if not modules_raw:
         sys.exit("ERROR: no modules with lessons found in Tracker")
     quizzes = parse_quizzes(wb["Quizzes"]) if "Quizzes" in wb.sheetnames else {}
 
     modules, blocks_map, videos_map = [], {}, {}
-    warnings = []
     matched_chapters = set()
 
     for m in modules_raw:
