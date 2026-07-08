@@ -17,11 +17,9 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@pro": ["./src/features/_pro_placeholder"],
-      "@pro/*": ["./src/features/_pro_placeholder/*"]
+      "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "pro/src"],
+  "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
