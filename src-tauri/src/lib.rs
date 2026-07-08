@@ -69,18 +69,19 @@ pub struct AppState {
     pub signing_key_path: PathBuf,
 }
 
-/// Contract that Pro overlays satisfy to inject additional Tauri commands.
-/// OSS provides `NoopPlugin` as the default (no-op); the OSS `run()`
-/// function uses NoopPlugin so the trait surface is exercised in the
-/// open-core build. Plan 05's Studio `main.rs` defines `StudioPlugin`
-/// implementing this trait and appends Pro commands via the same path.
+/// Backend-only community-plugin seam. `NoopPlugin` is the default
+/// implementation for the OSS binary; the `run()` function exercises this
+/// trait surface in every OSS build. External community plugins may
+/// implement this trait to contribute additional backend state or setup
+/// without modifying the core binary.
+///
 /// Mirrors the `LabRuntime` trait shape (`labs::mod`) but is sync — no
 /// `Pin<Box<Future>>` needed.
 ///
 /// Tauri 2.x's `invoke_handler` can be called exactly ONCE per builder
 /// (RESEARCH.md Pitfall 1). `register_commands` MUST NOT call
 /// `.invoke_handler` on the builder it receives — that call is the
-/// caller's responsibility (`run()` in OSS, `main()` in Studio).
+/// caller's responsibility in `run()`.
 /// register_commands is for setup/plugin/state additions only.
 pub trait LearnForgePlugin: Send + Sync {
     /// Stable identifier for the plugin (logging, diagnostics).
@@ -97,9 +98,8 @@ pub trait LearnForgePlugin: Send + Sync {
     ) -> tauri::Builder<tauri::Wry>;
 }
 
-/// No-op default implementation. Used by OSS `run()` so the trait
-/// surface is exercised in pure-OSS builds; Plan 05 swaps it for
-/// `StudioPlugin` in the Studio binary. Mirrors `vector::VectorState`
+/// No-op default implementation used by OSS `run()` so the trait
+/// surface is exercised in every OSS build. Mirrors `vector::VectorState`
 /// stub shape.
 pub struct NoopPlugin;
 
@@ -115,18 +115,17 @@ impl LearnForgePlugin for NoopPlugin {
         // Identity: returns the builder unchanged. No setup hooks,
         // no .manage(), no plugins beyond what build_app() already
         // attached. The single .invoke_handler() call happens in the
-        // caller (run() for OSS, main() for Studio).
+        // caller (run() for OSS builds).
         builder
     }
 }
 
 /// Build the Tauri app — plugins + setup ONLY. NO invoke_handler. NO .run().
 ///
-/// Pro's `main.rs` calls this and then attaches its own `invoke_handler`
-/// via `StudioPlugin::register_commands`; OSS does the same below via
-/// `NoopPlugin`. The Tauri 2.x `invoke_handler`-can-be-called-only-once
-/// constraint (RESEARCH.md Pitfall 1) lives in the caller (`run()` for
-/// OSS, `main()` for Studio) — never here.
+/// The OSS `run()` function calls this and then attaches its own
+/// `invoke_handler` via `NoopPlugin`. Community-plugin binaries follow
+/// the same pattern. The Tauri 2.x `invoke_handler`-can-be-called-only-once
+/// constraint (RESEARCH.md Pitfall 1) lives in the caller — never here.
 pub fn build_app() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -208,11 +207,10 @@ pub fn build_app() -> tauri::Builder<tauri::Wry> {
 
 pub fn run() {
     env_logger::init();
-    // OSS exercises the open-core seam via NoopPlugin so the trait
-    // surface is tested in every OSS build. Plan 05's Studio main.rs
-    // does the same with StudioPlugin (which contributes Pro
-    // commands). The single .invoke_handler call below is the only
-    // one Tauri 2.x allows per builder (RESEARCH.md Pitfall 1).
+    // OSS exercises the community-plugin seam via NoopPlugin so the
+    // trait surface is tested in every build. The single
+    // .invoke_handler call below is the only one Tauri 2.x allows per
+    // builder (RESEARCH.md Pitfall 1).
     let plugin = NoopPlugin;
     plugin
         .register_commands(build_app())
@@ -287,14 +285,17 @@ pub fn run() {
             topic_packs::commands::set_topic_pack_enabled,
             topic_packs::commands::reload_skills,
             topic_packs::commands::get_topic_pack_modules,
-            // Certification (Phase 6 — Wave 2, Plan 06-03)
-            // Phase 08.1 (Cert Split) — export_badge, verify_signature,
-            // get_signing_public_key, fingerprint_from_public_pem moved to
-            // Studio overlay (pro/src-tauri-pro/src/commands/achievements.rs)
-            // per docs/OSS-VS-STUDIO.md §"Certification (Phase 6 — split)".
+            // Certification (Phase 6 — Wave 2 / Phase 13 OSS Consolidation)
+            // Phase 13 (D-08): export_badge, verify_signature,
+            // get_signing_public_key, fingerprint_from_public_pem restored
+            // from pro/ back into the OSS binary.
             commands::achievements::list_achievements_for_learner,
             commands::achievements::get_track_certifications,
             commands::achievements::export_certificate,
+            commands::achievements::export_badge,
+            commands::achievements::verify_signature,
+            commands::achievements::get_signing_public_key,
+            commands::achievements::fingerprint_from_public_pem,
             // Video-enriched lessons (Phase 11 — Plan 02)
             commands::videos::get_lesson_videos,
             commands::videos::refresh_lesson_videos,
