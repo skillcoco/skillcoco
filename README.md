@@ -72,7 +72,7 @@ LearnForge ships as a ~10 MB Tauri 2 binary. All algorithms run in-process (BKT,
 
 There is no hosted AI backend to pay for or trust. Sign in with your existing Claude Pro / ChatGPT Plus / Gemini Advanced subscription (OAuth), paste a BYOK key, or point LearnForge at a local Ollama instance. The AI integration is a feature, not a paywall.
 
-### 6. Open core — the only OSS adaptive-learning platform with built-in hands-on labs
+### 6. The only open-source adaptive-learning platform with built-in hands-on labs
 
 LearnForge is MIT licensed. The full adaptive engine, BKT, SM-2, AI integration, and embedded PTY terminal are open source and auditable. There is no other open-source adaptive learning platform that combines all of these in a single installable binary.
 
@@ -99,42 +99,20 @@ LearnForge is a Tauri 2 desktop application: a Rust backend (`src-tauri`) commun
 
 ---
 
-## Open core
+## Open source
 
-This single repository hosts **two products**:
+LearnForge is a **single MIT-licensed product**.
 
-| | LearnForge | LearnForge Studio |
-|--|------------|-------------------|
-| **License** | MIT (`LICENSE`) | Proprietary (`LICENSE-STUDIO`) |
-| **Audience** | Individual learners | Engineering teams + L&D departments |
-| **Code path** | Everything outside `pro/` | `pro/` subtree |
-| **Build** | `pnpm tauri dev` | `LEARNFORGE_PRO=1 pnpm tauri dev` |
-| **Distribution** | GitHub Releases + crates.io | Direct sales (Phase 14+) |
-| **Pricing** | Free | Per-seat $79 / $59 / $39 (see `docs/pricing-tiers.md`) |
+The full experience — BKT mastery, SM-2 spaced repetition, hands-on
+terminal labs, topic packs, daily microlearning, achievement badges,
+and exportable certificates — ships in the open-source desktop app.
+No crippling. No paid tier. Free OSS = real product.
 
-The OSS desktop app is the full single-user experience — BKT mastery,
-SM-2 spaced repetition, hands-on terminal labs, topic packs, daily
-microlearning, achievement badges, exportable certificates. No
-crippling. Free OSS = real product.
+The `learnforge-core` Rust crate is published to crates.io. The
+backend exposes a `LearnForgePlugin` trait for community extensions
+(backend-only internal seam; no API-stability promise yet).
 
-LearnForge Studio adds the enterprise tier on top of the same code:
-multi-tenant web infrastructure, cohort management, manager dashboards,
-managed AI billing, org-branded + cryptographically-verifiable
-certificates, SSO/SAML, audit logging, SOC 2 readiness, and
-LMS integrations.
-
-Both binaries share the same git repository and consume the same
-`learnforge-core` Rust crate (published to crates.io). The Studio
-overlay registers additional Tauri commands + React components via
-the `LearnForgePlugin` trait + Vite `@pro` alias.
-
-**Why public source for the proprietary product?** Audit-friendliness.
-Customers and security reviewers can read every line of Studio code
-before they buy. Trust scales when there's nothing to hide.
-
-See [`docs/OSS-VS-STUDIO.md`](docs/OSS-VS-STUDIO.md) for the full
-feature placement matrix and [`LICENSING.md`](LICENSING.md) for the
-license boundary.
+See [`LICENSING.md`](LICENSING.md) for the license summary.
 
 ---
 
@@ -142,19 +120,13 @@ license boundary.
 
 Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request. All contributors must sign the [Contributor License Agreement](./CLA.md) on their first PR.
 
-Pull requests touching the `pro/` subtree are subject to a separate
-proprietary contribution agreement — see
-[`docs/CONTRIBUTING-STUDIO.md`](docs/CONTRIBUTING-STUDIO.md). External
-PRs that touch `pro/` are auto-closed by maintainers.
-
 ---
 
 ## License
 
 | What | License |
 |------|---------|
-| Code outside `pro/` | **MIT** (`LICENSE`) |
-| Code inside `pro/` | **Proprietary** (`LICENSE-STUDIO`) |
+| All source code | **MIT** (`LICENSE`) |
 | Whitepapers (`learnforge-core/docs/*.md`) | **CC BY 4.0** |
 | Third-party attributions | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
 

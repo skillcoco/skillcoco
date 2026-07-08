@@ -3,8 +3,8 @@
 **Status:** Source of truth for day-to-day development with Claude Code.
 **Last updated:** 2026-06-19
 
-Audience: maintainers + Pro contributors using Claude Code as the
-primary dev tool. OSS external contributors: see `CONTRIBUTING.md`.
+Audience: maintainers and contributors using Claude Code as the
+primary dev tool. See `CONTRIBUTING.md` for the standard contribution flow.
 
 ---
 
@@ -107,13 +107,8 @@ For Phase `N`, the planner writes:
 
 ### Decision discipline
 
-Every new phase MUST include an explicit **OSS-vs-Studio placement
-decision** in CONTEXT.md (per `docs/OSS-VS-STUDIO.md`). Phase 6's
-placement mistake taught us: never skip the placement debate.
-
-The Decision #0 in `docs/OSS-VS-STUDIO.md` ("OSS adoption first;
-Pro revenue follows scale") frames every placement choice. When in
-doubt: OSS.
+Every new phase MUST capture key implementation decisions in CONTEXT.md.
+Phase 6 taught us: never skip the placement debate. When in doubt: OSS.
 
 ### Phase numbering
 
@@ -194,51 +189,25 @@ gh pr merge --squash
 
 ---
 
-## OSS vs Pro contribution mechanics
-
-### OSS-side changes (anything outside `pro/`)
+## Contribution mechanics
 
 Open to anyone. Standard CONTRIBUTING.md applies. CLA required (Phase
 03.2 wired CLA Assistant Lite v2.6.1 via `.github/workflows/cla.yml`).
 
-### Pro-side changes (`pro/` subtree)
-
-Restricted. Per `LICENSE-STUDIO`:
-- External PRs touching `pro/` are auto-closed by maintainers
-- Only project maintainers + employees of LearnForge Studio (the
-  legal entity) can modify `pro/` content
-- Pro contributions follow the same Conventional Commits style + PR
-  review process but go through a private review channel
-- See `CONTRIBUTING-STUDIO.md`
-
-### Mixed-touch commits
-
-Now allowed. Previous `check-no-pro-leak.sh` guard has been removed.
-A single commit can touch both OSS and `pro/` files. License boundary
-is enforced by file header + per-directory LICENSE governance, not
-by commit-level diff guards.
+All contributions follow the same Conventional Commits style + PR
+review process. License boundary is MIT for the entire repository.
 
 ---
 
-## Local testing the two binaries
+## Local testing
 
 ```bash
-# OSS app — "LearnForge":
+# Dev app:
 pnpm tauri dev
 
-# Studio app — "LearnForge Studio":
-LEARNFORGE_PRO=1 pnpm tauri dev --config pro/src-tauri-pro/tauri.conf.json
-
-# OSS production build:
+# Production build:
 pnpm build && cargo tauri build
-
-# Studio production build:
-LEARNFORGE_PRO=1 pnpm build && cargo tauri build --config pro/src-tauri-pro/tauri.conf.json
 ```
-
-Note: until Phase 14 wires the real license-key check, Studio binary
-boots without one. After Phase 14, expect a startup license-key
-prompt in dev mode (with a test key for maintainers).
 
 ---
 
@@ -386,22 +355,6 @@ git checkout -b fix/<thing>
 gh pr create --title "fix: ..." --body "..."
 ```
 
-### Pro-only work
-
-```bash
-git checkout -b feature/pro-<name>
-# Edit ONLY files under pro/
-# No leak-guard CI — but maintain mental discipline:
-# - If the change needs OSS-side support, raise a separate OSS PR
-# - Keep commits atomic per side
-gh pr create --title "feat(pro): ..." --body "..." --label studio
-```
-
-### Mixed OSS + Pro
-
-Now allowed in a single PR. Recommend splitting into separate commits
-per side for clarity, but not enforced.
-
 ### Running an acceptance walkthrough
 
 ```bash
@@ -452,10 +405,6 @@ Do NOT:
 - Push to `main` directly (always via PR)
 - Use destructive git commands (`reset --hard`, `push --force`,
   `branch -D`) without an explicit user request
-- Skip the OSS-vs-Studio placement debate when planning a new feature
-- Move features OSS→Pro without an explicit deprecation cycle (avoid
-  the Phase 6 mistake of building OSS-first then re-categorizing)
-- Modify `pro/` files without LICENSE-STUDIO authority
 - Add emojis to source files, commits, PRs, or docs (per CLAUDE.md)
 - Create new files at the repo root (use the right subdirectory)
 - Create documentation files (`*.md`, `README*.md`) unless explicitly
@@ -465,16 +414,12 @@ Do NOT:
 
 ## Reference cards
 
-- `docs/OSS-VS-STUDIO.md` — feature placement matrix
 - `docs/REPO-ARCHITECTURE.md` — single repo + worktrees
-- `docs/CONTRIBUTING-STUDIO.md` — pro/ contribution rules
 - `docs/VERSIONING.md` — semver + tag ordering
-- `docs/LAUNCH-PLAYBOOK.md` — Phase 8 launch procedures
 - `docs/MACOS-SIGNING-SETUP.md` — Apple Developer enrollment
-- `docs/APPLE-ENROLLMENT.md` (if separate)
 - `docs/CERT-PAYLOAD-V1.md` — Phase 6 signed-payload spec
-- `CONTRIBUTING.md` — OSS contribution rules
-- `LICENSING.md` — license boundary explainer
+- `CONTRIBUTING.md` — contribution rules
+- `LICENSING.md` — license explainer
 - `SECURITY.md` — vulnerability disclosure
 - `CLAUDE.md` — Claude Code project preferences
 - `~/.claude/RTK.md` — RTK token-efficient CLI
@@ -484,5 +429,4 @@ Do NOT:
 
 ---
 
-*See also: `docs/OSS-VS-STUDIO.md`, `docs/REPO-ARCHITECTURE.md`,
-`docs/CONTRIBUTING-STUDIO.md`.*
+*See also: `docs/REPO-ARCHITECTURE.md`, `docs/VERSIONING.md`.*
