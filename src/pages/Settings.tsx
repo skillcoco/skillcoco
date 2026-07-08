@@ -5,12 +5,7 @@ import type { ProviderAuthStatus, LoginRequest } from "@/types/ai";
 import { SettingsLabsSection } from "@/pages/SettingsLabsSection";
 import { SettingsTopicPacksSection } from "@/pages/SettingsTopicPacksSection";
 import { SettingsYouTubeSection } from "@/pages/SettingsYouTubeSection";
-// Phase 08.1 (Cert Split) — Studio-overlay component. The `@pro` alias
-// resolves to a no-op stub in OSS mode (renders nothing) and to the real
-// signed-cert Verify panel when LEARNFORGE_PRO=1. See
-// `docs/OSS-VS-STUDIO.md` §"Certification (Phase 6 — split)" and
-// `pro/src/features/components/settings/SettingsVerifyCertSection.tsx`.
-import { SettingsVerifyCertSection } from "@pro/components/settings/SettingsVerifyCertSection";
+import { SettingsVerifyCertSection } from "@/pages/SettingsVerifyCertSection";
 import { SettingsCourseImportSection } from "@/pages/SettingsCourseImportSection";
 import {
   Shield,
@@ -902,9 +897,7 @@ export function Settings() {
       {/* ── Topic Packs (Phase 5 — D-09) ── */}
       <SettingsTopicPacksSection />
 
-      {/* ── Verify Certificate (Phase 6 Wave 5 — CERT-04..05, CERT-08) ──
-          Phase 08.1 (Cert Split): the panel only renders in Studio
-          builds (LEARNFORGE_PRO=1). OSS resolves to a no-op stub. */}
+      {/* ── Verify Certificate (Phase 6 Wave 5 — CERT-04..05, CERT-08) ── */}
       <SettingsVerifyCertSection />
 
       {/* ── Learning (Phase 4 Wave 5 — daily challenge opt-out, Q8 lock) ── */}
