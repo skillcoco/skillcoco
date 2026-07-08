@@ -1,16 +1,19 @@
 // Phase 08.2 (Cert Simplification + Gamification) — AchievementCard.
+// Phase 13-03 (OSS Consolidation) — badge PNG export CTA added per D-10.
 //
 // Visual variants per kind (D-21):
-//   - kind="certificate" → large card with Download PDF CTA (Completion only)
+//   - kind="certificate" → large card with Download PDF CTA + Download badge PNG CTA
 //   - kind="badge" → compact pill / chip (Milestone25/50/75 + legacy badges)
 //
 // Legacy 3-tier rows (Associate / Practitioner / Professional) from
 // pre-08.2 testing data still render — they fall into the badge variant
 // with their original level text (D-02 — keep as-is, "old logbook entry").
+// D-10: these legacy rows + cert rows get the badge PNG export CTA.
 //
-// Lucide icons + plain text. No emojis (D-10 preserved). The Export
-// button only appears on certificate-kind rows; milestone badges are
-// in-app only (D-05 — no PDF / PNG export).
+// Lucide icons + plain text. No emojis. Badge PNG export is gated:
+//   - cert kind: always eligible (canExportBadge = true)
+//   - badge kind: Associate/Practitioner/Professional eligible
+//   - Milestone25/50/75: in-app only per Phase 08.2 D-05 (reaffirmed D-10)
 
 import { Award, BadgeCheck, Download, Trophy } from "lucide-react";
 import type { Achievement, AchievementLevel } from "@/types/achievements";
@@ -64,13 +67,23 @@ interface Props {
 
 export function AchievementCard({ achievement }: Props) {
   const exportCertificate = useAchievementsStore((s) => s.exportCertificate);
+  const exportBadge = useAchievementsStore((s) => s.exportBadge);
   const Icon = iconForLevel(achievement.level);
   const isCert = achievement.kind === "certificate";
 
-  const onExport = async () => {
-    if (isCert) {
-      await exportCertificate(achievement);
-    }
+  // D-10: badge PNG export is available for cert-kind rows AND legacy
+  // Associate/Practitioner/Professional badge rows. Milestone chips are
+  // in-app only (Phase 08.2 D-05, reaffirmed D-10).
+  const canExportBadge =
+    isCert ||
+    ["Associate", "Practitioner", "Professional"].includes(achievement.level);
+
+  const onExportCert = async () => {
+    await exportCertificate(achievement);
+  };
+
+  const onExportBadge = async () => {
+    await exportBadge(achievement);
   };
 
   // ── Certificate variant — large card with Download CTA ────────────
@@ -90,15 +103,28 @@ export function AchievementCard({ achievement }: Props) {
             {formatDate(achievement.issuedAt)} · Completion Certificate
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onExport}
-          aria-label={`Download ${achievement.level} certificate PDF`}
-          className="inline-flex items-center gap-1 rounded-md bg-amber-300/20 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-amber-300/30"
-        >
-          <Download className="h-3 w-3" aria-hidden />
-          Download PDF
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onExportCert}
+            aria-label={`Download ${achievement.level} certificate PDF`}
+            className="inline-flex items-center gap-1 rounded-md bg-amber-300/20 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-amber-300/30"
+          >
+            <Download className="h-3 w-3" aria-hidden />
+            Download PDF
+          </button>
+          {canExportBadge && (
+            <button
+              type="button"
+              onClick={onExportBadge}
+              aria-label={`Download ${achievement.level} badge PNG`}
+              className="inline-flex items-center gap-1 rounded-md bg-amber-300/20 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-amber-300/30"
+            >
+              <Download className="h-3 w-3" aria-hidden />
+              Download badge PNG
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -117,6 +143,17 @@ export function AchievementCard({ achievement }: Props) {
       <span className="text-xs text-muted-foreground">
         · {achievement.trackTopic}
       </span>
+      {canExportBadge && (
+        <button
+          type="button"
+          onClick={onExportBadge}
+          aria-label={`Download ${achievement.level} badge PNG`}
+          className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-white/20"
+        >
+          <Download className="h-3 w-3" aria-hidden />
+          Download badge PNG
+        </button>
+      )}
     </div>
   );
 }

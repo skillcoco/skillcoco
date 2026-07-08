@@ -84,8 +84,12 @@ describe("AchievementCard — Phase 08.2 (Cert Simplification)", () => {
     // Title and subtitle both contain "Completion" — assert via getAllByText.
     expect(screen.getAllByText(/Completion/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Kubernetes/)).toBeInTheDocument();
+    // Phase 13-03: cert now has both PDF and badge PNG CTAs.
     expect(
-      screen.getByRole("button", { name: /download/i }),
+      screen.getByRole("button", { name: /certificate PDF/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /badge PNG/i }),
     ).toBeInTheDocument();
   });
 
@@ -97,7 +101,8 @@ describe("AchievementCard — Phase 08.2 (Cert Simplification)", () => {
     });
     render(<AchievementCard achievement={cert} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /download/i }));
+    // Phase 13-03: use specific aria-label to disambiguate from badge PNG button.
+    fireEvent.click(screen.getByRole("button", { name: /certificate PDF/i }));
 
     expect(exportCertificateMock).toHaveBeenCalledTimes(1);
     expect(exportCertificateMock).toHaveBeenCalledWith(cert);
@@ -116,8 +121,12 @@ describe("AchievementCard — Phase 08.2 (Cert Simplification)", () => {
     const card = screen.getByTestId(`achievement-card-${legacy.id}`);
     expect(card.getAttribute("data-variant")).toBe("badge");
     expect(screen.getByText(/Practitioner/)).toBeInTheDocument();
-    // No download button for badges.
-    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
+    // Phase 13-03 D-10: legacy Associate/Practitioner/Professional get badge PNG export.
+    expect(
+      screen.getByRole("button", { name: /badge PNG/i }),
+    ).toBeInTheDocument();
+    // No PDF certificate button for badge kind.
+    expect(screen.queryByRole("button", { name: /certificate PDF/i })).toBeNull();
   });
 
   it("milestone75_label_is_human_readable", () => {
