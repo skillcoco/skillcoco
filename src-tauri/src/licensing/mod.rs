@@ -1,50 +1,78 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Gourav Shah, Vivian Aranha
 
-//! License-key validation scaffold.
+//! License-key validation seam.
 //!
-//! OSS builds ship `LicenseValidator` as a stub that always returns
-//! `LicenseResult::Valid { tier: "oss" }`. The Studio overlay
-//! (`pro/src-tauri-pro/licensing/`) provides the real Ed25519-signed
-//! JWT verification + 7-day offline cache implementation. See
-//! RESEARCH.md "JWT License-Key Validator Scaffold" section.
+//! `LicenseValidator` is a stub that always returns
+//! `LicenseResult::Valid { tier: "oss" }`. Phase 15 (Entitlement &
+//! Redeem) fills this seam with real JWT verification and an offline
+//! validation cache. The type shapes below (`LicenseClaims`,
+//! `CachedValidation`) are the contracts that implementation will use.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+/// The claims embedded in a signed license JWT.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LicenseClaims {
+    /// Subscriber organization identifier.
+    pub sub: String,
+    /// License tier: "team" | "business" | "enterprise"
+    pub tier: String,
+    /// Number of named seats.
+    pub seats: u32,
+    /// Unix timestamp: license expiry.
+    pub exp: i64,
+    /// Unix timestamp: issued-at.
+    pub iat: i64,
+}
+
+/// Cached validation result stored locally for offline grace period.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CachedValidation {
+    pub claims: LicenseClaims,
+    /// Wall time when this cache entry expires (now + 7 days).
+    pub cache_until: DateTime<Utc>,
+    /// The raw license key that produced this result.
+    pub license_key_fingerprint: String,
+}
 
 /// Outcome of a license-key validation attempt.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum LicenseResult {
-    /// OSS or successfully-validated Pro license.
+    /// Default OSS result, or a successfully-validated license (Phase 15).
     Valid {
-        /// Tier label: `"oss"` for OSS builds, `"team" | "business" | "enterprise"` in Pro.
+        /// Tier label: `"oss"` today; `"team" | "business" | "enterprise"`
+        /// once entitlement validation lands in Phase 15.
         tier: String,
     },
-    /// Pro-only: signature mismatch, expired, or no key present.
+    /// Signature mismatch, expired, or no key present. Unused until
+    /// Phase 15 wires real validation.
     Invalid {
         reason: String,
     },
 }
 
-/// Validates license keys. OSS implementation is a no-op stub that
-/// always reports `Valid { tier: "oss" }`. The Studio overlay replaces
-/// this with a JWT/Ed25519 implementation.
+/// Validates license keys. Currently a no-op stub that always reports
+/// `Valid { tier: "oss" }`. Phase 15 replaces the body with real
+/// JWT-based entitlement validation.
 #[derive(Debug, Clone, Default)]
 pub struct LicenseValidator {
-    /// OSS doesn't use this — present so the struct shape matches the
-    /// Pro overlay's signature. Pro stores the public-key PEM here.
+    /// Unused today — reserved so the struct shape stays stable when
+    /// Phase 15 adds validation state (e.g. a public-key PEM).
     _placeholder: (),
 }
 
 impl LicenseValidator {
-    /// Construct an OSS-mode validator. No inputs required.
+    /// Construct a validator. No inputs required until Phase 15.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Validate a license key. OSS always returns `Valid { tier: "oss" }`.
-    /// The `_key` argument is ignored in OSS and reserved for the Pro
-    /// overlay where it carries the signed JWT string.
+    /// Validate a license key. Always returns `Valid { tier: "oss" }`
+    /// today. The `_key` argument is reserved for Phase 15, where it
+    /// carries the signed JWT string.
     pub fn validate(&self, _key: Option<&str>) -> Result<LicenseResult, LicenseError> {
         Ok(LicenseResult::Valid {
             tier: "oss".to_string(),
@@ -52,9 +80,9 @@ impl LicenseValidator {
     }
 }
 
-/// Errors that can occur during license validation. OSS only ever
-/// constructs `Valid` results, but the error type exists so the Pro
-/// overlay can return signature/cache failures with the same signature.
+/// Errors that can occur during license validation. The stub only ever
+/// constructs `Valid` results, but the error type exists so Phase 15
+/// can return signature/cache failures with the same signature.
 #[derive(Debug, thiserror::Error)]
 pub enum LicenseError {
     #[error("invalid license signature")]
@@ -65,6 +93,8 @@ pub enum LicenseError {
     CacheExpired,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("JWT decode error: {0}")]
+    JwtError(#[from] jsonwebtoken::errors::Error),
 }
 
 #[cfg(test)]
@@ -99,5 +129,23 @@ mod tests {
         );
         let back: LicenseResult = serde_json::from_str(&json).unwrap();
         assert_eq!(back, r);
+    }
+
+    #[test]
+    fn license_claims_is_serializable() {
+        let claims = LicenseClaims {
+            sub: "org-123".to_string(),
+            tier: "team".to_string(),
+            seats: 5,
+            exp: 9999999999,
+            iat: 1700000000,
+        };
+        let json = serde_json::to_string(&claims).unwrap();
+        assert!(
+            json.contains("\"sub\":\"org-123\""),
+            "expected sub field, got: {json}"
+        );
+        let back: LicenseClaims = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.tier, "team");
     }
 }
