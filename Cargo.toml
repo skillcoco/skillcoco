@@ -6,8 +6,6 @@ members = [
     # holds. Phase 7 added (D-09).
     "learnforge-core",
     "src-tauri",
-    "pro/src-tauri-pro",
-    "pro/src-tauri-pro/licensing",
 ]
 
 # ---------------------------------------------------------------------------
