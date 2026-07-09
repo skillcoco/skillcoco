@@ -253,6 +253,7 @@ def assemble_payload(
     title,
     domain,
     licensed=False,
+    licensor=None,
     return_warnings=False,
 ):
     """Assemble the exported-course JSON payload from parsed modules and enrichment data.
@@ -271,8 +272,13 @@ def assemble_payload(
         pack_id:            Unique pack identifier slug.
         title:              Human-readable course title.
         domain:             Domain/category tag for the pack.
-        licensed:           If True, stamp exportedFrom as "licensed:{pack_id}" (paid pack,
-                            non-exportable after import). Default False stamps "imported:{pack_id}".
+        licensed:           If True, stamp exportedFrom as "licensed:{pack_id}|{licensor}"
+                            (paid pack, non-exportable after import). Default False stamps
+                            "imported:{pack_id}".
+        licensor:           Display name of the licensing entity. When licensed=True and
+                            licensor is None or empty, defaults to channel. Any "|" in the
+                            effective licensor is replaced with "/" to keep the pipe-split
+                            unambiguous (T-g73-02). Ignored when licensed=False.
         return_warnings:    If True, return (payload, warnings) tuple instead of payload.
 
     Returns:
@@ -377,7 +383,11 @@ def assemble_payload(
         "edges": edges,
         "exportVersion": "1.0.0",
         "exportedAt": NOW,
-        "exportedFrom": f"licensed:{pack_id}" if licensed else f"imported:{pack_id}",
+        "exportedFrom": (
+            f"licensed:{pack_id}|{(licensor or channel).replace('|', '/')}"
+            if licensed
+            else f"imported:{pack_id}"
+        ),
         "blocks": blocks_map,
         "videos": videos_map,
     }
@@ -388,7 +398,7 @@ def assemble_payload(
 
 
 def convert(xlsx_path, pack_id, title, domain, channel,
-            enrich=False, enrich_only=None, yes=False, licensed=False):
+            enrich=False, enrich_only=None, yes=False, licensed=False, licensor=None):
     """Convert a SODA xlsx to an exported-course JSON pack.
 
     Args:
@@ -400,7 +410,8 @@ def convert(xlsx_path, pack_id, title, domain, channel,
         enrich:       Run all enrichment stages (transcripts, lessons, quizzes).
         enrich_only:  Run only one stage: 'transcripts', 'lessons', or 'quizzes'.
         yes:          Skip the D-15 cost-confirmation prompt.
-        licensed:     If True, stamp exportedFrom as "licensed:{pack_id}" (paid pack).
+        licensed:     If True, stamp exportedFrom as "licensed:{pack_id}|{licensor}" (paid pack).
+        licensor:     Display name of licensing entity; defaults to channel when licensed=True.
 
     Returns:
         (payload_dict, warnings, skipped, failed) — the last two lists are
@@ -474,6 +485,7 @@ def convert(xlsx_path, pack_id, title, domain, channel,
         title=title,
         domain=domain,
         licensed=licensed,
+        licensor=licensor,
         return_warnings=True,
     )
     warnings = parse_warnings + assembly_warnings
@@ -507,7 +519,9 @@ def main():
     ap.add_argument("--yes", action="store_true",
                     help="skip cost-confirmation prompt (for scripted runs, D-15)")
     ap.add_argument("--licensed", action="store_true",
-                    help="stamp exportedFrom as licensed:{id} — paid pack, non-exportable after import")
+                    help="stamp exportedFrom as licensed:{id}|{licensor} — paid pack, non-exportable after import")
+    ap.add_argument("--licensor", metavar="NAME", default=None,
+                    help="display name of the licensing entity; defaults to --channel when --licensed is set")
     args = ap.parse_args()
 
     stem = Path(args.xlsx).stem
@@ -520,6 +534,7 @@ def main():
         enrich_only=args.enrich_only,
         yes=args.yes,
         licensed=args.licensed,
+        licensor=args.licensor,
     )
 
     schema_path = Path(__file__).resolve().parent.parent / "learnforge-core/topic-packs/pack-schema.json"

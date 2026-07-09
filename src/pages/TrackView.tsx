@@ -15,6 +15,7 @@ import {
   X,
   Download,
   Loader2,
+  Crown,
 } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
@@ -55,6 +56,32 @@ export function isCourseExportable(generatedByModel?: string | null): boolean {
   }
   // Non-empty string that is not a reserved prefix → AI-generated model name
   return true;
+}
+
+// ── g73 — Licensed course provenance parser ──
+//
+// Parses the pipe-encoded provenance string produced by sheet2pack.py --licensed:
+//   "licensed:{pack_id}|{licensor}"  → licensed=true, licensor="{licensor}"
+//   "licensed:{pack_id}"             → licensed=true, licensor=null (bare, no pipe)
+//   anything else                    → licensed=false, licensor=null
+//
+// Splits on the FIRST "|" only so licensor display text is preserved verbatim.
+// Licensor is rendered as React text children — auto-escaped (T-g73-01).
+
+export function parseLicensor(generatedByModel?: string | null): {
+  licensed: boolean;
+  licensor: string | null;
+} {
+  const model = generatedByModel?.trim();
+  if (!model || !model.startsWith("licensed:")) {
+    return { licensed: false, licensor: null };
+  }
+  const pipeIdx = model.indexOf("|");
+  if (pipeIdx === -1) {
+    return { licensed: true, licensor: null };
+  }
+  const name = model.slice(pipeIdx + 1).trim();
+  return { licensed: true, licensor: name || null };
 }
 
 // ── Track color helper (matches TrackCard pattern) ──
@@ -574,6 +601,22 @@ export function TrackView() {
                 From skill: <code className="font-mono">{packId}</code>
               </p>
             )}
+            {/* g73 — Premium licensed course badge. Renders when provenance
+                starts with "licensed:" (pipe-encoded licensor optional).
+                Licensor is auto-escaped as React text child (T-g73-01). */}
+            {(() => {
+              const { licensed, licensor } = parseLicensor(currentPath?.generatedByModel);
+              if (!licensed) return null;
+              return (
+                <span
+                  data-testid="licensed-badge"
+                  className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-gradient-to-r from-amber-500/15 to-yellow-500/10 px-2.5 py-0.5 text-xs font-semibold tracking-wide text-amber-600 shadow-[0_0_12px_rgba(245,158,11,0.25)] dark:text-amber-400"
+                >
+                  <Crown size={13} />
+                  Licensed Course{licensor ? ` · ${licensor}` : ""}
+                </span>
+              );
+            })()}
           </div>
           <div className="flex items-center gap-3">
             {/* Phase 12 Plan 04 — Export course button (D-10 UI mirror).

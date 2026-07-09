@@ -342,10 +342,11 @@ def test_skipped_and_failed_reported(tmp_cache_dir):
 
 
 def test_licensed_flag_stamps_licensed_prefix(tmp_cache_dir):
-    """assemble_payload with licensed=True stamps exportedFrom as 'licensed:{pack_id}'.
+    """assemble_payload with licensed=True and channel stamps exportedFrom as
+    'licensed:{pack_id}|{channel}' — channel is the licensor default (g73).
 
-    RED test: assemble_payload has no 'licensed' kwarg yet — this MUST fail
-    until the GREEN implementation adds it.
+    Updated from bare 'licensed:sfd402' to include pipe+channel since
+    default-from-channel is the correct behavior (g73 licensor flag RED commit).
     """
     from sheet2pack import assemble_payload
 
@@ -361,8 +362,87 @@ def test_licensed_flag_stamps_licensed_prefix(tmp_cache_dir):
         licensed=True,
     )
 
-    assert payload["exportedFrom"] == "licensed:sfd402", (
-        f"Expected 'licensed:sfd402' but got '{payload['exportedFrom']}'"
+    assert payload["exportedFrom"] == "licensed:sfd402|School of Devops", (
+        f"Expected 'licensed:sfd402|School of Devops' but got '{payload['exportedFrom']}'"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Licensor flag tests (g73 — premium licensed badge)
+# ---------------------------------------------------------------------------
+
+
+def test_licensed_with_explicit_licensor(tmp_cache_dir):
+    """assemble_payload with licensed=True and explicit licensor encodes it in exportedFrom.
+
+    Assert: payload['exportedFrom'] == 'licensed:sfd402|Acme Corp'
+    """
+    from sheet2pack import assemble_payload
+
+    payload = assemble_payload(
+        modules_raw=[MODULE_RAW_WITH_VIDEO],
+        quizzes={},
+        enriched_lessons={},
+        generated_quizzes={},
+        channel="School of Devops",
+        pack_id="sfd402",
+        title="SFD402 Course",
+        domain="devops",
+        licensed=True,
+        licensor="Acme Corp",
+    )
+
+    assert payload["exportedFrom"] == "licensed:sfd402|Acme Corp", (
+        f"Expected 'licensed:sfd402|Acme Corp' but got '{payload['exportedFrom']}'"
+    )
+
+
+def test_licensed_default_licensor_from_channel(tmp_cache_dir):
+    """assemble_payload with licensed=True and no licensor kwarg defaults to channel.
+
+    Assert: payload['exportedFrom'] == 'licensed:sfd402|School of Devops'
+    """
+    from sheet2pack import assemble_payload
+
+    payload = assemble_payload(
+        modules_raw=[MODULE_RAW_WITH_VIDEO],
+        quizzes={},
+        enriched_lessons={},
+        generated_quizzes={},
+        channel="School of Devops",
+        pack_id="sfd402",
+        title="SFD402 Course",
+        domain="devops",
+        licensed=True,
+    )
+
+    assert payload["exportedFrom"] == "licensed:sfd402|School of Devops", (
+        f"Expected 'licensed:sfd402|School of Devops' but got '{payload['exportedFrom']}'"
+    )
+
+
+def test_non_licensed_ignores_licensor(tmp_cache_dir):
+    """assemble_payload with licensed=False ignores the licensor kwarg entirely.
+
+    Assert: payload['exportedFrom'] == 'imported:sfd402' (no pipe, no licensor)
+    """
+    from sheet2pack import assemble_payload
+
+    payload = assemble_payload(
+        modules_raw=[MODULE_RAW_WITH_VIDEO],
+        quizzes={},
+        enriched_lessons={},
+        generated_quizzes={},
+        channel="School of Devops",
+        pack_id="sfd402",
+        title="SFD402 Course",
+        domain="devops",
+        licensed=False,
+        licensor="Acme",
+    )
+
+    assert payload["exportedFrom"] == "imported:sfd402", (
+        f"Expected 'imported:sfd402' but got '{payload['exportedFrom']}'"
     )
 
 
