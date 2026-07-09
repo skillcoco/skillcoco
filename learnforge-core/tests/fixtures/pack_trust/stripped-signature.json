@@ -8,7 +8,18 @@
   "exportedFrom": "licensed:test-pack|Test Publisher",
   "id": "test-pack",
   "labs": {},
-  "modules": [],
+  "modules": [
+    {
+      "description": "First module.",
+      "difficulty": 1,
+      "estimatedMinutes": 30,
+      "id": "mod-one",
+      "objectives": [
+        "learn basics"
+      ],
+      "title": "Module One"
+    }
+  ],
   "title": "Signed Test Pack",
   "videos": {}
 }
