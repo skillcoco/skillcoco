@@ -491,4 +491,55 @@ mod tests {
             r#"{"1":"One","10":"Ten","2":"Two","appple":"This sorts before peach","peach":"This sorts after appple"}"#
         );
     }
+
+    /// `sign_pack` then `verify_pack` round-trips through Ok(()) — sign and
+    /// verify are the SAME crypto path (D-08), not two independently-
+    /// maintained implementations that could silently drift apart.
+    #[test]
+    fn sign_pack_then_verify_pack_round_trips() {
+        let (root_key, root_pem) = keypair();
+        let (issuer_key, issuer_pem) = keypair();
+        let cert = make_cert(&root_key, "issuer-round-trip", &issuer_pem);
+
+        let signed = sign_pack(&issuer_key, &cert, &pack_body()).expect("sign_pack");
+        let result = verify_pack(&root_pem, &signed);
+        assert!(result.is_ok(), "sign_pack output must verify; got {result:?}");
+    }
+
+    /// `issue_cert` then `verify_issuer_cert` round-trips through Ok(()) —
+    /// same crypto path as the hand-rolled `make_cert` test helper (D-08).
+    #[test]
+    fn issue_cert_verifies_against_root() {
+        let (root_key, root_pem) = keypair();
+        let (_issuer_key, issuer_pem) = keypair();
+
+        let cert = issue_cert(&root_key, "issuer-via-fn", "Issuer Via Fn", &issuer_pem)
+            .expect("issue_cert");
+        let result = verify_issuer_cert(&root_pem, &cert);
+        assert!(result.is_ok(), "issue_cert output must verify; got {result:?}");
+    }
+
+    /// RESEARCH Open Question 1 RESOLVED — a signed body carrying a
+    /// string-typed `orderId` canonicalizes byte-stably across repeated
+    /// serializations, encoding the rule that signature-adjacent
+    /// identifiers (order id, buyer id, `licensedTo`, `signedAt`) are JSON
+    /// strings, never numbers. A lightweight guardrail for Phase 15/Hub
+    /// buyer-stamping cross-signer JCS byte-compatibility (D-02).
+    #[test]
+    fn jcs_string_identifier_byte_stable() {
+        let body = serde_json::json!({
+            "id": "pack-order-id-test",
+            "orderId": "1000000000000001",
+            "licensedTo": "buyer-042",
+        });
+        let first = jcs_bytes(&body).expect("JCS bytes first pass");
+        let second = jcs_bytes(&body).expect("JCS bytes second pass");
+        assert_eq!(first, second, "JCS output must be byte-stable across serializations");
+
+        let s = String::from_utf8(first).expect("valid UTF-8");
+        assert!(
+            s.contains(r#""orderId":"1000000000000001""#),
+            "orderId must round-trip as a JSON string, not a number; got: {s}"
+        );
+    }
 }

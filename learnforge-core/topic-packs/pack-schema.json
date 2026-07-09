@@ -128,9 +128,35 @@
         "type": "array",
         "items": { "$ref": "#/$defs/ExportedVideo" }
       }
+    },
+    "signature": {
+      "$ref": "#/$defs/SignatureBlock",
+      "description": "Optional Phase 14 pack-signing envelope (D-04 minimal shape). NOT in the top-level `required` array — unsigned free packs stay schema-valid (D-09). Fields inside this block are NOT covered by the signature itself."
     }
   },
   "$defs": {
+    "SignatureBlock": {
+      "type": "object",
+      "required": ["alg", "issuerCert", "keyFingerprint", "sig"],
+      "additionalProperties": false,
+      "properties": {
+        "alg":            { "type": "string", "maxLength": 32, "description": "Signature algorithm identifier — always 'ed25519' in Phase 14." },
+        "issuerCert":     { "$ref": "#/$defs/IssuerCert" },
+        "keyFingerprint": { "type": "string", "maxLength": 64, "description": "Hex fingerprint of the issuer signing key. String, never a number (Pitfall 3)." },
+        "sig":            { "type": "string", "maxLength": 256, "description": "Hex-encoded Ed25519 signature over JCS(pack minus signature). String, never a number (Pitfall 3)." }
+      }
+    },
+    "IssuerCert": {
+      "type": "object",
+      "required": ["issuerId", "name", "publicKeyPem", "rootSig"],
+      "additionalProperties": false,
+      "properties": {
+        "issuerId":     { "type": "string", "maxLength": 100, "description": "Stable issuer identity (tenant key for Hub). String, never a number (Pitfall 3)." },
+        "name":         { "type": "string", "maxLength": 200, "description": "Human-readable publisher name (rendered as React text child only)." },
+        "publicKeyPem": { "type": "string", "maxLength": 2000, "description": "PEM-encoded Ed25519 public key that signs packs for this issuer." },
+        "rootSig":      { "type": "string", "maxLength": 256, "description": "Hex-encoded root signature over JCS(cert minus rootSig). String, never a number (Pitfall 3)." }
+      }
+    },
     "Module": {
       "type": "object",
       "required": ["id", "title", "description", "objectives"],
