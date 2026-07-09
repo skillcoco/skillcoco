@@ -1,0 +1,25 @@
+{
+  "blocks": {},
+  "description": "A minimal valid pack used for Phase 14 pack_trust fixtures.",
+  "domain_module": "programming",
+  "edges": [],
+  "exportVersion": "0.1.0",
+  "exportedAt": "2026-07-09T00:00:00Z",
+  "exportedFrom": "licensed:test-pack|Test Publisher",
+  "id": "test-pack",
+  "labs": {},
+  "modules": [],
+  "signature": {
+    "alg": "ed25519",
+    "issuerCert": {
+      "issuerId": "test-publisher",
+      "name": "Test Publisher",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAoDTcVvgodH0q4fclQMPjv5E6POrfi/JYdKrwG3f0yng=\n-----END PUBLIC KEY-----",
+      "rootSig": "aa6f84dc6768bdc516890bd57bce0b5899387442513b5250faff10e965d9db7c4212f2007df7181eade524ad0a789ed24f2df796da2e0445f4949b6b1faa8c02"
+    },
+    "keyFingerprint": "a88f6ecd",
+    "sig": "422e45ccdb06f20e70d8c6c624cc35c6422928238cc0e78101249065dfd4503b4865708878e360f33cf2c0e97165901433388320f686ab64ee21f501f65ef50c"
+  },
+  "title": "Signed Test Pack",
+  "videos": {}
+}
