@@ -5,6 +5,11 @@
 #
 # Note: `uv run scripts/sheet2pack.py` uses the PEP 723 header added in plan 05
 # which auto-installs these deps. This file exists for pip-based workflows.
+#
+# scripts/pyproject.toml [project.dependencies] is the source of truth for
+# these deps (used by `uv pip install ./scripts` / `uv add`). This file is a
+# mirror kept for `pip install -r` users — update it to match pyproject.toml
+# whenever deps change.
 
 anthropic>=0.40.0,<1.0.0
 youtube-transcript-api>=1.2.4
