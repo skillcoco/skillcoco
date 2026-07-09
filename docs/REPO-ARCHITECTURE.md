@@ -34,7 +34,7 @@ Each source file SHOULD carry an SPDX license header:
 
 ```rust
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Gourav Shah, Vivian Aranha
+// Copyright (c) 2026 Gourav Shah (Initcron Systems Pvt. Ltd.)
 ```
 
 `LICENSING.md` at the repo root summarizes this for casual readers.

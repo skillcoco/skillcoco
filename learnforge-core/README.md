@@ -215,7 +215,7 @@ explainers under [`docs/`](./docs/):
   signer), references to RFC 8032 (EdDSA), RFC 8785 (JCS), RFC 7515
   (JWS), and Bernstein et al. 2012.
 
-All five whitepapers are licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+All five whitepapers are MIT licensed (same as the code)
 so they may be reused with attribution. Rustdoc on every algorithm
 module cross-references the relevant whitepaper for the underlying
 mathematics.
@@ -284,7 +284,7 @@ above (or just run `cargo run -p learnforge-core --example bkt_update`).
 ## License
 
 - **Code**: [MIT](./LICENSE).
-- **Whitepapers** (`docs/*.md`): [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **Whitepapers** (`docs/*.md`): MIT (same as the code).
 
 Matches the OSS LearnForge license constraint in `PROJECT.md`.
 

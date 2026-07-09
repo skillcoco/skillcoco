@@ -6,8 +6,8 @@ This Contributor License Agreement ("Agreement") clarifies the
 intellectual property license granted with contributions from any
 person or entity (the "Contributor"). It is required to be signed
 once before your contributions can be accepted by the Project
-maintainers (Gourav Shah and Vivian Aranha — collectively, the
-"Maintainers").
+maintainers of the Project, currently Gourav Shah / Initcron
+Systems Pvt. Ltd. (collectively, the "Maintainers").
 
 ## 1. Definitions
 

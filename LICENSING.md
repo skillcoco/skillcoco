@@ -12,7 +12,6 @@ license.
 | What | License |
 |------|---------|
 | All source code (`src/`, `src-tauri/`, `learnforge-core/`) | **MIT** (`LICENSE`) |
-| Whitepapers (`learnforge-core/docs/*.md`) | **CC BY 4.0** |
 | Topic pack format, schema, loader, and bundled packs | **MIT** |
 | Third-party attributions | `THIRD_PARTY_NOTICES.md` |
 
@@ -22,13 +21,12 @@ The full MIT license text is in [`LICENSE`](LICENSE) at the repository
 root. In short: use it for anything — commercially, freely, with or
 without modification — as long as you include the copyright notice.
 
-## CC BY 4.0 — Algorithm Whitepapers
+## Algorithm Whitepapers
 
 The algorithm whitepapers in `learnforge-core/docs/` (BKT.md, SM2.md,
 THRESHOLD.md, MICROLEARNING.md, SIGNING.md, and any future additions)
-are published under Creative Commons Attribution 4.0 International
-(CC BY 4.0). You may republish, adapt, or translate them with
-attribution.
+are MIT licensed, same as the code — use, republish, adapt, or
+translate them freely with the copyright notice.
 
 ## Apache 2.0 — DeepTutor-derived code
 

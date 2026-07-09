@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Gourav Shah, Vivian Aranha
+// Copyright (c) 2026 Gourav Shah (Initcron Systems Pvt. Ltd.)
 //
 // Phase 6 (Certification) — Plan 06-06 (Wave 5) SettingsVerifyCertSection tests.
 // Phase 13 (OSS Consolidation) — migrated from pro/ to src/pages/ per D-08.

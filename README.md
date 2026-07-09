@@ -127,7 +127,6 @@ Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) befo
 | What | License |
 |------|---------|
 | All source code | **MIT** (`LICENSE`) |
-| Whitepapers (`learnforge-core/docs/*.md`) | **CC BY 4.0** |
 | Third-party attributions | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
 
 See [`LICENSING.md`](LICENSING.md) for the full boundary explanation.
