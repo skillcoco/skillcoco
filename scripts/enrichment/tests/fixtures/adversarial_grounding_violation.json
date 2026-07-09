@@ -1,0 +1,5 @@
+{
+  "_comment": "Adversarial fixture: lesson cites kubectl rollout undo --to-revision=3 which is NOT in the transcript. E3/E4 grounding check must flag this as needs_review.",
+  "lesson_md": "## Rolling Back Deployments\n\nWhen a deployment goes wrong, you can roll back using the following command:\n\n```bash\nkubectl rollout undo --to-revision=3\n```\n\nThis reverts the deployment to a specific revision. The `kubectl rollout` command family gives you full control over deployment history.",
+  "transcript": "In this lesson we look at Kubernetes deployments. A deployment manages a set of pod replicas. Think of it like a supervisor that keeps your workers at the right headcount. If a pod goes down, the deployment controller brings a new one up. We use kubectl get pods to check status and kubectl apply to update manifests."
+}

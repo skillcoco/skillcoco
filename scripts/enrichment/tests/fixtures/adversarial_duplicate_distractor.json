@@ -1,0 +1,60 @@
+{
+  "_comment": "Adversarial fixture: question 1 has near-duplicate distractors ('kubectl rollout status' and 'kubectl rollout   status' — normalized they are the same). E7 distractor check must flag this.",
+  "questions": [
+    {
+      "question": "Which command checks rollout progress?",
+      "choices": [
+        "kubectl get pods",
+        "kubectl rollout status",
+        "kubectl rollout   status",
+        "kubectl apply -f"
+      ],
+      "correct_index": 0,
+      "explanation": "kubectl get pods lists pods and their current state."
+    },
+    {
+      "question": "What does a Kubernetes Deployment manage in a cluster?",
+      "choices": [
+        "A set of pod replicas",
+        "Network routing rules",
+        "Persistent storage volumes",
+        "Node scheduling policies"
+      ],
+      "correct_index": 0,
+      "explanation": "A Deployment manages a set of pod replicas to ensure availability."
+    },
+    {
+      "question": "What strategy does Kubernetes use by default for rolling updates?",
+      "choices": [
+        "Recreate",
+        "Blue-Green",
+        "RollingUpdate",
+        "Canary"
+      ],
+      "correct_index": 2,
+      "explanation": "RollingUpdate is the default strategy, replacing pods incrementally."
+    },
+    {
+      "question": "Which kubectl flag pauses a Kubernetes Deployment rollout?",
+      "choices": [
+        "pause",
+        "stop",
+        "halt",
+        "freeze"
+      ],
+      "correct_index": 0,
+      "explanation": "kubectl rollout pause uses the pause concept."
+    },
+    {
+      "question": "What is the purpose of a ReplicaSet in Kubernetes?",
+      "choices": [
+        "Routes external traffic to pods",
+        "Maintains a stable set of replica pods",
+        "Provides persistent volume claims",
+        "Defines resource limits for containers"
+      ],
+      "correct_index": 1,
+      "explanation": "A ReplicaSet ensures the specified number of pod replicas are running."
+    }
+  ]
+}
