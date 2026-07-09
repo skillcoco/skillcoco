@@ -35,7 +35,18 @@
 //! BODY, which IS covered.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
+
+/// The bundled root PUBLIC-key PEM — the single canonical trust anchor
+/// (D-06, D-08 no-drift) shared by `forge-sign` (14-03), Creator Studio, and
+/// the app import gate (14-04 Step 3.5). No component embeds its own copy
+/// of the root PEM; every verifier references this constant.
+///
+/// PLACEHOLDER: this is a freshly-generated Ed25519 public key for Phase 14
+/// development. The real production root PEM (with its private half held
+/// offline) is dropped in before release.
+pub const BUNDLED_ROOT_PUBLIC_PEM: &str = include_str!("../keys/root_public.pem");
 
 /// Typed error taxonomy for pack-trust verification (D-11).
 ///
@@ -107,34 +118,132 @@ pub struct SignatureBlock {
     pub sig: String,
 }
 
-/// Verify a pack's full chain of trust: root verifies the embedded issuer
-/// cert, then the issuer cert's key verifies the pack signature over
-/// JCS(pack minus `signature`) (D-01/D-03/D-07).
-///
-/// STUB — implementation lands in plan 14-02.
-#[allow(unused_variables)]
-pub fn verify_pack(root_pem: &str, pack_json: &serde_json::Value) -> Result<(), PackTrustError> {
-    unimplemented!("pack_trust::verify_pack — implementation lands in plan 14-02")
+/// RFC 8785 (JCS) canonical bytes of a JSON value, via
+/// `serde_json_canonicalizer` — deliberately named distinctly from
+/// `crate::canonical_json` (14-RESEARCH Pitfall 2).
+pub fn jcs_bytes(v: &Value) -> Result<Vec<u8>, PackTrustError> {
+    serde_json_canonicalizer::to_vec(v).map_err(|e| PackTrustError::Canonicalize(e.to_string()))
+}
+
+/// Strip a named top-level key from a JSON object, then JCS-canonicalize the
+/// remainder. Generic over the field name so both pack verification
+/// (strips `signature`, D-03/D-04) and issuer-cert verification (strips
+/// `rootSig`, D-05) share the exact same strip-then-canonicalize recipe —
+/// one crypto path, not two. Never panics on attacker-controlled input: a
+/// non-object value is a typed error.
+fn strip_field_and_canonicalize(json: &Value, field: &str) -> Result<Vec<u8>, PackTrustError> {
+    let obj = json.as_object().ok_or(PackTrustError::NotAnObject)?;
+    let mut stripped = obj.clone();
+    stripped.remove(field);
+    jcs_bytes(&Value::Object(stripped))
+}
+
+/// Strip the top-level `signature` key from a pack JSON object, then
+/// JCS-canonicalize the remainder (D-03 whole-pack-minus-signature, D-04 —
+/// signature-block fields are NOT covered by the sig).
+fn strip_and_canonicalize(pack_json: &Value) -> Result<Vec<u8>, PackTrustError> {
+    strip_field_and_canonicalize(pack_json, "signature")
 }
 
 /// Verify an issuer cert against the root public key: strip `rootSig`,
 /// JCS-canonicalize the remainder, verify with `root_pem` — the SAME
 /// strip-canonicalize-verify path as packs, parameterized (D-05).
-///
-/// STUB — implementation lands in plan 14-02.
-#[allow(unused_variables)]
 pub fn verify_issuer_cert(root_pem: &str, cert: &IssuerCert) -> Result<(), PackTrustError> {
-    unimplemented!("pack_trust::verify_issuer_cert — implementation lands in plan 14-02")
+    let cert_value = serde_json::to_value(cert)
+        .map_err(|e| PackTrustError::MalformedCert(e.to_string()))?;
+    let bytes = strip_field_and_canonicalize(&cert_value, "rootSig")?;
+    let ok = crate::signing::verify_payload(root_pem, &bytes, &cert.root_sig);
+    if !ok {
+        return Err(PackTrustError::UntrustedIssuer);
+    }
+    Ok(())
 }
 
-/// RFC 8785 (JCS) canonical bytes of a JSON value, via
-/// `serde_json_canonicalizer` — deliberately named distinctly from
-/// `crate::canonical_json` (14-RESEARCH Pitfall 2).
-///
-/// STUB — implementation lands in plan 14-02.
-#[allow(unused_variables)]
-pub fn jcs_bytes(v: &serde_json::Value) -> Result<Vec<u8>, PackTrustError> {
-    unimplemented!("pack_trust::jcs_bytes — implementation lands in plan 14-02")
+/// Verify a pack's full chain of trust: root verifies the embedded issuer
+/// cert, then the issuer cert's key verifies the pack signature over
+/// JCS(pack minus `signature`) (D-01/D-03/D-07).
+pub fn verify_pack(root_pem: &str, pack_json: &Value) -> Result<(), PackTrustError> {
+    let obj = pack_json.as_object().ok_or(PackTrustError::NotAnObject)?;
+    let sig_block = obj.get("signature").ok_or(PackTrustError::MissingSignature)?;
+
+    let issuer_cert_value = sig_block
+        .get("issuerCert")
+        .ok_or_else(|| PackTrustError::MalformedCert("missing issuerCert".to_string()))?;
+    let issuer_cert: IssuerCert = serde_json::from_value(issuer_cert_value.clone())
+        .map_err(|e| PackTrustError::MalformedCert(e.to_string()))?;
+
+    // Step 1 of the chain: root verifies the issuer cert.
+    verify_issuer_cert(root_pem, &issuer_cert)?;
+
+    // Step 2 of the chain: the (now-trusted) issuer key verifies the pack body.
+    let sig_hex = sig_block
+        .get("sig")
+        .and_then(|v| v.as_str())
+        .ok_or(PackTrustError::MalformedSignature)?;
+    let canonical_bytes = strip_and_canonicalize(pack_json)?;
+    let ok = crate::signing::verify_payload(&issuer_cert.public_key_pem, &canonical_bytes, sig_hex);
+    if !ok {
+        return Err(PackTrustError::TamperedPack);
+    }
+    Ok(())
+}
+
+/// Issue a new issuer cert signed by the root key: build `{issuerId, name,
+/// publicKeyPem}`, JCS-canonicalize, root-sign, hex-encode into `rootSig`
+/// (the sign-side counterpart to [`verify_issuer_cert`] — same crypto path,
+/// D-08).
+pub fn issue_cert(
+    root_key: &ed25519_dalek::SigningKey,
+    issuer_id: &str,
+    name: &str,
+    issuer_public_pem: &str,
+) -> Result<IssuerCert, PackTrustError> {
+    let unsigned = serde_json::json!({
+        "issuerId": issuer_id,
+        "name": name,
+        "publicKeyPem": issuer_public_pem,
+    });
+    let bytes = jcs_bytes(&unsigned)?;
+    let sig = crate::signing::sign_payload(root_key, &bytes);
+    Ok(IssuerCert {
+        issuer_id: issuer_id.to_string(),
+        name: name.to_string(),
+        public_key_pem: issuer_public_pem.to_string(),
+        root_sig: hex::encode(sig.to_bytes()),
+    })
+}
+
+/// Sign a pack body with the issuer key, attaching a full `signature` block
+/// (the sign-side counterpart to [`verify_pack`] — same crypto path, D-08).
+/// Any pre-existing `signature` key is stripped and replaced.
+pub fn sign_pack(
+    signing_key: &ed25519_dalek::SigningKey,
+    issuer_cert: &IssuerCert,
+    pack_json: &Value,
+) -> Result<Value, PackTrustError> {
+    let obj = pack_json.as_object().ok_or(PackTrustError::NotAnObject)?;
+    let mut stripped = obj.clone();
+    stripped.remove("signature");
+    let stripped_value = Value::Object(stripped.clone());
+
+    let bytes = jcs_bytes(&stripped_value)?;
+    let sig = crate::signing::sign_payload(signing_key, &bytes);
+    let key_fingerprint = crate::signing::public_key_fingerprint(&signing_key.verifying_key());
+
+    let issuer_cert_value =
+        serde_json::to_value(issuer_cert).map_err(|e| PackTrustError::MalformedCert(e.to_string()))?;
+
+    let mut result = stripped;
+    result.insert(
+        "signature".to_string(),
+        serde_json::json!({
+            "alg": "ed25519",
+            "issuerCert": issuer_cert_value,
+            "keyFingerprint": key_fingerprint,
+            "sig": hex::encode(sig.to_bytes()),
+        }),
+    );
+    Ok(Value::Object(result))
 }
 
 // ── RED tests (Wave 0, plan 14-01) ────────────────────────────────────────
@@ -312,5 +421,74 @@ mod tests {
                 "{name} must be plain language, got: {msg}"
             );
         }
+    }
+
+    /// A forged issuer cert — self-signed instead of signed by the real
+    /// root — must be rejected as `UntrustedIssuer` (T-14-03 mitigation:
+    /// root PEM verifies `cert.rootSig` before the cert's `publicKeyPem` is
+    /// ever trusted).
+    #[test]
+    fn forged_cert_rejected() {
+        let (_root_key, root_pem) = keypair();
+        let (issuer_key, issuer_pem) = keypair();
+
+        // Attacker self-signs the cert with the issuer key, NOT the root.
+        let forged_cert = make_cert(&issuer_key, "issuer-forged", &issuer_pem);
+
+        let result = verify_issuer_cert(&root_pem, &forged_cert);
+        assert!(
+            matches!(result, Err(PackTrustError::UntrustedIssuer)),
+            "self-signed (non-root) cert must be rejected as UntrustedIssuer; got {result:?}"
+        );
+
+        // The same forged cert embedded in an otherwise-valid pack signature
+        // must also be rejected end-to-end via verify_pack.
+        let pack = signed_pack(&issuer_key, &forged_cert, pack_body());
+        let pack_result = verify_pack(&root_pem, &pack);
+        assert!(
+            matches!(pack_result, Err(PackTrustError::UntrustedIssuer)),
+            "verify_pack must reject a pack whose issuer cert isn't root-signed; got {pack_result:?}"
+        );
+    }
+
+    /// A pack with no `signature` key at all must be rejected as
+    /// `MissingSignature` (D-09 tiering relies on this being distinguishable
+    /// from tamper/untrusted-issuer rejections).
+    #[test]
+    fn missing_signature_returns_missing_signature() {
+        let (_root_key, root_pem) = keypair();
+        let unsigned_pack = pack_body();
+
+        let result = verify_pack(&root_pem, &unsigned_pack);
+        assert!(
+            matches!(result, Err(PackTrustError::MissingSignature)),
+            "pack with no signature key must yield MissingSignature; got {result:?}"
+        );
+    }
+
+    /// A1 mitigation — JCS conformance smoke test against a known RFC 8785
+    /// vector. Confirms `jcs_bytes` produces spec-correct output, not just
+    /// internally-consistent output (byte-stability alone wouldn't catch a
+    /// systematic divergence from the RFC 8785 spec).
+    #[test]
+    fn jcs_conformance_rfc8785_vector() {
+        // RFC 8785 Appendix B "French" example, restricted to a subset that
+        // exercises key-ordering + unicode escaping without relying on
+        // locale-specific float formatting.
+        let v = serde_json::json!({
+            "peach": "This sorts after appple",
+            "appple": "This sorts before peach",
+            "1": "One",
+            "10": "Ten",
+            "2": "Two",
+        });
+        let bytes = jcs_bytes(&v).expect("JCS bytes");
+        let s = String::from_utf8(bytes).expect("JCS output is valid UTF-8");
+        // RFC 8785 §3.2.3: object keys sort by UTF-16 code unit, so numeric
+        // string keys "1" < "10" < "2" (lexicographic, not numeric).
+        assert_eq!(
+            s,
+            r#"{"1":"One","10":"Ten","2":"Two","appple":"This sorts before peach","peach":"This sorts after appple"}"#
+        );
     }
 }
