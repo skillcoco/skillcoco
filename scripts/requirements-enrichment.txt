@@ -1,0 +1,14 @@
+# Enrichment pipeline dependencies for educators without uv.
+#
+# Installation:
+#   pip install -r scripts/requirements-enrichment.txt
+#
+# Note: `uv run scripts/sheet2pack.py` uses the PEP 723 header added in plan 05
+# which auto-installs these deps. This file exists for pip-based workflows.
+
+anthropic>=0.40.0,<1.0.0
+youtube-transcript-api>=1.2.4
+yt-dlp>=2026.7.0
+pydantic>=2.0
+jsonschema>=4.0
+openpyxl>=3.1
