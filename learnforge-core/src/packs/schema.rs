@@ -133,4 +133,97 @@ mod tests {
             &SCHEMA_SOURCE.chars().take(80).collect::<String>()
         );
     }
+
+    /// A minimal valid pack body shared by the signature-block tests below.
+    fn minimal_pack() -> serde_json::Value {
+        json!({
+            "id": "sig-schema-test",
+            "title": "Signature Schema Test",
+            "description": "d",
+            "domain_module": "devops",
+            "modules": [
+                { "id": "mod-one", "title": "M1", "description": "d", "objectives": ["o"] }
+            ]
+        })
+    }
+
+    fn valid_signature_block() -> serde_json::Value {
+        json!({
+            "alg": "ed25519",
+            "issuerCert": {
+                "issuerId": "issuer-001",
+                "name": "Test Issuer",
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA\n-----END PUBLIC KEY-----",
+                "rootSig": "aabbccdd"
+            },
+            "keyFingerprint": "a1b2c3d4",
+            "sig": "deadbeef"
+        })
+    }
+
+    /// D-09 — a pack JSON with NO `signature` key at all must stay schema
+    /// valid; unsigned free packs are not required to carry a signature.
+    #[test]
+    fn unsigned_free_pack_still_schema_valid() {
+        let value = minimal_pack();
+        let errors = validate(&value);
+        assert!(
+            errors.is_empty(),
+            "unsigned pack (no signature key) must be schema-valid; got: {:?}",
+            errors
+        );
+    }
+
+    /// A pack with a well-formed `signature` block passes the schema.
+    #[test]
+    fn signed_pack_schema_valid() {
+        let mut value = minimal_pack();
+        value["signature"] = valid_signature_block();
+        let errors = validate(&value);
+        assert!(
+            errors.is_empty(),
+            "well-formed signature block must be schema-valid; got: {:?}",
+            errors
+        );
+    }
+
+    /// additionalProperties:false on SignatureBlock — an unknown key inside
+    /// `signature` must fail validation.
+    #[test]
+    fn signature_block_extra_field_rejected() {
+        let mut value = minimal_pack();
+        let mut sig = valid_signature_block();
+        sig["unexpectedField"] = json!("should not be allowed");
+        value["signature"] = sig;
+        let errors = validate(&value);
+        assert!(
+            !errors.is_empty(),
+            "signature block with an unknown key must fail schema validation"
+        );
+    }
+
+    /// Pitfall 3 — no signature-adjacent field in the compiled schema source
+    /// is typed `"type": "number"` inside the SignatureBlock/IssuerCert defs
+    /// (all identifiers/hashes/sigs must be strings to avoid JCS
+    /// float-precision loss).
+    #[test]
+    fn signature_block_fields_never_typed_number() {
+        let sig_defs_start = SCHEMA_SOURCE
+            .find("\"SignatureBlock\"")
+            .expect("SignatureBlock def must exist in schema source");
+        let issuer_defs_start = SCHEMA_SOURCE
+            .find("\"IssuerCert\"")
+            .expect("IssuerCert def must exist in schema source");
+        let region_start = sig_defs_start.min(issuer_defs_start);
+        // Slice from the earlier def to the end of the Module def (bounds the
+        // scan to the signature-related $defs, not the whole file).
+        let module_start = SCHEMA_SOURCE
+            .find("\"Module\":")
+            .expect("Module def must exist");
+        let region = &SCHEMA_SOURCE[region_start..module_start];
+        assert!(
+            !region.contains("\"type\": \"number\""),
+            "no signature-adjacent field may be typed number (Pitfall 3)"
+        );
+    }
 }
