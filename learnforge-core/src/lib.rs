@@ -31,6 +31,7 @@
 //! - [`canonical_json`] — Byte-stable canonical JSON serializer for signing payloads (Wave 5).
 //! - [`signing`] — Pure Ed25519 sign/verify + `SigningKeyStore` trait + `share_text` (Wave 5).
 //! - [`blocks`] — Block taxonomy (BlockType, BlockStatus, ModuleBlock) + `BlockStore` trait (Wave 6).
+//! - [`pack_trust`] — Pack-signing chain of trust: JCS canonicalization + root→issuer→pack Ed25519 verification (Phase 14).
 //! - [`packs`] — Topic-pack subsystem: bundled loader, schema validator, `PackSource` + `PackStore` traits (Wave 7).
 //! - [`achievements`] — Achievement issuance algorithm + `AchievementStore` trait + `maybe_issue` with A5 clock injection (Wave 8).
 //! - [`verifier`] — Phase 14 verification contract stub (D-08).
@@ -54,6 +55,7 @@ pub mod bkt;
 pub mod blocks;
 pub mod canonical_json;
 pub mod microlearning;
+pub mod pack_trust;
 pub mod packs;
 pub mod path;
 pub mod signing;

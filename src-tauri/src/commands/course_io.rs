@@ -1706,4 +1706,55 @@ mod tests {
             "T-12-10: mid-write failure must roll back — learning_tracks must be empty"
         );
     }
+
+    /// RED (Phase 14 Wave 0, TRUST-03) — a pack whose body was edited AFTER
+    /// signing must be rejected at import with ZERO DB writes. FAILS until
+    /// plan 14-04 inserts the pack_trust verification gate (Step 3.5) into
+    /// `import_course_impl` — today the signature block is ignored and the
+    /// import succeeds. Mirrors the T-12-10 atomicity test pattern above.
+    #[test]
+    fn tampered_pack_import_writes_nothing() {
+        let conn = fresh_conn_with_learner();
+
+        // A licensed pack carrying a signature block whose `sig` no longer
+        // matches the body: the body (title) was edited after signing, which
+        // is indistinguishable from a signature computed over different bytes.
+        let mut pack: serde_json::Value = serde_json::from_str(&minimal_export_json(
+            "tampered-pack",
+            "licensed:tampered-pack|Test Licensor",
+        ))
+        .unwrap();
+        pack["signature"] = serde_json::json!({
+            "alg": "ed25519",
+            "issuerCert": {
+                "issuerId": "issuer-001",
+                "name": "Test Issuer",
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAtOJv2B75vSb1v0PxrEpQe1rrJDPUKSFF12my3AeBOI4=\n-----END PUBLIC KEY-----\n",
+                // Hex-shaped but not a valid root signature over this cert.
+                "rootSig": "00".repeat(64)
+            },
+            "keyFingerprint": "deadbeef",
+            // Signature over the PRE-tamper body — no longer matches below.
+            "sig": "00".repeat(64)
+        });
+        // Body edited AFTER signing (any byte, including provenance, counts).
+        pack["title"] = serde_json::json!("Tampered Title (edited after signing)");
+
+        let (_tmp, path) = write_tmp_json(&pack.to_string());
+        let result = import_course_impl(&conn, &path);
+        assert!(
+            result.is_err(),
+            "TRUST-03: tampered signed pack must be rejected (verification gate lands in 14-04); \
+             import unexpectedly succeeded"
+        );
+
+        // TRUST-03: ZERO rows written — gate must reject BEFORE BEGIN IMMEDIATE.
+        let track_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM learning_tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            track_count, 0,
+            "TRUST-03: tampered pack import must write ZERO learning_tracks rows"
+        );
+    }
 }
