@@ -8,17 +8,28 @@
   "exportedFrom": "licensed:test-pack|Test Publisher",
   "id": "test-pack",
   "labs": {},
-  "modules": [],
+  "modules": [
+    {
+      "description": "First module.",
+      "difficulty": 1,
+      "estimatedMinutes": 30,
+      "id": "mod-one",
+      "objectives": [
+        "learn basics"
+      ],
+      "title": "Module One"
+    }
+  ],
   "signature": {
     "alg": "ed25519",
     "issuerCert": {
       "issuerId": "test-publisher",
       "name": "Test Publisher",
-      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAoDTcVvgodH0q4fclQMPjv5E6POrfi/JYdKrwG3f0yng=\n-----END PUBLIC KEY-----",
-      "rootSig": "ae1613e932b803c488d9220ce44b59ab521b2a8a99e7a42cd2818120cf1f86018d14684a2983419889487194b63079b445c0b580cae9f5aa3ff0808d130d1009"
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAs2f2crL/qB/lWzxTxGDK3hSeS0L3wkiu4YFJhYe2pYk=\n-----END PUBLIC KEY-----",
+      "rootSig": "013c814492a32fb35889090395c22cb9beb71e906514125daae6d9ace7fc512bbc361d4c10ca9fd9f2a3f36fbff44a82d8359c5c9002c4f27c763455af5c9208"
     },
-    "keyFingerprint": "a88f6ecd",
-    "sig": "422e45ccdb06f20e70d8c6c624cc35c6422928238cc0e78101249065dfd4503b4865708878e360f33cf2c0e97165901433388320f686ab64ee21f501f65ef50c"
+    "keyFingerprint": "dbbb0c18",
+    "sig": "677a372685d9b7bc49b67ce31859f6aee4aec17e52fe5dfbe349f8a2a266bd93cc57f9f614bd42dac6921d53304e84cdb5daa3c5e0565405abb28b5d9f7e1d01"
   },
   "title": "Signed Test Pack",
   "videos": {}
