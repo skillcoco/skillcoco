@@ -97,7 +97,10 @@ function makeTrack(): LearningTrack {
   };
 }
 
-function makePath(generatedByModel: string): LearningPath {
+function makePath(
+  generatedByModel: string,
+  opts?: { verified?: boolean; issuerName?: string | null },
+): LearningPath {
   return {
     id: "path-1",
     trackId: "trk-attr",
@@ -107,6 +110,8 @@ function makePath(generatedByModel: string): LearningPath {
     edgesJson: "[]",
     estimatedHours: 8,
     createdAt: "2026-06-15T00:00:00Z",
+    verified: opts?.verified,
+    issuerName: opts?.issuerName ?? null,
   };
 }
 
@@ -312,6 +317,62 @@ describe("TrackView premium licensed badge (g73)", () => {
 
     await new Promise((r) => setTimeout(r, 10));
     expect(screen.queryByTestId("licensed-badge")).not.toBeInTheDocument();
+  });
+
+  // Phase 14 Plan 05 (D-14) — verified-state badge, driven purely by the
+  // IPC-surfaced `verified`/`issuerName` fields on the track record (14-04
+  // import gate). No crypto runs in the browser.
+
+  it("renders verified badge when track is signature-verified", async () => {
+    mockStoreState.currentPath = makePath("licensed:sfd402|School of Devops", {
+      verified: true,
+      issuerName: "Test Publisher",
+    });
+    mockStoreState.currentTrack = makeTrack();
+
+    renderTrackView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("licensed-badge-verified")).toBeInTheDocument();
+    });
+
+    const verifiedBadge = screen.getByTestId("licensed-badge-verified");
+    expect(verifiedBadge.textContent).toContain("Test Publisher");
+  });
+
+  it("renders plain licensed badge when unverified", async () => {
+    mockStoreState.currentPath = makePath("licensed:sfd402|School of Devops", {
+      verified: false,
+      issuerName: null,
+    });
+    mockStoreState.currentTrack = makeTrack();
+
+    renderTrackView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("licensed-badge")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId("licensed-badge-verified")).not.toBeInTheDocument();
+  });
+
+  it("issuer name rendered as escaped text child (no dangerouslySetInnerHTML)", async () => {
+    mockStoreState.currentPath = makePath("licensed:sfd402|School of Devops", {
+      verified: true,
+      issuerName: "<img src=x onerror=alert(1)>",
+    });
+    mockStoreState.currentTrack = makeTrack();
+
+    renderTrackView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("licensed-badge-verified")).toBeInTheDocument();
+    });
+
+    const verifiedBadge = screen.getByTestId("licensed-badge-verified");
+    // Escaped as text — no actual <img> element gets mounted into the DOM.
+    expect(verifiedBadge.querySelector("img")).toBeNull();
+    expect(verifiedBadge.textContent).toContain("<img src=x onerror=alert(1)>");
   });
 });
 
