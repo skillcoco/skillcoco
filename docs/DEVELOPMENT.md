@@ -300,8 +300,15 @@ WASM tests (Phase 9+):
 ```bash
 # Use rustup-managed cargo for wasm32 target:
 PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH" \
-  cargo build --target wasm32-unknown-unknown -p learnforge-core
+  cargo build --target wasm32-unknown-unknown -p learnforge-core --lib
 ```
+
+Scoped to `--lib` since Phase 14 (14-RESEARCH Open Question 2, RESOLVED):
+`learnforge-core` now also declares the `forge-sign` `[[bin]]` (a
+pack-signing CLI), which shares the crate's `[dependencies]` table but never
+runs on wasm32. `--lib` narrows this gate to exactly the library surface the
+app ships to wasm, making it immune to any future bin-only dependency while
+still fully covering `pack_trust` and every other wasm-facing module.
 
 ---
 
