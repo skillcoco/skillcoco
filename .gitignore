@@ -28,3 +28,9 @@ Thumbs.db
 src-tauri/gen/
 pro/src-tauri-pro/gen/
 .planning/private/
+
+# Python packaging build artifacts (scripts/ is now pip-installable)
+scripts/build/
+scripts/*.egg-info/
+__pycache__/
+*.pyc
