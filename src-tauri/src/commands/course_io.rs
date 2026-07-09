@@ -1478,41 +1478,68 @@ mod tests {
         );
     }
 
-    /// GREEN — D-11 (no-laundering guard): non-exportable source is REJECTED, not laundered.
+    /// D-11 (preserve-not-reject): non-exportable source is PRESERVED verbatim, not rejected.
+    ///
+    /// Test 1: import of licensed:sfd402 payload succeeds; generated_by_model == "licensed:sfd402".
+    /// Test 2: export of that imported track returns CourseNotExportable (no file written).
+    /// Invariant: is_course_exportable(stamped) == is_course_exportable(source) — both false.
     #[test]
-    fn d11_non_exportable_source_is_rejected_not_laundered() {
+    fn d11_non_exportable_source_is_preserved_not_rejected() {
         let conn = fresh_conn_with_learner();
-        // exported_from = "licensed:test" — non-exportable per is_course_exportable
-        let json = minimal_export_json("licensed-course", "licensed:test");
+        let json = minimal_export_json("sfd402", "licensed:sfd402");
         let (_tmp, path) = write_tmp_json(&json);
 
+        // Test 1: import SUCCEEDS (no ProvenanceLaundering rejection)
         let result = import_course_impl(&conn, &path);
         assert!(
-            result.is_err(),
-            "D-11: licensed:test source must be REJECTED (not laundered)"
+            result.is_ok(),
+            "D-11: licensed:sfd402 source must be PRESERVED (import must succeed, not reject); got: {:?}",
+            result
         );
+        let r = result.unwrap();
 
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("licensed:test") || err_msg.contains("launder") || err_msg.contains("D-11"),
-            "error must mention the non-exportable provenance; got: {}",
-            err_msg
-        );
-
-        // No rows written (import was rejected)
-        let track_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM learning_tracks",
-            [],
-            |r| r.get(0),
+        // Test 1 cont.: generated_by_model must be "licensed:sfd402" verbatim (source class preserved)
+        let stamped_prov: String = conn.query_row(
+            "SELECT generated_by_model FROM learning_paths WHERE track_id = ?1",
+            rusqlite::params![r.track_id],
+            |row| row.get(0),
         ).unwrap();
-        assert_eq!(track_count, 0, "D-11: rejected import must write zero rows");
+        assert_eq!(
+            stamped_prov, "licensed:sfd402",
+            "D-11: stamped provenance must be preserved verbatim as 'licensed:sfd402'; got: {}",
+            stamped_prov
+        );
 
-        // Ensure the imported track's exportability class EQUALS the source's
-        // (both are non-exportable — the import was rejected rather than laundered)
-        let source_exportable = is_course_exportable("licensed:test");
-        // The import was rejected — no stamped provenance exists.
-        // The invariant is satisfied because the import was not committed.
-        assert!(!source_exportable, "licensed:test must be non-exportable");
+        // Test 2: export of the imported track returns CourseNotExportable, no file written
+        let tmp_export = tempfile::NamedTempFile::new().unwrap();
+        let save_path = tmp_export.path().to_str().unwrap().to_string();
+        drop(tmp_export); // remove file so we can assert it was NOT written
+        assert!(!std::path::Path::new(&save_path).exists(), "precondition: export file must not exist");
+
+        let export_result = export_course_impl(&conn, &r.track_id, &save_path);
+        assert!(
+            export_result.is_err(),
+            "D-11: export of licensed:sfd402 track must return Err(CourseNotExportable)"
+        );
+        let export_err = export_result.unwrap_err();
+        assert!(
+            matches!(export_err, ExportCourseError::CourseNotExportable(_)),
+            "error variant must be CourseNotExportable; got: {:?}", export_err
+        );
+        assert!(
+            !std::path::Path::new(&save_path).exists(),
+            "D-11: NO export file must be written for a licensed track"
+        );
+
+        // Invariant: is_course_exportable(stamped) == is_course_exportable(source) — both false
+        let source_exportable = is_course_exportable("licensed:sfd402");
+        let stamped_exportable = is_course_exportable(&stamped_prov);
+        assert!(!source_exportable, "source 'licensed:sfd402' must be non-exportable");
+        assert!(!stamped_exportable, "stamped 'licensed:sfd402' must also be non-exportable");
+        assert_eq!(
+            source_exportable, stamped_exportable,
+            "D-11 invariant: exportability class must be preserved (both false — no laundering)"
+        );
     }
 
     /// GREEN — ready blocks are rehydrated; lab blocks' image name is stored verbatim (D-03).
