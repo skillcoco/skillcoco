@@ -98,7 +98,12 @@
     "exportedFrom": {
       "type": "string",
       "maxLength": 200,
-      "description": "Provenance marker, e.g. 'imported:my-export.json'. D-06."
+      "description": "Provenance marker, e.g. 'imported:my-export.json'. D-06. For licensed packs, encoded as 'licensed:{id}|{licensor}' (pipe-delimited, g73)."
+    },
+    "licensor": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Optional licensing-entity display name. Currently carried inside exportedFrom as 'licensed:{id}|{licensor}'; reserved here for a future dedicated field."
     },
     "blocks": {
       "type": "object",
