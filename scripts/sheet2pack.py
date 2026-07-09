@@ -243,84 +243,41 @@ def compute_matched_chapters(modules_raw, quizzes):
     return matched
 
 
-def convert(xlsx_path, pack_id, title, domain, channel,
-            enrich=False, enrich_only=None, yes=False):
-    """Convert a SODA xlsx to an exported-course JSON pack.
+def assemble_payload(
+    modules_raw,
+    quizzes,
+    enriched_lessons,
+    generated_quizzes,
+    channel,
+    pack_id,
+    title,
+    domain,
+    return_warnings=False,
+):
+    """Assemble the exported-course JSON payload from parsed modules and enrichment data.
+
+    This function is the single implementation of the assembly loop that
+    convert() calls after the enrichment pre-pass. It is also used directly
+    by tests so they can inject enriched_lessons/generated_quizzes without
+    hitting the network (ENR-04 / D-03 / D-07 / D-09 / D-16 integration tests).
 
     Args:
-        xlsx_path:    Path to the course tracker xlsx.
-        pack_id:      Unique pack identifier slug.
-        title:        Human-readable course title.
-        domain:       Domain/category tag for the pack.
-        channel:      YouTube channel name for video metadata.
-        enrich:       Run all enrichment stages (transcripts, lessons, quizzes).
-        enrich_only:  Run only one stage: 'transcripts', 'lessons', or 'quizzes'.
-        yes:          Skip the D-15 cost-confirmation prompt.
+        modules_raw:        List of module dicts from parse_tracker().
+        quizzes:            Dict of hand-authored quiz chapters from parse_quizzes().
+        enriched_lessons:   {video_id: markdown} from generate_lessons() or {}.
+        generated_quizzes:  {module_slug: quiz_payload_dict} from generate_quizzes() or {}.
+        channel:            YouTube channel name for video metadata.
+        pack_id:            Unique pack identifier slug.
+        title:              Human-readable course title.
+        domain:             Domain/category tag for the pack.
+        return_warnings:    If True, return (payload, warnings) tuple instead of payload.
 
     Returns:
-        (payload_dict, warnings, skipped, failed) — the last two lists are
-        populated only when enrich or enrich_only is set.
+        payload dict, or (payload, warnings) tuple if return_warnings=True.
     """
-    import openpyxl
-
-    wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
-    if "Tracker" not in wb.sheetnames:
-        sys.exit("ERROR: no 'Tracker' sheet found")
-    modules_raw, warnings = parse_tracker(wb["Tracker"])
-    if not modules_raw:
-        sys.exit("ERROR: no modules with lessons found in Tracker")
-    quizzes = parse_quizzes(wb["Quizzes"]) if "Quizzes" in wb.sheetnames else {}
-
-    # Enrichment state — populated in the pre-pass below
-    enriched_lessons: dict = {}   # video_id → generated markdown text
-    generated_quizzes: dict = {}  # module_slug → quiz_payload dict
-    skipped: list = []            # lessons with no captions (D-03)
-    failed: list = []             # lessons/modules that failed generation (D-16)
-
-    # Pre-compute matched chapters for D-09 fill-gaps guard
-    matched_chapters: set = compute_matched_chapters(modules_raw, quizzes)
-
-    # ------------------------------------------------------------------
-    # Enrichment pre-pass (runs before assembly; no network calls otherwise)
-    # ------------------------------------------------------------------
-    if enrich or enrich_only:
-        from enrichment.transcript import fetch_and_cache_transcripts
-        from enrichment.token_estimator import estimate_and_confirm
-        from enrichment.lesson_generator import generate_lessons, _make_section_payload  # noqa: F401
-        from enrichment.quiz_generator import generate_quizzes
-
-        # Stage A: fetch transcripts for all lessons with a video_id (D-01 / D-04)
-        # Always run — transcripts feed both lessons and quizzes.
-        transcripts = fetch_and_cache_transcripts(modules_raw, skipped)
-
-        # Determine which LLM stages to run
-        run_lessons = enrich or enrich_only == "lessons"
-        run_quizzes = enrich or enrich_only == "quizzes"
-
-        if (run_lessons or run_quizzes) and transcripts:
-            # D-15: print estimate and confirm before any LLM calls
-            estimate_and_confirm(transcripts, len(modules_raw), yes=yes)
-
-        async def _run_enrichment():
-            """Single coroutine wrapping all async enrichment stages (Pitfall 7)."""
-            el: dict = {}
-            gq: dict = {}
-            if run_lessons and transcripts:
-                el = await generate_lessons(transcripts, failed)
-            if run_quizzes:
-                gq = await generate_quizzes(
-                    modules_raw, transcripts, matched_chapters, failed
-                )
-            return el, gq
-
-        # Single entry point for all async enrichment (Pitfall 7 — never nest event loops)
-        enriched_lessons, generated_quizzes = asyncio.run(_run_enrichment())
-
-    # ------------------------------------------------------------------
-    # Assembly loop (enrichment-aware)
-    # ------------------------------------------------------------------
     modules, blocks_map, videos_map = [], {}, {}
-    # track which chapters got hand-authored quizzes (for the report + D-09)
+    warnings: list = []
+    # Track which chapters got hand-authored quizzes (for D-09 fill-gaps + report)
     used_chapters: set = set()
 
     for m in modules_raw:
@@ -358,7 +315,8 @@ def convert(xlsx_path, pack_id, title, domain, channel,
             # Select markdown source: enriched (if generated) or stage-1 stub (D-03)
             if vid and vid in enriched_lessons:
                 md = enriched_lessons[vid]
-                # Route through the 131072-byte guard (single implementation in lesson_generator)
+                # Route through the 131072-byte guard — single implementation in
+                # lesson_generator._make_section_payload (no duplicate guard here)
                 from enrichment.lesson_generator import _make_section_payload
                 payload_json_str = _make_section_payload(md)
                 section_payload = json.loads(payload_json_str)
@@ -420,6 +378,100 @@ def convert(xlsx_path, pack_id, title, domain, channel,
         "blocks": blocks_map,
         "videos": videos_map,
     }
+
+    if return_warnings:
+        return payload, warnings
+    return payload
+
+
+def convert(xlsx_path, pack_id, title, domain, channel,
+            enrich=False, enrich_only=None, yes=False):
+    """Convert a SODA xlsx to an exported-course JSON pack.
+
+    Args:
+        xlsx_path:    Path to the course tracker xlsx.
+        pack_id:      Unique pack identifier slug.
+        title:        Human-readable course title.
+        domain:       Domain/category tag for the pack.
+        channel:      YouTube channel name for video metadata.
+        enrich:       Run all enrichment stages (transcripts, lessons, quizzes).
+        enrich_only:  Run only one stage: 'transcripts', 'lessons', or 'quizzes'.
+        yes:          Skip the D-15 cost-confirmation prompt.
+
+    Returns:
+        (payload_dict, warnings, skipped, failed) — the last two lists are
+        populated only when enrich or enrich_only is set.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
+    if "Tracker" not in wb.sheetnames:
+        sys.exit("ERROR: no 'Tracker' sheet found")
+    modules_raw, parse_warnings = parse_tracker(wb["Tracker"])
+    if not modules_raw:
+        sys.exit("ERROR: no modules with lessons found in Tracker")
+    quizzes = parse_quizzes(wb["Quizzes"]) if "Quizzes" in wb.sheetnames else {}
+
+    # Enrichment state — populated in the pre-pass below
+    enriched_lessons: dict = {}   # video_id → generated markdown text
+    generated_quizzes: dict = {}  # module_slug → quiz_payload dict
+    skipped: list = []            # lessons with no captions (D-03)
+    failed: list = []             # lessons/modules that failed generation (D-16)
+
+    # Pre-compute matched chapters for D-09 fill-gaps guard
+    matched_chapters: set = compute_matched_chapters(modules_raw, quizzes)
+
+    # ------------------------------------------------------------------
+    # Enrichment pre-pass (runs before assembly; no network calls otherwise)
+    # ------------------------------------------------------------------
+    if enrich or enrich_only:
+        from enrichment.transcript import fetch_and_cache_transcripts
+        from enrichment.token_estimator import estimate_and_confirm
+        from enrichment.quiz_generator import generate_quizzes
+
+        # Stage A: fetch transcripts for all lessons with a video_id (D-01 / D-04)
+        # Always run — transcripts feed both lessons and quizzes.
+        transcripts = fetch_and_cache_transcripts(modules_raw, skipped)
+
+        # Determine which LLM stages to run
+        run_lessons = enrich or enrich_only == "lessons"
+        run_quizzes = enrich or enrich_only == "quizzes"
+
+        if (run_lessons or run_quizzes) and transcripts:
+            # D-15: print estimate and confirm before any LLM calls
+            estimate_and_confirm(transcripts, len(modules_raw), yes=yes)
+
+        async def _run_enrichment():
+            """Single coroutine wrapping all async enrichment stages (Pitfall 7)."""
+            el: dict = {}
+            gq: dict = {}
+            if run_lessons and transcripts:
+                from enrichment.lesson_generator import generate_lessons
+                el = await generate_lessons(transcripts, failed)
+            if run_quizzes:
+                gq = await generate_quizzes(
+                    modules_raw, transcripts, matched_chapters, failed
+                )
+            return el, gq
+
+        # Single entry point for all async enrichment (Pitfall 7 — never nest event loops)
+        enriched_lessons, generated_quizzes = asyncio.run(_run_enrichment())
+
+    # ------------------------------------------------------------------
+    # Assembly — delegate to assemble_payload() (shared with tests)
+    # ------------------------------------------------------------------
+    payload, assembly_warnings = assemble_payload(
+        modules_raw=modules_raw,
+        quizzes=quizzes,
+        enriched_lessons=enriched_lessons,
+        generated_quizzes=generated_quizzes,
+        channel=channel,
+        pack_id=pack_id,
+        title=title,
+        domain=domain,
+        return_warnings=True,
+    )
+    warnings = parse_warnings + assembly_warnings
     return payload, warnings, skipped, failed
 
 
