@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "learnforge-enrichment"
+version = "0.1.0"
+description = "LearnForge sheet2pack converter + enrichment pipeline (transcripts, lesson/quiz generation, eval)"
+requires-python = ">=3.10"
+dependencies = [
+  "anthropic>=0.40.0,<1.0.0",
+  "youtube-transcript-api>=1.2.4",
+  "yt-dlp>=2026.7.0",
+  "pydantic>=2.0",
+  "jsonschema>=4.0",
+  "openpyxl>=3.1",
+]
+
+[project.scripts]
+sheet2pack = "sheet2pack:main"
+
+[tool.setuptools]
+# enrichment.tests is intentionally omitted from the wheel (test fixtures, not
+# shipped code). Explicit list used instead of automatic discovery so tests
+# never leak into the distribution.
+packages = ["enrichment", "enrichment.eval"]
+py-modules = ["sheet2pack"]
