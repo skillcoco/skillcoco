@@ -63,6 +63,7 @@ use tauri::State;
 use crate::storage_impl::blocks::SqliteBlockStore;
 use crate::topic_packs::loader::ImportedFilePackSource;
 use learnforge_core::blocks::{BlockStore, ModuleBlock};
+use learnforge_core::pack_trust::{self, PackTrustError};
 use learnforge_core::packs::export::{
     CourseExportPayload, ExportedBlock, ExportedVideo, serialize_export,
 };
@@ -173,6 +174,98 @@ pub fn is_course_exportable(generated_by_model: &str) -> bool {
 
     // All other non-empty strings are exportable (topic-pack:, imported:, AI model names)
     true
+}
+
+// ── Provenance tier (D-09, Step 3.5 gate) ─────────────────────────────────────
+
+/// Provenance tier for the Step 3.5 signature gate (D-09).
+///
+/// `Reserved` provenance classes (`licensed:`/`curated:`) REQUIRE a valid
+/// signature to import. `Open` classes (free/imported/AI-generated) import
+/// unsigned exactly as today, but if they DO carry a signature it is still
+/// fully verified (D-10 verify-if-present).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProvenanceTier {
+    /// `licensed:` / `curated:` — signature required.
+    Reserved,
+    /// Everything else (free/imported/AI model names) — signature optional.
+    Open,
+}
+
+/// Classify a RAW `exported_from` string into a provenance tier (D-09).
+///
+/// Reuses the SAME `RESERVED_NON_EXPORTABLE_PREFIXES` list as
+/// `is_course_exportable` — no parallel prefix check (14-RESEARCH Pitfall 4).
+/// MUST be called on the raw string BEFORE Step 4 transforms/namespaces it.
+pub fn provenance_tier(exported_from: &str) -> ProvenanceTier {
+    let s = exported_from.trim();
+    for &prefix in RESERVED_NON_EXPORTABLE_PREFIXES {
+        if s.starts_with(prefix) {
+            return ProvenanceTier::Reserved;
+        }
+    }
+    ProvenanceTier::Open
+}
+
+/// Result of a successful Step 3.5 verification gate pass-through.
+///
+/// `verified` is `true` only when a signature block was present AND the full
+/// chain-of-trust check passed. Unsigned `Open`-tier packs pass through with
+/// `verified=false` / `issuer_name=None` (D-09 zero-friction).
+#[derive(Debug, Clone, Default)]
+pub struct VerifiedImport {
+    pub verified: bool,
+    pub issuer_name: Option<String>,
+}
+
+/// Step 3.5 verification gate (TRUST-01/02/03, D-09/D-10).
+///
+/// Runs BEFORE `BEGIN IMMEDIATE` so a reject writes ZERO rows (T-14-11).
+///
+/// Gate logic:
+/// 1. If the pack JSON carries a top-level `signature` key, verify the FULL
+///    chain of trust regardless of provenance tier (D-10 verify-if-present).
+///    A failing chain rejects with the mapped [`ImportCourseError`] variant.
+/// 2. Else if the tier is `Reserved` (`licensed:`/`curated:`), reject with
+///    `SignatureRequired` (D-09 — reserved content must be signed).
+/// 3. Else (Open tier, unsigned), pass through unchanged (zero friction).
+///
+/// `root_pem` is injected so tests can pass the committed fixture root PEM;
+/// production callers pass `pack_trust::BUNDLED_ROOT_PUBLIC_PEM` (D-06/D-08 —
+/// the single canonical trust anchor, no local `include_str!` copy here).
+fn verify_import_gate(
+    root_pem: &str,
+    exported_from: &str,
+    pack_value: &serde_json::Value,
+) -> Result<VerifiedImport, ImportCourseError> {
+    let has_signature = pack_value
+        .as_object()
+        .map(|obj| obj.contains_key("signature"))
+        .unwrap_or(false);
+
+    if has_signature {
+        pack_trust::verify_pack(root_pem, pack_value)?;
+
+        // Chain verified — surface the issuer name for the frontend badge (D-14).
+        let issuer_name = pack_value
+            .get("signature")
+            .and_then(|s| s.get("issuerCert"))
+            .and_then(|c| c.get("name"))
+            .and_then(|n| n.as_str())
+            .map(|s| s.to_string());
+
+        return Ok(VerifiedImport {
+            verified: true,
+            issuer_name,
+        });
+    }
+
+    if provenance_tier(exported_from) == ProvenanceTier::Reserved {
+        return Err(ImportCourseError::SignatureRequired);
+    }
+
+    // Open tier, unsigned — imports exactly as today (D-09 zero friction).
+    Ok(VerifiedImport::default())
 }
 
 // ── Inner export helper ───────────────────────────────────────────────────────
@@ -374,6 +467,12 @@ pub struct ImportCourseResult {
     pub block_count: usize,
     /// Soft validation warnings from parse_and_validate (non-fatal).
     pub warnings: Vec<String>,
+    /// `true` when the pack carried a signature block and the FULL chain of
+    /// trust verified successfully (TRUST-01, D-14 — drives the frontend
+    /// verified badge). `false` for unsigned Open-tier imports.
+    pub verified: bool,
+    /// Publisher name from the verified issuer cert, when `verified == true`.
+    pub issuer_name: Option<String>,
 }
 
 // ── Import error type ─────────────────────────────────────────────────────────
@@ -399,6 +498,41 @@ pub enum ImportCourseError {
     /// JSON deserialization error.
     #[error("import deserialization error: {0}")]
     Deserialize(String),
+    /// D-11 taxonomy: the pack body no longer matches its signature (edited after signing).
+    #[error("This pack was modified after it was signed, so it can't be trusted. Re-download it from the original source.")]
+    SignatureTampered,
+    /// D-11 taxonomy: the issuer cert isn't signed by the app's trusted root key.
+    #[error("This pack's publisher isn't recognized by LearnForge, so the pack can't be verified.")]
+    UntrustedPublisher,
+    /// D-11 taxonomy: a Reserved-tier (`licensed:`/`curated:`) pack has no signature (D-09).
+    #[error("This pack needs a publisher signature to be imported, but it doesn't have one.")]
+    SignatureRequired,
+    /// D-11 taxonomy: the signature block itself is structurally invalid
+    /// (malformed cert, malformed signature hex, non-object pack, canonicalization
+    /// failure). Technical detail stays in the field for logs, not the primary message.
+    #[error("The pack's signature data is malformed and can't be checked: {0}")]
+    MalformedSignatureBlock(String),
+}
+
+/// Variant-by-variant remap (D-11) — mirrors the `From<PackError>` recipe below.
+/// Never `.to_string().contains(..)` string-matched; callers match on the typed
+/// `ImportCourseError` variant directly.
+impl From<PackTrustError> for ImportCourseError {
+    fn from(e: PackTrustError) -> Self {
+        match e {
+            PackTrustError::TamperedPack => ImportCourseError::SignatureTampered,
+            PackTrustError::UntrustedIssuer => ImportCourseError::UntrustedPublisher,
+            PackTrustError::MissingSignature => ImportCourseError::SignatureRequired,
+            PackTrustError::MalformedCert(msg) => ImportCourseError::MalformedSignatureBlock(msg),
+            PackTrustError::MalformedSignature => {
+                ImportCourseError::MalformedSignatureBlock("malformed signature hex".to_string())
+            }
+            PackTrustError::NotAnObject => {
+                ImportCourseError::MalformedSignatureBlock("pack is not a JSON object".to_string())
+            }
+            PackTrustError::Canonicalize(msg) => ImportCourseError::MalformedSignatureBlock(msg),
+        }
+    }
 }
 
 impl From<learnforge_core::packs::PackError> for ImportCourseError {
@@ -449,6 +583,23 @@ pub fn import_course_impl(
     // ── Step 3: Deserialize full CourseExportPayload (blocks/labs/videos) ───
     let payload: CourseExportPayload = serde_json::from_str(text)
         .map_err(|e| ImportCourseError::Deserialize(e.to_string()))?;
+
+    // ── Step 3.5: pack_trust verification gate (TRUST-01/02/03, D-09/D-10) ──
+    // Runs BEFORE Step 4 reads the RAW exported_from for the tier decision
+    // (14-RESEARCH Pitfall 4 — Step 4 below re-derives source_class from the
+    // SAME payload.exported_from, unmodified by this gate) and BEFORE
+    // `BEGIN IMMEDIATE` (Step 7) so a reject writes ZERO rows (T-14-11).
+    //
+    // Parse the RAW JSON value (not the deserialized struct) — verify_pack
+    // operates on the whole pack value per D-03, including any fields
+    // CourseExportPayload doesn't model (e.g. `signature`).
+    let raw_value: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| ImportCourseError::Deserialize(e.to_string()))?;
+    let verified_import = verify_import_gate(
+        pack_trust::BUNDLED_ROOT_PUBLIC_PEM,
+        &payload.exported_from,
+        &raw_value,
+    )?;
 
     // ── Step 4: D-11 provenance-class preservation ──────────────────────────
     // The source class is the `exported_from` field of the payload.
@@ -543,6 +694,7 @@ pub fn import_course_impl(
         &modules_json,
         &edges_json,
         soft_warnings,
+        &verified_import,
     );
 
     match result {
@@ -576,6 +728,7 @@ fn import_course_txn(
     modules_json: &str,
     edges_json: &str,
     soft_warnings: Vec<String>,
+    verified_import: &VerifiedImport,
 ) -> Result<ImportCourseResult, ImportCourseError> {
     // Use the same track_prefix-based namespace as import_course_impl
     let track_prefix = &track_id[..8];
@@ -741,6 +894,8 @@ fn import_course_txn(
         module_count,
         block_count,
         warnings: soft_warnings,
+        verified: verified_import.verified,
+        issuer_name: verified_import.issuer_name.clone(),
     })
 }
 
@@ -1494,34 +1649,45 @@ mod tests {
 
     /// D-11 (preserve-not-reject): non-exportable source is PRESERVED verbatim, not rejected.
     ///
-    /// Test 1: import of licensed:sfd402 payload succeeds; generated_by_model == "licensed:sfd402".
+    /// Phase 14 supersedes the old "unsigned licensed: import succeeds" premise:
+    /// D-09 now requires a valid signature for Reserved-tier (licensed:/curated:)
+    /// packs (see `unsigned_licensed_pack_rejected` below), so this test uses the
+    /// SIGNED `valid-signed.json` fixture (`exportedFrom: "licensed:test-pack|Test
+    /// Publisher"`) to exercise the still-valid D-11 preservation invariant: once a
+    /// signed licensed pack imports, its non-exportable class is preserved verbatim
+    /// (not laundered into an exportable one), and re-export is still blocked.
+    ///
+    /// Test 1: import of the signed licensed pack succeeds; generated_by_model ==
+    /// the source class verbatim.
     /// Test 2: export of that imported track returns CourseNotExportable (no file written).
     /// Invariant: is_course_exportable(stamped) == is_course_exportable(source) — both false.
     #[test]
     fn d11_non_exportable_source_is_preserved_not_rejected() {
         let conn = fresh_conn_with_learner();
-        let json = minimal_export_json("sfd402", "licensed:sfd402");
-        let (_tmp, path) = write_tmp_json(&json);
+        let source_class = "licensed:test-pack|Test Publisher";
+        let (_tmp, path) = write_tmp_json(FIXTURE_VALID_SIGNED);
 
-        // Test 1: import SUCCEEDS (no ProvenanceLaundering rejection)
+        // Test 1: import SUCCEEDS (signed Reserved-tier pack passes the Step 3.5 gate;
+        // no ProvenanceLaundering rejection either)
         let result = import_course_impl(&conn, &path);
         assert!(
             result.is_ok(),
-            "D-11: licensed:sfd402 source must be PRESERVED (import must succeed, not reject); got: {:?}",
+            "D-11: signed licensed: source must be PRESERVED (import must succeed, not reject); got: {:?}",
             result
         );
         let r = result.unwrap();
+        assert!(r.verified, "TRUST-01: signed licensed import must be verified=true");
 
-        // Test 1 cont.: generated_by_model must be "licensed:sfd402" verbatim (source class preserved)
+        // Test 1 cont.: generated_by_model must be the source class verbatim (preserved, not laundered)
         let stamped_prov: String = conn.query_row(
             "SELECT generated_by_model FROM learning_paths WHERE track_id = ?1",
             rusqlite::params![r.track_id],
             |row| row.get(0),
         ).unwrap();
         assert_eq!(
-            stamped_prov, "licensed:sfd402",
-            "D-11: stamped provenance must be preserved verbatim as 'licensed:sfd402'; got: {}",
-            stamped_prov
+            stamped_prov, source_class,
+            "D-11: stamped provenance must be preserved verbatim as '{}'; got: {}",
+            source_class, stamped_prov
         );
 
         // Test 2: export of the imported track returns CourseNotExportable, no file written
@@ -1533,7 +1699,7 @@ mod tests {
         let export_result = export_course_impl(&conn, &r.track_id, &save_path);
         assert!(
             export_result.is_err(),
-            "D-11: export of licensed:sfd402 track must return Err(CourseNotExportable)"
+            "D-11: export of a licensed: track must return Err(CourseNotExportable)"
         );
         let export_err = export_result.unwrap_err();
         assert!(
@@ -1546,10 +1712,10 @@ mod tests {
         );
 
         // Invariant: is_course_exportable(stamped) == is_course_exportable(source) — both false
-        let source_exportable = is_course_exportable("licensed:sfd402");
+        let source_exportable = is_course_exportable(source_class);
         let stamped_exportable = is_course_exportable(&stamped_prov);
-        assert!(!source_exportable, "source 'licensed:sfd402' must be non-exportable");
-        assert!(!stamped_exportable, "stamped 'licensed:sfd402' must also be non-exportable");
+        assert!(!source_exportable, "source '{}' must be non-exportable", source_class);
+        assert!(!stamped_exportable, "stamped '{}' must also be non-exportable", stamped_prov);
         assert_eq!(
             source_exportable, stamped_exportable,
             "D-11 invariant: exportability class must be preserved (both false — no laundering)"
@@ -1707,11 +1873,13 @@ mod tests {
         );
     }
 
-    /// RED (Phase 14 Wave 0, TRUST-03) — a pack whose body was edited AFTER
-    /// signing must be rejected at import with ZERO DB writes. FAILS until
-    /// plan 14-04 inserts the pack_trust verification gate (Step 3.5) into
-    /// `import_course_impl` — today the signature block is ignored and the
-    /// import succeeds. Mirrors the T-12-10 atomicity test pattern above.
+    /// GREEN (Phase 14 Plan 04, TRUST-03) — a pack whose body was edited AFTER
+    /// signing is rejected at import with ZERO DB writes by the Step 3.5
+    /// pack_trust verification gate. Mirrors the T-12-10 atomicity test pattern
+    /// above. This hand-built pack has a garbage `rootSig`/`sig` (not a real
+    /// signature over anything) so it fails chain verification regardless of
+    /// which root PEM is used — exercising the gate without depending on the
+    /// 14-03 fixture keys.
     #[test]
     fn tampered_pack_import_writes_nothing() {
         let conn = fresh_conn_with_learner();
@@ -1756,5 +1924,211 @@ mod tests {
             track_count, 0,
             "TRUST-03: tampered pack import must write ZERO learning_tracks rows"
         );
+    }
+
+    // ── 14-04 Step 3.5 gate tests (TRUST-01/02/03, D-09, D-10, D-11) ─────────
+    //
+    // Fixtures below are the four committed pack_trust fixtures from 14-03
+    // (learnforge-core/tests/fixtures/pack_trust/), embedded at compile time.
+    // The fixture root PEM is IDENTICAL to `pack_trust::BUNDLED_ROOT_PUBLIC_PEM`
+    // (verified: `diff learnforge-core/keys/root_public.pem
+    // learnforge-core/tests/fixtures/pack_trust/root-public.pem` — no diff), so
+    // `import_course_impl` (which always verifies against BUNDLED_ROOT_PUBLIC_PEM)
+    // can exercise these fixtures directly with no test-only root injection needed.
+
+    const FIXTURE_VALID_SIGNED: &str =
+        include_str!("../../../learnforge-core/tests/fixtures/pack_trust/valid-signed.json");
+    const FIXTURE_TAMPERED_BODY: &str =
+        include_str!("../../../learnforge-core/tests/fixtures/pack_trust/tampered-body.json");
+    const FIXTURE_STRIPPED_SIGNATURE: &str =
+        include_str!("../../../learnforge-core/tests/fixtures/pack_trust/stripped-signature.json");
+    const FIXTURE_FORGED_CERT: &str =
+        include_str!("../../../learnforge-core/tests/fixtures/pack_trust/forged-cert.json");
+
+    /// TRUST-01 — a valid signed `licensed:` pack imports successfully and the
+    /// result surfaces `verified=true` + the issuer name for the frontend badge (D-14).
+    #[test]
+    fn valid_signed_licensed_pack_imports() {
+        let conn = fresh_conn_with_learner();
+        let (_tmp, path) = write_tmp_json(FIXTURE_VALID_SIGNED);
+
+        let result = import_course_impl(&conn, &path);
+        assert!(result.is_ok(), "valid signed pack must import; got: {:?}", result);
+        let r = result.unwrap();
+        assert!(r.verified, "TRUST-01: verified must be true for a valid signed import");
+        assert_eq!(
+            r.issuer_name.as_deref(),
+            Some("Test Publisher"),
+            "TRUST-01: issuer_name must be surfaced from the verified issuer cert"
+        );
+    }
+
+    /// TRUST-03 — a pack whose body was edited after signing (fixture
+    /// tampered-body.json) is rejected via the typed `SignatureTampered`
+    /// variant with ZERO DB writes.
+    #[test]
+    fn tampered_fixture_pack_rejected_with_zero_writes() {
+        let conn = fresh_conn_with_learner();
+        let (_tmp, path) = write_tmp_json(FIXTURE_TAMPERED_BODY);
+
+        let result = import_course_impl(&conn, &path);
+        assert!(
+            matches!(result, Err(ImportCourseError::SignatureTampered)),
+            "TRUST-03: tampered fixture must reject with SignatureTampered; got {:?}",
+            result
+        );
+
+        let track_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM learning_tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(track_count, 0, "TRUST-03: tampered pack import must write ZERO rows");
+    }
+
+    /// D-09 — an unsigned `licensed:` pack (fixture stripped-signature.json,
+    /// signature key removed but `licensed:` provenance retained) is rejected
+    /// with the plain-language "missing required signature" taxonomy variant.
+    #[test]
+    fn unsigned_licensed_pack_rejected() {
+        let conn = fresh_conn_with_learner();
+        let (_tmp, path) = write_tmp_json(FIXTURE_STRIPPED_SIGNATURE);
+
+        let result = import_course_impl(&conn, &path);
+        assert!(
+            matches!(result, Err(ImportCourseError::SignatureRequired)),
+            "D-09: unsigned licensed: pack must reject with SignatureRequired; got {:?}",
+            result
+        );
+
+        let track_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM learning_tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(track_count, 0, "unsigned licensed: pack must write ZERO rows");
+    }
+
+    /// D-09 — an unsigned `imported:`-provenance (free/Open-tier) pack imports
+    /// exactly as today: zero friction, no signature required, verified=false.
+    #[test]
+    fn unsigned_free_pack_imports_unchanged() {
+        let conn = fresh_conn_with_learner();
+        let json = minimal_export_json("free-pack-001", "imported:free-pack-001");
+        let (_tmp, path) = write_tmp_json(&json);
+
+        let result = import_course_impl(&conn, &path);
+        assert!(result.is_ok(), "unsigned free pack must import unchanged; got: {:?}", result);
+        let r = result.unwrap();
+        assert!(!r.verified, "unsigned free import must have verified=false");
+        assert!(r.issuer_name.is_none(), "unsigned free import must have issuer_name=None");
+    }
+
+    /// D-10 — verify-if-present: a free-provenance pack that DOES carry a
+    /// signature still gets FULL chain verification; a bad signature on it is
+    /// still rejected even though its tier would otherwise allow unsigned import.
+    #[test]
+    fn verify_if_present_any_provenance() {
+        let conn = fresh_conn_with_learner();
+
+        // Build a free-provenance ("imported:") pack, then attach a garbage
+        // signature block (same shape as the tampered_pack_import_writes_nothing
+        // hand-built fixture above) — bad sig must still reject despite Open tier.
+        let mut pack: serde_json::Value =
+            serde_json::from_str(&minimal_export_json("free-pack-002", "imported:free-pack-002"))
+                .unwrap();
+        pack["signature"] = serde_json::json!({
+            "alg": "ed25519",
+            "issuerCert": {
+                "issuerId": "issuer-001",
+                "name": "Test Issuer",
+                "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAtOJv2B75vSb1v0PxrEpQe1rrJDPUKSFF12my3AeBOI4=\n-----END PUBLIC KEY-----\n",
+                "rootSig": "00".repeat(64)
+            },
+            "keyFingerprint": "deadbeef",
+            "sig": "00".repeat(64)
+        });
+
+        let (_tmp, path) = write_tmp_json(&pack.to_string());
+        let result = import_course_impl(&conn, &path);
+        assert!(
+            result.is_err(),
+            "D-10: a free-provenance pack carrying a signature must still be fully \
+             verified; a bad signature must reject even though the tier is Open"
+        );
+
+        let track_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM learning_tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(track_count, 0, "D-10: rejected verify-if-present import must write ZERO rows");
+    }
+
+    /// TRUST-02 negative — a pack whose embedded issuer cert is signed by a
+    /// key OTHER than the trusted root (fixture forged-cert.json) is rejected
+    /// with the typed `UntrustedPublisher` variant.
+    #[test]
+    fn forged_cert_pack_rejected() {
+        let conn = fresh_conn_with_learner();
+        let (_tmp, path) = write_tmp_json(FIXTURE_FORGED_CERT);
+
+        let result = import_course_impl(&conn, &path);
+        assert!(
+            matches!(result, Err(ImportCourseError::UntrustedPublisher)),
+            "TRUST-02: forged-cert pack must reject with UntrustedPublisher; got {:?}",
+            result
+        );
+
+        let track_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM learning_tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(track_count, 0, "forged-cert pack import must write ZERO rows");
+    }
+
+    /// D-11 — the three PackTrustError chain-failure variants map to three
+    /// DISTINCT typed ImportCourseError variants (never collapsed to one
+    /// generic error, never string-matched).
+    #[test]
+    fn pack_trust_errors_map_to_distinct_import_errors() {
+        assert!(matches!(
+            ImportCourseError::from(PackTrustError::TamperedPack),
+            ImportCourseError::SignatureTampered
+        ));
+        assert!(matches!(
+            ImportCourseError::from(PackTrustError::UntrustedIssuer),
+            ImportCourseError::UntrustedPublisher
+        ));
+        assert!(matches!(
+            ImportCourseError::from(PackTrustError::MissingSignature),
+            ImportCourseError::SignatureRequired
+        ));
+
+        // Distinct plain-language messages (D-11) — no shared wording, no
+        // `.to_string().contains(..)` matching required by callers.
+        let tampered_msg = ImportCourseError::from(PackTrustError::TamperedPack).to_string();
+        let untrusted_msg = ImportCourseError::from(PackTrustError::UntrustedIssuer).to_string();
+        let missing_msg = ImportCourseError::from(PackTrustError::MissingSignature).to_string();
+        assert_ne!(tampered_msg, untrusted_msg);
+        assert_ne!(tampered_msg, missing_msg);
+        assert_ne!(untrusted_msg, missing_msg);
+        assert!(tampered_msg.contains("modified after it was signed"));
+        assert!(untrusted_msg.contains("publisher isn't recognized"));
+        assert!(missing_msg.contains("needs a publisher signature"));
+    }
+
+    /// D-14 — a successful signed import carries verified=true + issuer_name;
+    /// an unsigned free import carries verified=false + issuer_name=None.
+    /// (Behavioral coverage complements `valid_signed_licensed_pack_imports`
+    /// and `unsigned_free_pack_imports_unchanged` above.)
+    #[test]
+    fn import_result_carries_verified_and_issuer() {
+        let conn = fresh_conn_with_learner();
+
+        let (_tmp1, signed_path) = write_tmp_json(FIXTURE_VALID_SIGNED);
+        let signed_result = import_course_impl(&conn, &signed_path).expect("signed import must succeed");
+        assert!(signed_result.verified);
+        assert!(signed_result.issuer_name.is_some());
+
+        let unsigned_json = minimal_export_json("free-pack-003", "imported:free-pack-003");
+        let (_tmp2, unsigned_path) = write_tmp_json(&unsigned_json);
+        let unsigned_result =
+            import_course_impl(&conn, &unsigned_path).expect("unsigned free import must succeed");
+        assert!(!unsigned_result.verified);
+        assert!(unsigned_result.issuer_name.is_none());
     }
 }
