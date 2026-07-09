@@ -34,8 +34,9 @@
 //!
 //! Import MUST NOT launder a non-exportable source class into an exportable one.
 //! The invariant is: `is_course_exportable(stamped_provenance) == is_course_exportable(source_class)`.
-//! For non-exportable sources (e.g. `"licensed:..."`) the import is rejected with a clear error
-//! rather than silently upgrading the provenance class.
+//! For non-exportable sources (e.g. `"licensed:..."`) the source class is PRESERVED VERBATIM as
+//! `generated_by_model` — the import succeeds and the track remains non-exportable.
+//! Re-export of that track still returns `CourseNotExportable` (no laundering possible).
 //!
 //! ## Threat mitigations implemented
 //!
@@ -51,7 +52,7 @@
 //! | T-12-11 (lab Docker image injection) | image name stored verbatim as String, never exec'd |
 //! | T-12-12 (non-ready block injection) | import rejects ExportedBlock with status != "ready" |
 //! | T-12-15 (paid/curated course leak) | is_course_exportable fail-closed allowlist checked FIRST, no file written on reject |
-//! | T-12-16 (provenance laundering) | D-11: non-exportable source class is rejected, not re-stamped |
+//! | T-12-16 (provenance laundering) | D-11: non-exportable source class is preserved verbatim (not re-stamped to imported:), so it stays non-exportable — no laundering |
 
 use chrono::Utc;
 use rusqlite::Connection;
@@ -424,8 +425,9 @@ impl From<learnforge_core::packs::PackError> for ImportCourseError {
 /// - D-07: `parse_and_validate` called BEFORE any DB write.
 /// - D-06: module ids and edges namespaced as `{pack_id}__{id}`.
 /// - D-09: always creates a fresh track_id (uuid::Uuid::new_v4()); never updates.
-/// - D-11: source `exported_from` class is inspected; if non-exportable, the import
-///   is REJECTED to prevent laundering. If exportable, stamped as `"imported:{pack_id}"`.
+/// - D-11: source `exported_from` class is inspected; if non-exportable, the source class is
+///   preserved verbatim as the stamped provenance (import succeeds, re-export still blocked).
+///   If exportable, stamped as `"imported:{pack_id}"`.
 /// - T-12-10: ALL writes wrapped in a single UNCONDITIONAL SQLite transaction.
 /// - T-12-12: blocks with status != "ready" are rejected during rehydration.
 /// - T-12-11/D-03: lab image names are stored verbatim as strings, never exec'd.
@@ -748,7 +750,8 @@ fn import_course_txn(
 ///
 /// Thin shim: locks state, calls `import_course_impl`, maps errors to `String`.
 /// The file is validated against the schema BEFORE any DB write (D-07).
-/// Provenance class is preserved — non-exportable source classes are rejected (D-11).
+/// Provenance class is preserved — non-exportable source classes are PRESERVED VERBATIM
+/// as the stamped provenance (import succeeds, re-export still blocked by D-10 gate) (D-11).
 #[tauri::command]
 pub fn import_course(
     request: ImportCourseRequest,
