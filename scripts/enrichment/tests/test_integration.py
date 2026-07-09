@@ -334,3 +334,56 @@ def test_skipped_and_failed_reported(tmp_cache_dir):
 
     # Verify that the videos_map has the vid entry (video_id is set in MODULE_RAW_NO_VIDEO)
     assert "blk-201" in payload["videos"]
+
+
+# ---------------------------------------------------------------------------
+# Licensed provenance tests (EMV-01)
+# ---------------------------------------------------------------------------
+
+
+def test_licensed_flag_stamps_licensed_prefix(tmp_cache_dir):
+    """assemble_payload with licensed=True stamps exportedFrom as 'licensed:{pack_id}'.
+
+    RED test: assemble_payload has no 'licensed' kwarg yet — this MUST fail
+    until the GREEN implementation adds it.
+    """
+    from sheet2pack import assemble_payload
+
+    payload = assemble_payload(
+        modules_raw=[MODULE_RAW_WITH_VIDEO],
+        quizzes={},
+        enriched_lessons={},
+        generated_quizzes={},
+        channel="School of Devops",
+        pack_id="sfd402",
+        title="SFD402 Course",
+        domain="devops",
+        licensed=True,
+    )
+
+    assert payload["exportedFrom"] == "licensed:sfd402", (
+        f"Expected 'licensed:sfd402' but got '{payload['exportedFrom']}'"
+    )
+
+
+def test_default_stamps_imported_prefix(tmp_cache_dir):
+    """assemble_payload without licensed (default) stamps exportedFrom as 'imported:{pack_id}'.
+
+    Ensures the default behavior is byte-identical to the pre-licensed-flag output.
+    """
+    from sheet2pack import assemble_payload
+
+    payload = assemble_payload(
+        modules_raw=[MODULE_RAW_WITH_VIDEO],
+        quizzes={},
+        enriched_lessons={},
+        generated_quizzes={},
+        channel="School of Devops",
+        pack_id="sfd402",
+        title="SFD402 Course",
+        domain="devops",
+    )
+
+    assert payload["exportedFrom"] == "imported:sfd402", (
+        f"Expected 'imported:sfd402' but got '{payload['exportedFrom']}'"
+    )

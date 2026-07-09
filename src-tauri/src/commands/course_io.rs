@@ -34,8 +34,9 @@
 //!
 //! Import MUST NOT launder a non-exportable source class into an exportable one.
 //! The invariant is: `is_course_exportable(stamped_provenance) == is_course_exportable(source_class)`.
-//! For non-exportable sources (e.g. `"licensed:..."`) the import is rejected with a clear error
-//! rather than silently upgrading the provenance class.
+//! For non-exportable sources (e.g. `"licensed:..."`) the source class is PRESERVED VERBATIM as
+//! `generated_by_model` — the import succeeds and the track remains non-exportable.
+//! Re-export of that track still returns `CourseNotExportable` (no laundering possible).
 //!
 //! ## Threat mitigations implemented
 //!
@@ -51,7 +52,7 @@
 //! | T-12-11 (lab Docker image injection) | image name stored verbatim as String, never exec'd |
 //! | T-12-12 (non-ready block injection) | import rejects ExportedBlock with status != "ready" |
 //! | T-12-15 (paid/curated course leak) | is_course_exportable fail-closed allowlist checked FIRST, no file written on reject |
-//! | T-12-16 (provenance laundering) | D-11: non-exportable source class is rejected, not re-stamped |
+//! | T-12-16 (provenance laundering) | D-11: non-exportable source class is preserved verbatim (not re-stamped to imported:), so it stays non-exportable — no laundering |
 
 use chrono::Utc;
 use rusqlite::Connection;
@@ -386,7 +387,10 @@ pub enum ImportCourseError {
     /// Schema validation hard-fail (strict error from parse_and_validate).
     #[error("import validation error: {0}")]
     Validation(String),
-    /// Source provenance class is non-exportable — importing would launder it (D-11).
+    /// Source provenance class is non-exportable — retained for API stability and potential
+    /// future strict-mode use. Import no longer rejects; it preserves the source class verbatim
+    /// (D-11). See `import_course_impl` Step 4.
+    #[allow(dead_code)]
     #[error("import rejected: source provenance '{0}' is not re-exportable; importing would launder a non-exportable course into an exportable state (D-11)")]
     ProvenanceLaundering(String),
     /// Database error during atomic write.
@@ -421,8 +425,9 @@ impl From<learnforge_core::packs::PackError> for ImportCourseError {
 /// - D-07: `parse_and_validate` called BEFORE any DB write.
 /// - D-06: module ids and edges namespaced as `{pack_id}__{id}`.
 /// - D-09: always creates a fresh track_id (uuid::Uuid::new_v4()); never updates.
-/// - D-11: source `exported_from` class is inspected; if non-exportable, the import
-///   is REJECTED to prevent laundering. If exportable, stamped as `"imported:{pack_id}"`.
+/// - D-11: source `exported_from` class is inspected; if non-exportable, the source class is
+///   preserved verbatim as the stamped provenance (import succeeds, re-export still blocked).
+///   If exportable, stamped as `"imported:{pack_id}"`.
 /// - T-12-10: ALL writes wrapped in a single UNCONDITIONAL SQLite transaction.
 /// - T-12-12: blocks with status != "ready" are rejected during rehydration.
 /// - T-12-11/D-03: lab image names are stored verbatim as strings, never exec'd.
@@ -447,23 +452,31 @@ pub fn import_course_impl(
 
     // ── Step 4: D-11 provenance-class preservation ──────────────────────────
     // The source class is the `exported_from` field of the payload.
-    // If the source is NON-exportable, reject the import to prevent laundering.
     // Invariant: is_course_exportable(stamped) == is_course_exportable(source).
+    //
+    // For NON-exportable sources (e.g. "licensed:sfd402"): PRESERVE the source class
+    // verbatim as the stamped provenance — import succeeds, re-export still blocked.
+    // For exportable sources: stamp as "imported:{pack_id}" (still exportable, D-06).
+    //
+    // This replaces the old reject-on-non-exportable behavior.  The ProvenanceLaundering
+    // variant is retained for API stability / potential future strict-mode use.
     let source_class = payload.exported_from.trim().to_string();
-    if !is_course_exportable(&source_class) {
-        // Reject: importing would launder a non-exportable course into an importable state
-        return Err(ImportCourseError::ProvenanceLaundering(source_class));
-    }
-
-    // The source IS exportable — stamp as "imported:{pack_id}" (also exportable by the
-    // allowlist since it starts with "imported:"). This is correct: already-public
-    // content stays exportable through import → re-export (D-11).
     let pack_id = &payload.id;
-    let stamped_provenance = format!("imported:{}", pack_id);
-    // Compile-time invariant check: is_course_exportable("imported:*") == true
-    debug_assert!(
+    let stamped_provenance = if !is_course_exportable(&source_class) {
+        // Non-exportable source: preserve verbatim so the track stays non-exportable
+        // (e.g. "licensed:sfd402" → "licensed:sfd402").  Re-export will still return
+        // CourseNotExportable because is_course_exportable("licensed:*") == false.
+        source_class.clone()
+    } else {
+        // Exportable source: stamp as "imported:{pack_id}" (D-06).
+        // "imported:*" is exportable by the allowlist — correct for already-public content.
+        format!("imported:{}", pack_id)
+    };
+    // D-11 invariant: exportability class is preserved across import, never laundered.
+    debug_assert_eq!(
         is_course_exportable(&stamped_provenance),
-        "BUG: imported: prefix must be exportable per allowlist"
+        is_course_exportable(&source_class),
+        "D-11: import must preserve the exportability class, never launder"
     );
 
     // ── Step 5: Resolve learner profile id ──────────────────────────────────
@@ -737,7 +750,8 @@ fn import_course_txn(
 ///
 /// Thin shim: locks state, calls `import_course_impl`, maps errors to `String`.
 /// The file is validated against the schema BEFORE any DB write (D-07).
-/// Provenance class is preserved — non-exportable source classes are rejected (D-11).
+/// Provenance class is preserved — non-exportable source classes are PRESERVED VERBATIM
+/// as the stamped provenance (import succeeds, re-export still blocked by D-10 gate) (D-11).
 #[tauri::command]
 pub fn import_course(
     request: ImportCourseRequest,
@@ -1478,41 +1492,68 @@ mod tests {
         );
     }
 
-    /// GREEN — D-11 (no-laundering guard): non-exportable source is REJECTED, not laundered.
+    /// D-11 (preserve-not-reject): non-exportable source is PRESERVED verbatim, not rejected.
+    ///
+    /// Test 1: import of licensed:sfd402 payload succeeds; generated_by_model == "licensed:sfd402".
+    /// Test 2: export of that imported track returns CourseNotExportable (no file written).
+    /// Invariant: is_course_exportable(stamped) == is_course_exportable(source) — both false.
     #[test]
-    fn d11_non_exportable_source_is_rejected_not_laundered() {
+    fn d11_non_exportable_source_is_preserved_not_rejected() {
         let conn = fresh_conn_with_learner();
-        // exported_from = "licensed:test" — non-exportable per is_course_exportable
-        let json = minimal_export_json("licensed-course", "licensed:test");
+        let json = minimal_export_json("sfd402", "licensed:sfd402");
         let (_tmp, path) = write_tmp_json(&json);
 
+        // Test 1: import SUCCEEDS (no ProvenanceLaundering rejection)
         let result = import_course_impl(&conn, &path);
         assert!(
-            result.is_err(),
-            "D-11: licensed:test source must be REJECTED (not laundered)"
+            result.is_ok(),
+            "D-11: licensed:sfd402 source must be PRESERVED (import must succeed, not reject); got: {:?}",
+            result
         );
+        let r = result.unwrap();
 
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("licensed:test") || err_msg.contains("launder") || err_msg.contains("D-11"),
-            "error must mention the non-exportable provenance; got: {}",
-            err_msg
-        );
-
-        // No rows written (import was rejected)
-        let track_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM learning_tracks",
-            [],
-            |r| r.get(0),
+        // Test 1 cont.: generated_by_model must be "licensed:sfd402" verbatim (source class preserved)
+        let stamped_prov: String = conn.query_row(
+            "SELECT generated_by_model FROM learning_paths WHERE track_id = ?1",
+            rusqlite::params![r.track_id],
+            |row| row.get(0),
         ).unwrap();
-        assert_eq!(track_count, 0, "D-11: rejected import must write zero rows");
+        assert_eq!(
+            stamped_prov, "licensed:sfd402",
+            "D-11: stamped provenance must be preserved verbatim as 'licensed:sfd402'; got: {}",
+            stamped_prov
+        );
 
-        // Ensure the imported track's exportability class EQUALS the source's
-        // (both are non-exportable — the import was rejected rather than laundered)
-        let source_exportable = is_course_exportable("licensed:test");
-        // The import was rejected — no stamped provenance exists.
-        // The invariant is satisfied because the import was not committed.
-        assert!(!source_exportable, "licensed:test must be non-exportable");
+        // Test 2: export of the imported track returns CourseNotExportable, no file written
+        let tmp_export = tempfile::NamedTempFile::new().unwrap();
+        let save_path = tmp_export.path().to_str().unwrap().to_string();
+        drop(tmp_export); // remove file so we can assert it was NOT written
+        assert!(!std::path::Path::new(&save_path).exists(), "precondition: export file must not exist");
+
+        let export_result = export_course_impl(&conn, &r.track_id, &save_path);
+        assert!(
+            export_result.is_err(),
+            "D-11: export of licensed:sfd402 track must return Err(CourseNotExportable)"
+        );
+        let export_err = export_result.unwrap_err();
+        assert!(
+            matches!(export_err, ExportCourseError::CourseNotExportable(_)),
+            "error variant must be CourseNotExportable; got: {:?}", export_err
+        );
+        assert!(
+            !std::path::Path::new(&save_path).exists(),
+            "D-11: NO export file must be written for a licensed track"
+        );
+
+        // Invariant: is_course_exportable(stamped) == is_course_exportable(source) — both false
+        let source_exportable = is_course_exportable("licensed:sfd402");
+        let stamped_exportable = is_course_exportable(&stamped_prov);
+        assert!(!source_exportable, "source 'licensed:sfd402' must be non-exportable");
+        assert!(!stamped_exportable, "stamped 'licensed:sfd402' must also be non-exportable");
+        assert_eq!(
+            source_exportable, stamped_exportable,
+            "D-11 invariant: exportability class must be preserved (both false — no laundering)"
+        );
     }
 
     /// GREEN — ready blocks are rehydrated; lab blocks' image name is stored verbatim (D-03).

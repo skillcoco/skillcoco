@@ -252,6 +252,7 @@ def assemble_payload(
     pack_id,
     title,
     domain,
+    licensed=False,
     return_warnings=False,
 ):
     """Assemble the exported-course JSON payload from parsed modules and enrichment data.
@@ -270,6 +271,8 @@ def assemble_payload(
         pack_id:            Unique pack identifier slug.
         title:              Human-readable course title.
         domain:             Domain/category tag for the pack.
+        licensed:           If True, stamp exportedFrom as "licensed:{pack_id}" (paid pack,
+                            non-exportable after import). Default False stamps "imported:{pack_id}".
         return_warnings:    If True, return (payload, warnings) tuple instead of payload.
 
     Returns:
@@ -374,7 +377,7 @@ def assemble_payload(
         "edges": edges,
         "exportVersion": "1.0.0",
         "exportedAt": NOW,
-        "exportedFrom": f"imported:{pack_id}",
+        "exportedFrom": f"licensed:{pack_id}" if licensed else f"imported:{pack_id}",
         "blocks": blocks_map,
         "videos": videos_map,
     }
@@ -385,7 +388,7 @@ def assemble_payload(
 
 
 def convert(xlsx_path, pack_id, title, domain, channel,
-            enrich=False, enrich_only=None, yes=False):
+            enrich=False, enrich_only=None, yes=False, licensed=False):
     """Convert a SODA xlsx to an exported-course JSON pack.
 
     Args:
@@ -397,6 +400,7 @@ def convert(xlsx_path, pack_id, title, domain, channel,
         enrich:       Run all enrichment stages (transcripts, lessons, quizzes).
         enrich_only:  Run only one stage: 'transcripts', 'lessons', or 'quizzes'.
         yes:          Skip the D-15 cost-confirmation prompt.
+        licensed:     If True, stamp exportedFrom as "licensed:{pack_id}" (paid pack).
 
     Returns:
         (payload_dict, warnings, skipped, failed) — the last two lists are
@@ -469,6 +473,7 @@ def convert(xlsx_path, pack_id, title, domain, channel,
         pack_id=pack_id,
         title=title,
         domain=domain,
+        licensed=licensed,
         return_warnings=True,
     )
     warnings = parse_warnings + assembly_warnings
@@ -501,6 +506,8 @@ def main():
                     help="rerun a single enrichment stage only (transcripts, lessons, or quizzes)")
     ap.add_argument("--yes", action="store_true",
                     help="skip cost-confirmation prompt (for scripted runs, D-15)")
+    ap.add_argument("--licensed", action="store_true",
+                    help="stamp exportedFrom as licensed:{id} — paid pack, non-exportable after import")
     args = ap.parse_args()
 
     stem = Path(args.xlsx).stem
@@ -512,6 +519,7 @@ def main():
         enrich=args.enrich,
         enrich_only=args.enrich_only,
         yes=args.yes,
+        licensed=args.licensed,
     )
 
     schema_path = Path(__file__).resolve().parent.parent / "learnforge-core/topic-packs/pack-schema.json"
