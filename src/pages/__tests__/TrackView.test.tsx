@@ -264,6 +264,57 @@ describe("TrackView browse-mode toggle (Plan 10-03 Task 1)", () => {
   });
 });
 
+describe("TrackView premium licensed badge (g73)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStoreState.currentTrack = makeTrack();
+    mockStoreState.currentPath = makePath("");
+    mockStoreState.isLoading = false;
+    mockStoreState.selectTrack = vi.fn().mockResolvedValue(undefined);
+    listTopicPacksAdminMock.mockResolvedValue([]);
+  });
+
+  it("renders premium licensed badge with licensor", async () => {
+    mockStoreState.currentPath = makePath("licensed:sfd402|School of Devops");
+    mockStoreState.currentTrack = makeTrack();
+
+    renderTrackView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("licensed-badge")).toBeInTheDocument();
+    });
+
+    const badge = screen.getByTestId("licensed-badge");
+    expect(badge.textContent).toContain("Licensed Course");
+    expect(badge.textContent).toContain("School of Devops");
+  });
+
+  it("renders licensed badge without licensor as fallback", async () => {
+    mockStoreState.currentPath = makePath("licensed:sfd402");
+    mockStoreState.currentTrack = makeTrack();
+
+    renderTrackView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("licensed-badge")).toBeInTheDocument();
+    });
+
+    const badge = screen.getByTestId("licensed-badge");
+    expect(badge.textContent).toContain("Licensed Course");
+    expect(badge.textContent).not.toContain("·");
+  });
+
+  it("no licensed badge for exportable track", async () => {
+    mockStoreState.currentPath = makePath("claude-3-5-sonnet");
+    mockStoreState.currentTrack = makeTrack();
+
+    renderTrackView();
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByTestId("licensed-badge")).not.toBeInTheDocument();
+  });
+});
+
 describe("TrackView free-mode DAG openability (Plan 10-03 Task 2)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
