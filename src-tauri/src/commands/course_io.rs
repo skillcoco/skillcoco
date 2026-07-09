@@ -386,7 +386,10 @@ pub enum ImportCourseError {
     /// Schema validation hard-fail (strict error from parse_and_validate).
     #[error("import validation error: {0}")]
     Validation(String),
-    /// Source provenance class is non-exportable — importing would launder it (D-11).
+    /// Source provenance class is non-exportable — retained for API stability and potential
+    /// future strict-mode use. Import no longer rejects; it preserves the source class verbatim
+    /// (D-11). See `import_course_impl` Step 4.
+    #[allow(dead_code)]
     #[error("import rejected: source provenance '{0}' is not re-exportable; importing would launder a non-exportable course into an exportable state (D-11)")]
     ProvenanceLaundering(String),
     /// Database error during atomic write.
@@ -447,23 +450,31 @@ pub fn import_course_impl(
 
     // ── Step 4: D-11 provenance-class preservation ──────────────────────────
     // The source class is the `exported_from` field of the payload.
-    // If the source is NON-exportable, reject the import to prevent laundering.
     // Invariant: is_course_exportable(stamped) == is_course_exportable(source).
+    //
+    // For NON-exportable sources (e.g. "licensed:sfd402"): PRESERVE the source class
+    // verbatim as the stamped provenance — import succeeds, re-export still blocked.
+    // For exportable sources: stamp as "imported:{pack_id}" (still exportable, D-06).
+    //
+    // This replaces the old reject-on-non-exportable behavior.  The ProvenanceLaundering
+    // variant is retained for API stability / potential future strict-mode use.
     let source_class = payload.exported_from.trim().to_string();
-    if !is_course_exportable(&source_class) {
-        // Reject: importing would launder a non-exportable course into an importable state
-        return Err(ImportCourseError::ProvenanceLaundering(source_class));
-    }
-
-    // The source IS exportable — stamp as "imported:{pack_id}" (also exportable by the
-    // allowlist since it starts with "imported:"). This is correct: already-public
-    // content stays exportable through import → re-export (D-11).
     let pack_id = &payload.id;
-    let stamped_provenance = format!("imported:{}", pack_id);
-    // Compile-time invariant check: is_course_exportable("imported:*") == true
-    debug_assert!(
+    let stamped_provenance = if !is_course_exportable(&source_class) {
+        // Non-exportable source: preserve verbatim so the track stays non-exportable
+        // (e.g. "licensed:sfd402" → "licensed:sfd402").  Re-export will still return
+        // CourseNotExportable because is_course_exportable("licensed:*") == false.
+        source_class.clone()
+    } else {
+        // Exportable source: stamp as "imported:{pack_id}" (D-06).
+        // "imported:*" is exportable by the allowlist — correct for already-public content.
+        format!("imported:{}", pack_id)
+    };
+    // D-11 invariant: exportability class is preserved across import, never laundered.
+    debug_assert_eq!(
         is_course_exportable(&stamped_provenance),
-        "BUG: imported: prefix must be exportable per allowlist"
+        is_course_exportable(&source_class),
+        "D-11: import must preserve the exportability class, never launder"
     );
 
     // ── Step 5: Resolve learner profile id ──────────────────────────────────
