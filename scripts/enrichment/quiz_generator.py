@@ -287,7 +287,7 @@ async def generate_quizzes(
 
     async def _process_module(m: dict) -> None:
         module_num = m["num"]
-        module_slug = m.get("slug") or f"module-{module_num}"
+        module_slug = m.get("slug") or f"mod-{module_num}"  # MUST match assemble_payload slug (mod-{num})
         module_title = m.get("title", f"Module {module_num}")
 
         # D-09: fill-gaps-only — skip if hand-authored quiz exists

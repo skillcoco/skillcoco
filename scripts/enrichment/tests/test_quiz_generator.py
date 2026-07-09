@@ -32,7 +32,7 @@ def _make_modules_raw(nums_and_lesson_counts):
     """
     modules = []
     for num, lesson_count in nums_and_lesson_counts:
-        slug = f"module-{num}"
+        slug = f"mod-{num}"
         lessons = []
         for i in range(lesson_count):
             vid = f"vid{num:02d}{i:02d}aa"  # 10 chars — valid VIDEO_ID_RE
@@ -120,9 +120,9 @@ def test_fill_gaps_skips_matched_chapters(tmp_cache_dir):
             modules_raw, transcripts, matched_chapters, failed
         ))
 
-    assert "module-1" in result, "module 1 (not in matched_chapters) should be generated"
-    assert "module-3" in result, "module 3 (not in matched_chapters) should be generated"
-    assert "module-2" not in result, "module 2 in matched_chapters must be skipped"
+    assert "mod-1" in result, "module 1 (not in matched_chapters) should be generated"
+    assert "mod-3" in result, "module 3 (not in matched_chapters) should be generated"
+    assert "mod-2" not in result, "module 2 in matched_chapters must be skipped"
     # API called for modules 1 and 3, not for module 2
     assert create_mock.call_count == 2, (
         f"API should be called for 2 modules (not module 2), got {create_mock.call_count}"
@@ -237,7 +237,7 @@ def test_pydantic_retry_on_validation_error(tmp_cache_dir):
             modules_raw, transcripts, matched_chapters, failed
         ))
 
-    assert "module-1" in result, "module-1 should succeed after retry"
+    assert "mod-1" in result, "module-1 should succeed after retry"
     assert len(failed) == 0, f"no modules should fail; got: {failed}"
     assert create_mock.call_count == 2, (
         f"API should be called twice (1 invalid + 1 valid), got {create_mock.call_count}"
@@ -275,8 +275,8 @@ def test_adapter_shape_matches_quiz_payload(mock_anthropic_quiz_tool_response, t
             modules_raw, transcripts, matched_chapters, failed
         ))
 
-    assert "module-1" in result, "module-1 should be in results"
-    payload = result["module-1"]
+    assert "mod-1" in result, "module-1 should be in results"
+    payload = result["mod-1"]
     assert "questions" in payload
 
     questions = payload["questions"]
@@ -284,7 +284,7 @@ def test_adapter_shape_matches_quiz_payload(mock_anthropic_quiz_tool_response, t
 
     # Check first question shape
     q = questions[0]
-    assert q["id"] == "q-module-1-1", f"expected 'q-module-1-1', got {q['id']}"
+    assert q["id"] == "q-mod-1-1", f"expected 'q-mod-1-1', got {q['id']}"
     assert "stem" in q
     assert "options" in q
     assert "correctOptionId" in q
@@ -331,7 +331,7 @@ def test_cache_hit_skips_api_call(tmp_cache_dir):
     cached_payload = {
         "questions": [
             {
-                "id": "q-module-1-1",
+                "id": "q-mod-1-1",
                 "stem": "Cached question?",
                 "options": [
                     {"id": "opt-1-1", "text": "A"},
@@ -366,8 +366,8 @@ def test_cache_hit_skips_api_call(tmp_cache_dir):
             modules_raw, transcripts, matched_chapters, failed
         ))
 
-    assert "module-1" in result, "cache hit should still include module in result"
-    assert result["module-1"] == cached_payload, "result should equal cached payload"
+    assert "mod-1" in result, "cache hit should still include module in result"
+    assert result["mod-1"] == cached_payload, "result should equal cached payload"
     assert create_mock.call_count == 0, (
         f"API create() must not be called on cache hit, got {create_mock.call_count} calls"
     )
@@ -406,9 +406,9 @@ def test_continue_on_failure_after_3_attempts(tmp_cache_dir):
             modules_raw, transcripts, matched_chapters, failed
         ))
 
-    assert "module-1" not in result, "failed module must not appear in result"
+    assert "mod-1" not in result, "failed module must not appear in result"
     assert len(failed) == 1, f"failed list should have 1 entry, got {failed}"
-    assert failed[0][0] == "module-1", f"failed entry should name the module slug"
+    assert failed[0][0] == "mod-1", f"failed entry should name the module slug"
 
 
 # ---------------------------------------------------------------------------

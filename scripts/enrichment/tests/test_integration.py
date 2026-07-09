@@ -387,3 +387,45 @@ def test_default_stamps_imported_prefix(tmp_cache_dir):
     assert payload["exportedFrom"] == "imported:sfd402", (
         f"Expected 'imported:sfd402' but got '{payload['exportedFrom']}'"
     )
+
+
+def test_generate_quizzes_keys_match_assembly_slug(tmp_cache_dir, monkeypatch):
+    """Cross-module contract: generate_quizzes must key its output by the SAME
+    slug format assemble_payload uses ("mod-{num}"), or generated quizzes are
+    silently dropped at assembly (found in SFD402 dogfood — quiz keyed
+    "module-1" never matched assembly's "mod-1" lookup).
+
+    Cache-hit path: pre-write the quiz cache at the assembly-slug path; a
+    correct generate_quizzes computes the same path (cache hit, no API call)
+    and returns the payload under "mod-7".
+    """
+    import asyncio
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-dummy-key")
+
+    from enrichment.content_cache import quiz_cache_path, write_content_cache
+    from enrichment.quiz_generator import QUIZ_PROMPT_VERSION, generate_quizzes
+
+    transcript = "kubernetes pods deployments services explained in detail here"
+    module = {
+        "num": 7,
+        "title": "Monitoring",
+        "lessons": [{"num": 701, "title": "Intro", "video_id": "vidmod70701"}],
+    }
+    cached_payload = {"questions": [{"id": "q-mod-7-1", "stem": "s",
+                                     "options": [{"id": "opt-1-1", "text": "a"}],
+                                     "correctOptionId": "opt-1-1",
+                                     "explanation": "e"}]}
+    write_content_cache(
+        quiz_cache_path("mod-7", [transcript], QUIZ_PROMPT_VERSION), cached_payload
+    )
+
+    failed = []
+    result = asyncio.run(
+        generate_quizzes([module], {"vidmod70701": transcript}, set(), failed)
+    )
+
+    assert "mod-7" in result, (
+        f"generate_quizzes keys must match assembly slug 'mod-7'; got {list(result)} "
+        f"(failed: {failed})"
+    )
