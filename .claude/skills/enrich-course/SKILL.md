@@ -38,16 +38,34 @@ and report cached/uncached; for each module NOT in `compute_matched_chapters()`
 (hand-authored quizzes are never touched — D-09) compute `quiz_cache_path(...)` and
 report cached/uncached.
 
-### 3. Generate lessons (Claude, in-session)
+### 3. Generate lessons (Claude, in-session) — COHERENT, not isolated
 
-For each uncached lesson, read `{video_id}.txt` from the cache and produce markdown
-following `LESSON_SYSTEM_PROMPT` in `scripts/enrichment/lesson_generator.py` exactly
-(read it at run time — do not trust a stale copy). Core rules: RESTRUCTURE not
-rewrite; preserve instructor voice/analogies; nothing not in the transcript; no
-padding — short transcript = short lesson (D-06); no top-level `#` heading; markdown
-only, no preamble.
+**Coherence requirement (founder, 2026-07-09):** the course must read as one
+well-woven story — lessons coherent within their module, modules coherent across
+the course. NEVER generate a lesson in isolation.
 
-Validate + write through the real models and helpers, e.g.:
+Process:
+1. Extract the full course outline first (module titles + ordered lesson titles
+   via `sheet2pack.parse_tracker`) and write a 1-line-per-module story arc.
+2. Batch generation BY MODULE — one agent per module, spawned in parallel. Each
+   agent gets: the full course story arc, its module's position in the arc, and
+   its module's ordered lesson list.
+3. Each agent reads ALL its module's transcripts first, THEN writes lessons in
+   order — consistent terminology, tone, and heading style across the module.
+4. Connective framing allowed: at most one short sentence at a lesson's start/end
+   situating it in the module/course, using ONLY outline titles. Module-intro
+   lessons may preview the module; summary lessons may recap it. Never invent
+   specifics about other lessons' content.
+5. Grounding unchanged: ALL technical content from THAT lesson's transcript.
+
+Content rules come from `LESSON_SYSTEM_PROMPT` in
+`scripts/enrichment/lesson_generator.py` (read at run time — do not trust a stale
+copy): RESTRUCTURE not rewrite; preserve instructor voice/analogies; nothing not
+in the transcript; no padding — short transcript = short lesson (D-06); no
+top-level `#` heading; markdown only, no preamble.
+
+Validate + write through the real models and helpers (LessonOutput requires
+word_count and prompt_version):
 
 ```bash
 cd scripts && uv run --no-project --with pydantic - <<'EOF'
@@ -55,8 +73,8 @@ from enrichment.models import LessonOutput
 from enrichment.content_cache import content_cache_path, write_content_cache, read_transcript_cache
 from enrichment.lesson_generator import LESSON_PROMPT_VERSION
 video_id = "..."
-markdown = open("/tmp/lesson-draft.md").read()
-LessonOutput(markdown=markdown)              # raises on violation (e.g. # heading)
+markdown = open(f"/tmp/lesson-{video_id}.md").read()
+LessonOutput(markdown=markdown, word_count=len(markdown.split()), prompt_version=LESSON_PROMPT_VERSION)
 t = read_transcript_cache(video_id)
 write_content_cache(content_cache_path(video_id, t, LESSON_PROMPT_VERSION), {"markdown": markdown})
 EOF
@@ -80,8 +98,13 @@ via `write_content_cache`.
 Re-run step 2's enumeration — every artifact must be `cached`. Then:
 
 ```bash
-ANTHROPIC_API_KEY=cache-only-dummy uv run scripts/sheet2pack.py "<course>.xlsx" -o out/<course>-enriched.json --enrich
+ANTHROPIC_API_KEY=cache-only-dummy uv run scripts/sheet2pack.py "<course>.xlsx" -o out/<course>-enriched.json --enrich --licensed
 ```
+
+**`--licensed` is REQUIRED for paid SODA packs** (founder, 2026-07-09): stamps
+`exportedFrom: licensed:{pack_id}` so the imported course is non-exportable in the
+app (fail-closed `is_course_exportable` denylist). Omit only for free/community
+packs meant to be re-exportable.
 
 The dummy key satisfies the eager client constructors; cache hits mean no API call
 ever fires. If the run reports any `failed` artifact, a cache miss slipped through
