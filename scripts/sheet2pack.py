@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "openpyxl>=3.1",
+#   "jsonschema>=4.0",
+#   "anthropic>=0.40.0,<1.0.0",
+#   "youtube-transcript-api>=1.2.4",
+#   "yt-dlp>=2026.7.0",
+#   "pydantic>=2.0",
+# ]
+# ///
 """sheet2pack — convert a SODA course-tracker spreadsheet into a LearnForge
 importable course pack (exported-course JSON, consumed by Settings → Import).
 
@@ -24,13 +35,18 @@ after import (requires the section-keyed video fix, commit 98c3fcf).
 Usage:
   python3 scripts/sheet2pack.py "<course>.xlsx" -o out.json \
       [--id sfd402-mlops] [--title "MLOps Bootcamp"] [--domain devops] \
-      [--channel "School of Devops"]
+      [--channel "School of Devops"] [--enrich] [--yes]
+
+Enrichment (--enrich):
+  Fetches YouTube transcripts and calls the Anthropic API to generate
+  transcript-grounded lesson text and MCQ quizzes. Requires ANTHROPIC_API_KEY.
 
 Validation: if `jsonschema` is installed, the output is validated against
 learnforge-core/topic-packs/pack-schema.json before writing.
 """
 
 import argparse
+import asyncio
 import json
 import re
 import sys
@@ -208,19 +224,61 @@ def block(bid, module_id, ordering, block_type, payload, params=None):
     }
 
 
-def convert(xlsx_path, pack_id, title, domain, channel):
-    import openpyxl
+def compute_matched_chapters(modules_raw, quizzes):
+    """Return the set of module nums whose hand-authored quiz title overlaps >= 0.5.
 
-    wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
-    if "Tracker" not in wb.sheetnames:
-        sys.exit("ERROR: no 'Tracker' sheet found")
-    modules_raw, warnings = parse_tracker(wb["Tracker"])
-    if not modules_raw:
-        sys.exit("ERROR: no modules with lessons found in Tracker")
-    quizzes = parse_quizzes(wb["Quizzes"]) if "Quizzes" in wb.sheetnames else {}
+    Extracted from the assembly loop so the D-09 fill-gaps decision is computed
+    once and reused in both the stale-quiz guard (assembly) and the enrichment
+    pre-pass (quiz generation).
+    """
+    matched = set()
+    for m in modules_raw:
+        if m["num"] in quizzes:
+            ch = quizzes[m["num"]]
+            if title_overlap(ch["title"], m["title"]) >= 0.5:
+                slug = f"mod-{m['num']}"
+                qp = quiz_payload(ch["questions"], slug)
+                if qp:
+                    matched.add(m["num"])
+    return matched
 
+
+def assemble_payload(
+    modules_raw,
+    quizzes,
+    enriched_lessons,
+    generated_quizzes,
+    channel,
+    pack_id,
+    title,
+    domain,
+    return_warnings=False,
+):
+    """Assemble the exported-course JSON payload from parsed modules and enrichment data.
+
+    This function is the single implementation of the assembly loop that
+    convert() calls after the enrichment pre-pass. It is also used directly
+    by tests so they can inject enriched_lessons/generated_quizzes without
+    hitting the network (ENR-04 / D-03 / D-07 / D-09 / D-16 integration tests).
+
+    Args:
+        modules_raw:        List of module dicts from parse_tracker().
+        quizzes:            Dict of hand-authored quiz chapters from parse_quizzes().
+        enriched_lessons:   {video_id: markdown} from generate_lessons() or {}.
+        generated_quizzes:  {module_slug: quiz_payload_dict} from generate_quizzes() or {}.
+        channel:            YouTube channel name for video metadata.
+        pack_id:            Unique pack identifier slug.
+        title:              Human-readable course title.
+        domain:             Domain/category tag for the pack.
+        return_warnings:    If True, return (payload, warnings) tuple instead of payload.
+
+    Returns:
+        payload dict, or (payload, warnings) tuple if return_warnings=True.
+    """
     modules, blocks_map, videos_map = [], {}, {}
-    matched_chapters = set()
+    warnings: list = []
+    # Track which chapters got hand-authored quizzes (for D-09 fill-gaps + report)
+    used_chapters: set = set()
 
     for m in modules_raw:
         slug = f"mod-{m['num']}"
@@ -239,18 +297,13 @@ def convert(xlsx_path, pack_id, title, domain, channel):
         mblocks = []
         for i, lesson in enumerate(m["lessons"]):
             bid = f"blk-{lesson['num']}"
-            mblocks.append(
-                block(
-                    bid, slug, i, "section",
-                    {"markdown": lesson_markdown(lesson)},
-                    # LessonNavList reads params.lesson_title for the sidebar label
-                    params={"lesson_title": lesson["title"][:MAX_TITLE_LEN]},
-                )
-            )
-            if lesson["video_id"]:
+            vid = lesson.get("video_id")
+
+            # D-07: video always stays in videos_map regardless of enrichment
+            if vid:
                 videos_map[bid] = [
                     {
-                        "videoId": lesson["video_id"],
+                        "videoId": vid,
                         "title": lesson["title"][:500],
                         "channelTitle": channel,
                         "relevanceScore": 1.0,
@@ -258,6 +311,27 @@ def convert(xlsx_path, pack_id, title, domain, channel):
                 ]
             else:
                 warnings.append(f"no video: {m['num']}/{lesson['num']} {lesson['title']}")
+
+            # Select markdown source: enriched (if generated) or stage-1 stub (D-03)
+            if vid and vid in enriched_lessons:
+                md = enriched_lessons[vid]
+                # Route through the 131072-byte guard — single implementation in
+                # lesson_generator._make_section_payload (no duplicate guard here)
+                from enrichment.lesson_generator import _make_section_payload
+                payload_json_str = _make_section_payload(md)
+                section_payload = json.loads(payload_json_str)
+            else:
+                # D-03: skipped/caption-less lesson keeps the stage-1 video-only stub
+                section_payload = {"markdown": lesson_markdown(lesson)}
+
+            mblocks.append(
+                block(
+                    bid, slug, i, "section",
+                    section_payload,
+                    # LessonNavList reads params.lesson_title for the sidebar label
+                    params={"lesson_title": lesson["title"][:MAX_TITLE_LEN]},
+                )
+            )
 
         # Attach a chapter quiz ONLY when both the number AND the title agree —
         # quiz sheets are often stale template leftovers from other courses.
@@ -267,14 +341,21 @@ def convert(xlsx_path, pack_id, title, domain, channel):
                 qp = quiz_payload(ch["questions"], slug)
                 if qp:
                     mblocks.append(block(f"quiz-{slug}", slug, len(mblocks), "quiz", qp))
-                    matched_chapters.add(m["num"])
+                    used_chapters.add(m["num"])
             else:
                 warnings.append(
                     f"quiz chapter {m['num']} \"{ch['title'][:40]}\" != module \"{m['title'][:40]}\" — skipped (stale template sheet?)"
                 )
+
+        # D-09: fill gaps only — add generated quiz if no hand-authored one matched
+        if slug in generated_quizzes and m["num"] not in used_chapters:
+            mblocks.append(
+                block(f"quiz-{slug}", slug, len(mblocks), "quiz", generated_quizzes[slug])
+            )
+
         blocks_map[slug] = mblocks
 
-    for ch_num in sorted(set(quizzes) - matched_chapters):
+    for ch_num in sorted(set(quizzes) - used_chapters):
         if not any(m["num"] == ch_num for m in modules_raw):
             warnings.append(f"quiz chapter {ch_num} matches no module number — skipped")
 
@@ -297,7 +378,101 @@ def convert(xlsx_path, pack_id, title, domain, channel):
         "blocks": blocks_map,
         "videos": videos_map,
     }
-    return payload, warnings
+
+    if return_warnings:
+        return payload, warnings
+    return payload
+
+
+def convert(xlsx_path, pack_id, title, domain, channel,
+            enrich=False, enrich_only=None, yes=False):
+    """Convert a SODA xlsx to an exported-course JSON pack.
+
+    Args:
+        xlsx_path:    Path to the course tracker xlsx.
+        pack_id:      Unique pack identifier slug.
+        title:        Human-readable course title.
+        domain:       Domain/category tag for the pack.
+        channel:      YouTube channel name for video metadata.
+        enrich:       Run all enrichment stages (transcripts, lessons, quizzes).
+        enrich_only:  Run only one stage: 'transcripts', 'lessons', or 'quizzes'.
+        yes:          Skip the D-15 cost-confirmation prompt.
+
+    Returns:
+        (payload_dict, warnings, skipped, failed) — the last two lists are
+        populated only when enrich or enrich_only is set.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
+    if "Tracker" not in wb.sheetnames:
+        sys.exit("ERROR: no 'Tracker' sheet found")
+    modules_raw, parse_warnings = parse_tracker(wb["Tracker"])
+    if not modules_raw:
+        sys.exit("ERROR: no modules with lessons found in Tracker")
+    quizzes = parse_quizzes(wb["Quizzes"]) if "Quizzes" in wb.sheetnames else {}
+
+    # Enrichment state — populated in the pre-pass below
+    enriched_lessons: dict = {}   # video_id → generated markdown text
+    generated_quizzes: dict = {}  # module_slug → quiz_payload dict
+    skipped: list = []            # lessons with no captions (D-03)
+    failed: list = []             # lessons/modules that failed generation (D-16)
+
+    # Pre-compute matched chapters for D-09 fill-gaps guard
+    matched_chapters: set = compute_matched_chapters(modules_raw, quizzes)
+
+    # ------------------------------------------------------------------
+    # Enrichment pre-pass (runs before assembly; no network calls otherwise)
+    # ------------------------------------------------------------------
+    if enrich or enrich_only:
+        from enrichment.transcript import fetch_and_cache_transcripts
+        from enrichment.token_estimator import estimate_and_confirm
+        from enrichment.quiz_generator import generate_quizzes
+
+        # Stage A: fetch transcripts for all lessons with a video_id (D-01 / D-04)
+        # Always run — transcripts feed both lessons and quizzes.
+        transcripts = fetch_and_cache_transcripts(modules_raw, skipped)
+
+        # Determine which LLM stages to run
+        run_lessons = enrich or enrich_only == "lessons"
+        run_quizzes = enrich or enrich_only == "quizzes"
+
+        if (run_lessons or run_quizzes) and transcripts:
+            # D-15: print estimate and confirm before any LLM calls
+            estimate_and_confirm(transcripts, len(modules_raw), yes=yes)
+
+        async def _run_enrichment():
+            """Single coroutine wrapping all async enrichment stages (Pitfall 7)."""
+            el: dict = {}
+            gq: dict = {}
+            if run_lessons and transcripts:
+                from enrichment.lesson_generator import generate_lessons
+                el = await generate_lessons(transcripts, failed)
+            if run_quizzes:
+                gq = await generate_quizzes(
+                    modules_raw, transcripts, matched_chapters, failed
+                )
+            return el, gq
+
+        # Single entry point for all async enrichment (Pitfall 7 — never nest event loops)
+        enriched_lessons, generated_quizzes = asyncio.run(_run_enrichment())
+
+    # ------------------------------------------------------------------
+    # Assembly — delegate to assemble_payload() (shared with tests)
+    # ------------------------------------------------------------------
+    payload, assembly_warnings = assemble_payload(
+        modules_raw=modules_raw,
+        quizzes=quizzes,
+        enriched_lessons=enriched_lessons,
+        generated_quizzes=generated_quizzes,
+        channel=channel,
+        pack_id=pack_id,
+        title=title,
+        domain=domain,
+        return_warnings=True,
+    )
+    warnings = parse_warnings + assembly_warnings
+    return payload, warnings, skipped, failed
 
 
 def validate(payload, schema_path):
@@ -318,17 +493,31 @@ def main():
     ap.add_argument("--title", default=None)
     ap.add_argument("--domain", default="devops")
     ap.add_argument("--channel", default="School of Devops")
+    ap.add_argument("--enrich", action="store_true",
+                    help="fetch transcripts + generate lessons + quizzes via Anthropic API")
+    ap.add_argument("--enrich-only", dest="enrich_only",
+                    choices=["transcripts", "lessons", "quizzes"],
+                    metavar="STAGE",
+                    help="rerun a single enrichment stage only (transcripts, lessons, or quizzes)")
+    ap.add_argument("--yes", action="store_true",
+                    help="skip cost-confirmation prompt (for scripted runs, D-15)")
     args = ap.parse_args()
 
     stem = Path(args.xlsx).stem
     title = args.title or re.sub(r"^[A-Z]{2,4}\d+\s*-\s*", "", stem)
     pack_id = args.pack_id or re.sub(r"[^a-z0-9-]+", "-", title.lower()).strip("-")
 
-    payload, warnings = convert(args.xlsx, pack_id, title, args.domain, args.channel)
+    payload, warnings, skipped, failed = convert(
+        args.xlsx, pack_id, title, args.domain, args.channel,
+        enrich=args.enrich,
+        enrich_only=args.enrich_only,
+        yes=args.yes,
+    )
 
     schema_path = Path(__file__).resolve().parent.parent / "learnforge-core/topic-packs/pack-schema.json"
     vmsg = validate(payload, schema_path) if schema_path.exists() else "schema file not found — skipped"
 
+    # Write the pack BEFORE printing report so a write failure never blocks it (D-16)
     Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=2))
 
     n_lessons = sum(len(b) for b in payload["blocks"].values())
@@ -341,6 +530,15 @@ def main():
         print(f"\nwarnings ({len(warnings)}):")
         for w in warnings:
             print(f"  - {w}")
+    # D-16 enrichment report
+    if skipped:
+        print(f"\nskipped ({len(skipped)}) — no captions, stays video-only:")
+        for s in skipped:
+            print(f"  - {s}")
+    if failed:
+        print(f"\nfailed ({len(failed)}) — kept as video-only stub:")
+        for f_item in failed:
+            print(f"  - {f_item}")
 
 
 if __name__ == "__main__":
