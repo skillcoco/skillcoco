@@ -6,6 +6,7 @@ import { SettingsLabsSection } from "@/pages/SettingsLabsSection";
 import { SettingsTopicPacksSection } from "@/pages/SettingsTopicPacksSection";
 import { SettingsYouTubeSection } from "@/pages/SettingsYouTubeSection";
 import { SettingsVerifyCertSection } from "@/pages/SettingsVerifyCertSection";
+import { SettingsReportServerSection } from "@/pages/SettingsReportServerSection";
 import { SettingsCourseImportSection } from "@/pages/SettingsCourseImportSection";
 import {
   Shield,
@@ -899,6 +900,9 @@ export function Settings() {
 
       {/* ── Verify Certificate (Phase 6 Wave 5 — CERT-04..05, CERT-08) ── */}
       <SettingsVerifyCertSection />
+
+      {/* ── Report server (Phase 18 — 18-06 / D-13 org submission) ── */}
+      <SettingsReportServerSection />
 
       {/* ── Learning (Phase 4 Wave 5 — daily challenge opt-out, Q8 lock) ── */}
       <section className="space-y-4">
