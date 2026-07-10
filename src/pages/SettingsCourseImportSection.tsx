@@ -20,6 +20,17 @@ interface ImportState {
   blockCount?: number;
   warnings?: string[];
   error?: string;
+  /**
+   * `true` when the imported pack's signature chain of trust verified
+   * successfully (TRUST-01, D-14). Phase 14 Plan 06 (CR-01) — previously
+   * discarded from importCourse's result. The authoritative production
+   * data path for the TrackView badge is get_path (14-06 Task 1), which
+   * survives an app restart; this local state closes the call-site discard
+   * the review flagged.
+   */
+  verified?: boolean;
+  /** Publisher name from the verified issuer cert, when `verified` is `true`. */
+  issuerName?: string | null;
 }
 
 export function SettingsCourseImportSection() {
@@ -61,6 +72,8 @@ export function SettingsCourseImportSection() {
         moduleCount: result.moduleCount,
         blockCount: result.blockCount,
         warnings: result.warnings,
+        verified: result.verified,
+        issuerName: result.issuerName,
       });
     } catch (err) {
       setState({
@@ -120,6 +133,11 @@ export function SettingsCourseImportSection() {
               {state.moduleCount} module{state.moduleCount !== 1 ? "s" : ""},{" "}
               {state.blockCount} block{state.blockCount !== 1 ? "s" : ""}
             </p>
+            {state.verified === true && state.issuerName && (
+              <p className="text-xs text-muted-foreground">
+                Verified publisher: <span className="font-medium">{state.issuerName}</span>
+              </p>
+            )}
             <div className="flex items-start gap-1.5 mt-1">
               <Upload size={12} className="mt-0.5 shrink-0 text-muted-foreground" />
               <p className="text-xs text-muted-foreground">
