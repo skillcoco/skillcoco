@@ -13,7 +13,7 @@
 // used so the mock references survive vi.mock factory hoisting.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { VerifySignatureResult } from "@/types/achievements";
 
@@ -201,6 +201,49 @@ describe("SettingsVerifyCertSection — Phase 6 Plan 06-06 (Wave 5)", () => {
     expect(screen.getByText(/kubernetes/i)).toBeInTheDocument();
     expect(screen.getByText(/associate/i)).toBeInTheDocument();
     expect(screen.getByText(/a1b2c3d4/i)).toBeInTheDocument();
+  });
+
+  it("shows_report_shaped_result_with_capability_summary", async () => {
+    // Phase 18 (18-06 / REP-02) — a pasted report JSON (raw ReportEnvelopeV1)
+    // must render the report-shaped panel (learner + capability summary),
+    // NOT the cert fields branch, and NOT blank fields.
+    verifySignatureMock.mockResolvedValue(
+      okResult({
+        learner: "",
+        track: "",
+        level: "",
+        completionDate: "",
+        keyFingerprint: "a1b2c3d4",
+        reportLearnerName: "Ada",
+        reportScopeLabel: "Kubernetes",
+        reportCapabilityCount: 3,
+        reportGeneratedAt: "2026-07-10T00:00:00Z",
+      }),
+    );
+
+    render(<SettingsVerifyCertSection />);
+    // fireEvent.change (not userEvent.type) — the payload contains curly
+    // braces, which userEvent's keyboard parser misreads as key-chord
+    // syntax.
+    fireEvent.change(screen.getByLabelText(/payload/i), {
+      target: {
+        value:
+          '{"payload":{"learnerName":"Ada"},"signatureHex":"ab","keyFingerprint":"a1b2c3d4"}',
+      },
+    });
+    await userEvent.click(screen.getByRole("button", { name: /^verify$/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("verify-result-report-valid"),
+      ).toBeInTheDocument();
+    });
+    const resultPanel = screen.getByTestId("verify-result-report-valid");
+    expect(resultPanel).toHaveTextContent("Ada");
+    expect(resultPanel).toHaveTextContent("Kubernetes");
+    expect(resultPanel).toHaveTextContent("3");
+    // The cert-shaped result testid must NOT be present alongside it.
+    expect(screen.queryByTestId("verify-result-valid")).toBeNull();
   });
 
   it("shows_invalid_result_with_error_message", async () => {
