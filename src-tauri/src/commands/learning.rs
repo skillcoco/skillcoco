@@ -1145,7 +1145,7 @@ pub fn get_path(state: State<AppState>, track_id: String) -> Result<LearningPath
 
     db.conn
         .query_row(
-            "SELECT id, track_id, version, generated_by_model, modules_json, edges_json, estimated_hours, created_at FROM learning_paths WHERE track_id = ?1 ORDER BY version DESC LIMIT 1",
+            "SELECT id, track_id, version, generated_by_model, modules_json, edges_json, estimated_hours, created_at, verified, issuer_name FROM learning_paths WHERE track_id = ?1 ORDER BY version DESC LIMIT 1",
             [&track_id],
             |row| {
                 Ok(LearningPath {
@@ -1157,6 +1157,8 @@ pub fn get_path(state: State<AppState>, track_id: String) -> Result<LearningPath
                     edges_json: row.get(5)?,
                     estimated_hours: row.get(6)?,
                     created_at: row.get(7)?,
+                    verified: row.get(8)?,
+                    issuer_name: row.get(9)?,
                 })
             },
         )

@@ -52,6 +52,16 @@ pub struct LearningPath {
     pub edges_json: String,
     pub estimated_hours: f64,
     pub created_at: String,
+    /// Phase 14 (14-06, CR-01/D-14) — true when the imported pack's signature
+    /// chain of trust verified successfully. Drives the frontend "verified
+    /// licensor" badge in TrackView. `#[serde(default)]` so pre-Phase-14 rows
+    /// and unsigned imports deserialize to `false` without error.
+    #[serde(default)]
+    pub verified: bool,
+    /// Publisher name from the verified issuer cert, when `verified == true`.
+    /// `#[serde(default)]` so legacy rows deserialize to `None`.
+    #[serde(default)]
+    pub issuer_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -167,6 +177,8 @@ mod tests {
             edges_json: "[]".to_string(),
             estimated_hours: 5.0,
             created_at: "2026-01-01".to_string(),
+            verified: true,
+            issuer_name: Some("Test Publisher".to_string()),
         };
         let json = serde_json::to_string(&path).unwrap();
         assert!(json.contains("\"trackId\""), "Expected trackId, got: {}", json);
@@ -175,6 +187,28 @@ mod tests {
         assert!(json.contains("\"edgesJson\""), "Expected edgesJson, got: {}", json);
         assert!(json.contains("\"estimatedHours\""), "Expected estimatedHours, got: {}", json);
         assert!(json.contains("\"createdAt\""), "Expected createdAt, got: {}", json);
+        assert!(json.contains("\"verified\""), "Expected verified, got: {}", json);
+        assert!(json.contains("\"issuerName\""), "Expected issuerName, got: {}", json);
+    }
+
+    #[test]
+    fn test_learning_path_verified_defaults_false_and_none_for_legacy_json() {
+        // A legacy/unsigned LearningPath JSON payload (pre-Phase-14, no
+        // verified/issuerName fields) must deserialize with #[serde(default)]
+        // fallbacks instead of erroring (T-14-06-04 backward-compat).
+        let legacy_json = r#"{
+            "id": "path-1",
+            "trackId": "t1",
+            "version": 1,
+            "generatedByModel": "claude-sonnet-4-6",
+            "modulesJson": "[]",
+            "edgesJson": "[]",
+            "estimatedHours": 5.0,
+            "createdAt": "2026-01-01"
+        }"#;
+        let decoded: LearningPath = serde_json::from_str(legacy_json).unwrap();
+        assert!(!decoded.verified, "legacy JSON without verified must default to false");
+        assert_eq!(decoded.issuer_name, None, "legacy JSON without issuerName must default to None");
     }
 
     #[test]

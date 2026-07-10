@@ -751,12 +751,22 @@ fn import_course_txn(
     )
     .map_err(|e| ImportCourseError::Db(format!("learning_tracks insert failed: {}", e)))?;
 
-    // Insert learning_paths row with PRESERVED provenance (D-11)
+    // Insert learning_paths row with PRESERVED provenance (D-11) and the
+    // verified/issuer_name fields from the Step 3.5 verification gate (D-14,
+    // 14-06 CR-01) so the frontend badge survives an app restart.
     conn.execute(
         "INSERT INTO learning_paths \
-         (id, track_id, modules_json, edges_json, version, generated_by_model) \
-         VALUES (?1, ?2, ?3, ?4, 1, ?5)",
-        rusqlite::params![path_id, track_id, modules_json, edges_json, stamped_provenance],
+         (id, track_id, modules_json, edges_json, version, generated_by_model, verified, issuer_name) \
+         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6, ?7)",
+        rusqlite::params![
+            path_id,
+            track_id,
+            modules_json,
+            edges_json,
+            stamped_provenance,
+            verified_import.verified,
+            verified_import.issuer_name,
+        ],
     )
     .map_err(|e| ImportCourseError::Db(format!("learning_paths insert failed: {}", e)))?;
 
