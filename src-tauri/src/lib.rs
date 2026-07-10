@@ -5,6 +5,12 @@ pub mod commands;
 pub mod db;
 pub mod labs;
 pub mod licensing;
+// Phase 18 Plan 4 — shared PDF text-rendering helper (`push_line`) used by
+// BOTH the certificate renderer (achievements::artifacts) and the report
+// renderer (reports::artifacts). Extracted so the printpdf Td-relative fix
+// (and its regression test) cannot be re-broken by a second copy.
+pub mod pdf_util;
+pub mod reports;
 // Phase 7 Wave 2 (Plan 07-02) — rusqlite-backed impls of learnforge_core
 // per-module storage traits. The trait `impl BktStore for &Connection`
 // in storage_impl::bkt is a coherence requirement to live in src-tauri
