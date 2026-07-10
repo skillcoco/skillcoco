@@ -120,8 +120,8 @@ mod tests {
             |row| row.get(0),
         ).unwrap();
         // v012 + v013 + v014 were added in Phase 11; v015 added in Phase 14 (14-06);
-        // v016 + v017 added in Phase 18 (18-01) — schema_migrations has 17
-        // rows after full apply.
-        assert_eq!(count, 17, "exactly 17 rows in schema_migrations after idempotent double-apply (v012..v017 added after v011)");
+        // v016 + v017 + v018 added in Phase 18 (18-01, 18-08) — schema_migrations
+        // has 18 rows after full apply.
+        assert_eq!(count, 18, "exactly 18 rows in schema_migrations after idempotent double-apply (v012..v018 added after v011)");
     }
 }
