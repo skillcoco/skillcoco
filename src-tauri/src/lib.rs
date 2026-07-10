@@ -302,6 +302,9 @@ pub fn run() {
             // Course import/export (Phase 12 — Plans 02 & 03)
             commands::course_io::export_course,
             commands::course_io::import_course,
+            // Signed skill reports (Phase 18 — Plan 03)
+            commands::reports::assemble_skill_report,
+            commands::reports::export_report_json,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

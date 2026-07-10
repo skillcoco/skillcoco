@@ -317,6 +317,31 @@ fn parse_evidence_class_maps_unknown_string_to_module() {
     );
 }
 
+/// An unrecognized evidence_class stored in a real capability_tags row must
+/// not crash or block the read path — capability_tags_for_scope still
+/// returns the row (validated internally via parse_evidence_class).
+#[test]
+fn capability_tags_for_scope_tolerates_unrecognized_evidence_class_in_db() {
+    let conn = fresh_conn();
+    seed_track(&conn, "trk1", "Kubernetes");
+    seed_module(&conn, "mod1", "trk1", "Pods and Nodes");
+    seed_capability_tag(
+        &conn,
+        "ct1",
+        "trk1",
+        "mod1",
+        "can-configure-rbac",
+        "Can configure RBAC policies",
+        "totally-bogus-value",
+    );
+
+    let store = SqliteReportStore(&conn);
+    let tags = store
+        .capability_tags_for_scope(&ReportScope::Track("trk1".to_string()), "lp1")
+        .expect("must not error on unrecognized evidence_class");
+    assert_eq!(tags.len(), 1);
+}
+
 // ── report_metadata ──────────────────────────────────────────────────────
 
 #[test]

@@ -172,7 +172,7 @@ impl<'a> ReportStore for SqliteReportStore<'a> {
                 let mut stmt = self
                     .0
                     .prepare(
-                        "SELECT ct.module_id, ct.tag_slug, ct.tag_label
+                        "SELECT ct.module_id, ct.tag_slug, ct.tag_label, ct.evidence_class
                          FROM capability_tags ct
                          WHERE ct.learner_id = ?1 AND ct.track_id = ?2",
                     )
@@ -183,11 +183,19 @@ impl<'a> ReportStore for SqliteReportStore<'a> {
                             r.get::<_, String>(0)?,
                             r.get::<_, String>(1)?,
                             r.get::<_, String>(2)?,
+                            r.get::<_, String>(3)?,
                         ))
                     })
                     .map_err(db_err)?;
                 for row in rows {
-                    let (module_id, slug, label) = row.map_err(db_err)?;
+                    let (module_id, slug, label, evidence_class) = row.map_err(db_err)?;
+                    // Warning 3 — validate the untyped TEXT column on read.
+                    // The parsed value isn't threaded further here (this
+                    // query only needs module/slug/label to build the
+                    // capability row), but every read of evidence_class
+                    // MUST go through the validator so an unrecognized
+                    // value is logged, never silently trusted.
+                    let _ = parse_evidence_class(&evidence_class);
                     tagged_module_ids.insert(module_id);
                     let norm = normalize_tag(&slug);
                     seen_slugs.entry(norm).or_insert((slug, label));

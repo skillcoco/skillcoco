@@ -5,5 +5,6 @@ pub mod course_io;
 pub mod labs;
 pub mod learning;
 pub mod microlearning;
+pub mod reports;
 pub mod tracks;
 pub mod videos;
