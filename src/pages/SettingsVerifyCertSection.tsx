@@ -20,7 +20,7 @@
 // Glass + lucide-icons only; no emoji per D-08.
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clipboard, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clipboard, FileUp, XCircle } from "lucide-react";
 import * as commands from "@/lib/tauri-commands";
 import type { VerifySignatureResult } from "@/types/achievements";
 
@@ -108,7 +108,7 @@ export function SettingsVerifyCertSection() {
 
   // ── Handlers ─────────────────────────────────────────────────────
 
-  async function onVerify() {
+  async function verifyText(text: string) {
     setBusy(true);
     setNoKeyMsg(null);
     try {
@@ -116,7 +116,7 @@ export function SettingsVerifyCertSection() {
         ? override
         : null;
       const r = await commands.verifySignature({
-        payloadB64: payload,
+        payloadB64: text,
         publicKeyPemOverride: overrideTrimmed,
       });
       setResult(r);
@@ -133,6 +133,24 @@ export function SettingsVerifyCertSection() {
       });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onVerify() {
+    await verifyText(payload);
+  }
+
+  // 18-06 UAT: pick the exported report/cert JSON file instead of pasting
+  // its content. Cancelling the picker is a no-op.
+  async function onChooseFile() {
+    setNoKeyMsg(null);
+    try {
+      const content = await commands.pickAndReadReportFile();
+      if (content === null) return;
+      setPayload(content);
+      await verifyText(content);
+    } catch (e) {
+      setNoKeyMsg(`Could not read file: ${String(e)}`);
     }
   }
 
@@ -178,7 +196,7 @@ export function SettingsVerifyCertSection() {
   // ── Render ───────────────────────────────────────────────────────
 
   return (
-    <section className="space-y-4" aria-label="Verify certificate">
+    <section className="space-y-4" aria-label="Verify certificate or report">
       {/* Hidden probe — test-only seam for the mount-time fingerprint. */}
       <span data-testid="local-fp" hidden>
         {localFingerprint ?? ""}
@@ -186,7 +204,7 @@ export function SettingsVerifyCertSection() {
 
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-foreground">
-          Verify certificate
+          Verify certificate or report
         </h2>
         <button
           type="button"
@@ -200,11 +218,24 @@ export function SettingsVerifyCertSection() {
 
       <div className="glass space-y-4 rounded-xl p-5">
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Paste a base64 payload from a QR code to verify its signature
-          against the local signing key, or against a public key you paste
-          below. Note: your name appears inside the QR code. Update your
-          name in Profile if needed.
+          Choose an exported skill-report or certificate JSON file, or paste
+          a base64 payload from a QR code, to verify its signature against
+          the local signing key — or against a public key you paste below.
+          Note: your name appears inside the QR code. Update your name in
+          Profile if needed.
         </p>
+
+        <div>
+          <button
+            type="button"
+            onClick={onChooseFile}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FileUp size={12} />
+            Choose report file…
+          </button>
+        </div>
 
         <div>
           <label

@@ -433,7 +433,7 @@ export async function importCourse(
 }
 
 import { save } from "@tauri-apps/plugin-dialog";
-import { writeFile } from "@tauri-apps/plugin-fs";
+import { writeFile, readTextFile } from "@tauri-apps/plugin-fs";
 import type {
   Achievement,
   ExportBadgeRequest,
@@ -607,6 +607,21 @@ export async function submitEvidenceReport(
   request: SubmitEvidenceReportRequest,
 ): Promise<SubmitEvidenceReportResult> {
   return invoke("submit_evidence_report", { request });
+}
+
+/// Open a native file picker for a report/certificate JSON file and return
+/// its text content, or `null` if the user cancelled. 18-06 UAT: verifying
+/// an exported report by picking the file beats pasting 10KB+ of JSON.
+/// The backend's MAX_REPORT_JSON_LEN (64KB) cap stays authoritative; no
+/// size gating here.
+export async function pickAndReadReportFile(): Promise<string | null> {
+  const path = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "Report or certificate (JSON)", extensions: ["json"] }],
+  });
+  if (typeof path !== "string" || path.length === 0) return null;
+  return readTextFile(path);
 }
 
 // ── Ollama connection probe ──────────────────────────────────────────────────

@@ -23,16 +23,19 @@ const {
   verifySignatureMock,
   getSigningPublicKeyMock,
   fingerprintFromPublicPemMock,
+  pickAndReadReportFileMock,
 } = vi.hoisted(() => ({
   verifySignatureMock: vi.fn(),
   getSigningPublicKeyMock: vi.fn(),
   fingerprintFromPublicPemMock: vi.fn(),
+  pickAndReadReportFileMock: vi.fn(),
 }));
 
 vi.mock("@/lib/tauri-commands", () => ({
   verifySignature: verifySignatureMock,
   getSigningPublicKey: getSigningPublicKeyMock,
   fingerprintFromPublicPem: fingerprintFromPublicPemMock,
+  pickAndReadReportFile: pickAndReadReportFileMock,
 }));
 
 import { SettingsVerifyCertSection } from "@/pages/SettingsVerifyCertSection";
@@ -377,5 +380,59 @@ describe("SettingsVerifyCertSection — Phase 6 Plan 06-06 (Wave 5)", () => {
     const text = container.textContent ?? "";
     const emojiRegex = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
     expect(text).not.toMatch(emojiRegex);
+  });
+
+  // ── Phase 18 (18-06 UAT) — heading covers reports; file-pick verify ──
+
+  it("heading reads 'Verify certificate or report' (reports are first-class here)", () => {
+    render(<SettingsVerifyCertSection />);
+    expect(
+      screen.getByRole("heading", { name: "Verify certificate or report" }),
+    ).toBeInTheDocument();
+  });
+
+  it("choosing a report file loads it and verifies without pasting", async () => {
+    const fileContent = '{"payload":{"learnerName":"Ada"},"signatureHex":"aa","keyFingerprint":"deadbeef"}';
+    pickAndReadReportFileMock.mockResolvedValue(fileContent);
+    verifySignatureMock.mockResolvedValue(
+      okResult({
+        reportLearnerName: "Ada",
+        reportScopeLabel: "Kubernetes",
+        reportCapabilityCount: 3,
+        reportGeneratedAt: "2026-07-10",
+      } as Partial<VerifySignatureResult>),
+    );
+    const user = userEvent.setup();
+    render(<SettingsVerifyCertSection />);
+
+    await user.click(
+      screen.getByRole("button", { name: /choose report file/i }),
+    );
+
+    await waitFor(() => {
+      expect(verifySignatureMock).toHaveBeenCalledTimes(1);
+    });
+    expect(verifySignatureMock).toHaveBeenCalledWith({
+      payloadB64: fileContent,
+      publicKeyPemOverride: null,
+    });
+    expect(
+      await screen.findByTestId("verify-result-report-valid"),
+    ).toBeInTheDocument();
+  });
+
+  it("cancelling the file picker does not verify", async () => {
+    pickAndReadReportFileMock.mockResolvedValue(null);
+    const user = userEvent.setup();
+    render(<SettingsVerifyCertSection />);
+
+    await user.click(
+      screen.getByRole("button", { name: /choose report file/i }),
+    );
+
+    await waitFor(() => {
+      expect(pickAndReadReportFileMock).toHaveBeenCalledTimes(1);
+    });
+    expect(verifySignatureMock).not.toHaveBeenCalled();
   });
 });

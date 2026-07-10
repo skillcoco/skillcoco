@@ -2,12 +2,15 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability set for LearnForge. Grants core IPC + shell-open (URL launching in MarkdownRenderer) + dialog-save + dialog-open (Phase 12 course import file picker) + fs-write-file (Phase 6 cert/badge export flow per CR-01).",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "shell:allow-open",
     "dialog:allow-save",
     "dialog:allow-open",
-    "fs:allow-write-file"
+    "fs:allow-write-file",
+    "fs:allow-read-text-file"
   ]
 }
