@@ -132,6 +132,12 @@
     "signature": {
       "$ref": "#/$defs/SignatureBlock",
       "description": "Optional Phase 14 pack-signing envelope (D-04 minimal shape). NOT in the top-level `required` array — unsigned free packs stay schema-valid (D-09). Fields inside this block are NOT covered by the signature itself."
+    },
+    "skills": {
+      "type": "array",
+      "maxItems": 30,
+      "items": { "$ref": "#/$defs/SkillTag" },
+      "description": "Phase 18 (D-03.1) — optional course-level capability-tag list (D-01 can-do phrasing). Never required; externally produced/licensed packs without this field must stay importable (COORDINATION.md)."
     }
   },
   "$defs": {
@@ -205,6 +211,12 @@
             "type": "string",
             "enum": ["conceptual_qa", "code_challenge", "fill_in_blank"]
           }
+        },
+        "skills": {
+          "type": "array",
+          "maxItems": 30,
+          "items": { "$ref": "#/$defs/SkillTag" },
+          "description": "Phase 18 (D-03.1) — optional per-module capability-tag list (D-01 can-do phrasing, D-02 many-to-many module<->skill mapping). Never required; externally produced/licensed packs without this field must stay importable (COORDINATION.md)."
         }
       }
     },
@@ -267,6 +279,25 @@
         "title":          { "type": "string", "maxLength": 500 },
         "channelTitle":   { "type": "string", "maxLength": 200 },
         "relevanceScore": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "SkillTag": {
+      "type": "object",
+      "required": ["label", "slug"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Can-do capability phrasing (D-01), e.g. 'can configure RBAC policies'. R1 mitigation: maxLength caps prompt-injection payload size."
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Normalized capability id (Pitfall 4) used for cross-track/whole-profile merge (D-04)."
+        }
       }
     }
   }
