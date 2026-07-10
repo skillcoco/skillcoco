@@ -145,6 +145,72 @@ fn export_report_json_bytes_round_trip_into_report_envelope_v1() {
 }
 
 #[test]
+fn export_report_pdf_path_bytes_start_with_pdf_magic() {
+    let conn = fresh_conn();
+    seed_track_with_module(&conn, "trk1", "Kubernetes");
+    let key_dir = temp_key_dir();
+    let signing_key: Mutex<Option<ed25519_dalek::SigningKey>> = Mutex::new(None);
+
+    let envelope = assemble_report_inner(
+        &conn,
+        &signing_key,
+        key_dir.path(),
+        "track",
+        &Some("trk1".to_string()),
+        "Ada Lovelace",
+    )
+    .expect("assemble");
+
+    let pdf_input = report_payload_to_pdf_input(&envelope.payload);
+    let bytes = crate::reports::artifacts::render_report_pdf(&pdf_input).expect("pdf bytes");
+    assert!(bytes.starts_with(b"%PDF"), "PDF export must start with %PDF");
+}
+
+#[test]
+fn export_report_pdf_display_strings_match_assembled_payload_bands() {
+    // T-18-10 — the PDF input must be DERIVED from the same assembled
+    // payload export_report_json serializes; no independent score
+    // computation. Assert the PDF's per-capability display strings embed
+    // the exact band + pct the payload carries (no drift).
+    let conn = fresh_conn();
+    seed_track_with_module(&conn, "trk1", "Kubernetes");
+    let key_dir = temp_key_dir();
+    let signing_key: Mutex<Option<ed25519_dalek::SigningKey>> = Mutex::new(None);
+
+    let envelope = assemble_report_inner(
+        &conn,
+        &signing_key,
+        key_dir.path(),
+        "track",
+        &Some("trk1".to_string()),
+        "Ada Lovelace",
+    )
+    .expect("assemble");
+
+    assert!(
+        !envelope.payload.capabilities.is_empty(),
+        "expected >=1 capability row to assert against"
+    );
+
+    let pdf_input = report_payload_to_pdf_input(&envelope.payload);
+
+    for (payload_row, pdf_row) in envelope.payload.capabilities.iter().zip(pdf_input.capabilities.iter()) {
+        let expected_knowledge = format!(
+            "{} · {:.0}%",
+            payload_row.knowledge.band,
+            payload_row.knowledge.pct * 100.0
+        );
+        assert_eq!(pdf_row.knowledge_display, expected_knowledge);
+
+        let expected_practical = match &payload_row.practical {
+            Some(dim) => format!("{} · {:.0}%", dim.band, dim.pct * 100.0),
+            None => "Not assessed".to_string(),
+        };
+        assert_eq!(pdf_row.practical_display, expected_practical);
+    }
+}
+
+#[test]
 fn parse_scope_requires_track_id_for_track_scope() {
     let err = parse_scope("track", &None).unwrap_err();
     match err {

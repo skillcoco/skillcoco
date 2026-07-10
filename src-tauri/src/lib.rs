@@ -311,6 +311,8 @@ pub fn run() {
             // Signed skill reports (Phase 18 — Plan 03)
             commands::reports::assemble_skill_report,
             commands::reports::export_report_json,
+            // Signed skill report PDF export (Phase 18 — Plan 04)
+            commands::reports::export_report_pdf,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
