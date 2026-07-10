@@ -68,10 +68,13 @@ export function ExportReportDialog({
         trackTopic: scope === "track" ? trackTopic : undefined,
         learnerName: name,
       };
-      await Promise.all([
-        exportReportPdf(params),
-        exportReportJson(params),
-      ]);
+      // Sequential on purpose (REP-01: PDF save dialog THEN JSON save
+      // dialog). Each export opens a native save panel after its IPC
+      // returns; two concurrent save() panels race on macOS (sheets
+      // serialize per window) and one promise never settles — the dialog
+      // would spin on "Exporting…" forever.
+      await exportReportPdf(params);
+      await exportReportJson(params);
       onOpenChange(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

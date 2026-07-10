@@ -117,6 +117,42 @@ describe("ExportReportDialog — Phase 18 Plan 05 (Wave 3)", () => {
     });
   });
 
+  it("runs PDF export to completion BEFORE starting JSON export (sequential save dialogs)", async () => {
+    // Each export opens a native save dialog after its IPC returns. Two
+    // concurrent save() panels race on macOS (sheets serialize per window)
+    // and one promise never settles — the dialog then spins forever on
+    // "Exporting…". The REP-01 contract is PDF save dialog THEN JSON save
+    // dialog, so the JSON export must not begin until the PDF export has
+    // fully resolved.
+    let resolvePdf!: (v: unknown) => void;
+    exportReportPdfMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePdf = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <ExportReportDialog
+        open
+        onOpenChange={vi.fn()}
+        defaultScope="whole-profile"
+        learnerName="Ada"
+      />,
+    );
+
+    await user.click(screen.getByText("Export report"));
+
+    // PDF in flight — JSON must NOT have started yet.
+    expect(exportReportPdfMock).toHaveBeenCalledTimes(1);
+    expect(exportReportJsonMock).not.toHaveBeenCalled();
+
+    resolvePdf({ saved: true, path: "/tmp/r.pdf" });
+
+    await waitFor(() => {
+      expect(exportReportJsonMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("shows Exporting... busy state while export is in flight", async () => {
     let resolvePdf!: (v: unknown) => void;
     exportReportPdfMock.mockReturnValue(
