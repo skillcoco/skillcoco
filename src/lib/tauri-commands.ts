@@ -530,6 +530,56 @@ export async function fingerprintFromPublicPem(
   });
 }
 
+// ── Phase 18 (Skill Reports) — Plan 05 (Wave 3) export wrappers ──
+//
+// Both wrappers follow the `{ request: T }` envelope per CONVENTIONS.md Q9
+// and the exportCertificate/exportBadge bytes-in-hand + native-save-dialog
+// pattern (Wave 2 precedent, T-18-13 mitigation — the backend returns bytes
+// only and never touches the filesystem; the sandboxed save-dialog +
+// plugin-fs writeFile flow does the actual write, matching Pattern 4).
+
+export interface ExportReportRequest {
+  /// "track" | "whole-profile" — mirrors the Rust ReportScope wire shape.
+  scope: "track" | "whole-profile";
+  trackId?: string;
+  /// D-10 confirm-at-export learner name, baked into the signed payload.
+  learnerName: string;
+}
+
+/// Render the skill-report PDF (18-04's `export_report_pdf` IPC) and prompt
+/// the user to save it via the native dialog. Returns the saved path or
+/// `null` on cancel.
+export async function exportReportPdf(
+  request: ExportReportRequest,
+  suggestedFilename: string,
+): Promise<string | null> {
+  const bytes: number[] = await invoke("export_report_pdf", { request });
+  const path = await save({
+    defaultPath: suggestedFilename,
+    filters: [{ name: "Skill Report", extensions: ["pdf"] }],
+  });
+  if (!path) return null;
+  await writeFile(path, new Uint8Array(bytes));
+  return path;
+}
+
+/// Render the skill-report JSON (the full signed `ReportEnvelopeV1`, 18-03's
+/// `export_report_json` IPC) and prompt the user to save it via the native
+/// dialog. Returns the saved path or `null` on cancel.
+export async function exportReportJson(
+  request: ExportReportRequest,
+  suggestedFilename: string,
+): Promise<string | null> {
+  const bytes: number[] = await invoke("export_report_json", { request });
+  const path = await save({
+    defaultPath: suggestedFilename,
+    filters: [{ name: "Skill Report (JSON)", extensions: ["json"] }],
+  });
+  if (!path) return null;
+  await writeFile(path, new Uint8Array(bytes));
+  return path;
+}
+
 // ── Ollama connection probe ──────────────────────────────────────────────────
 //
 // WR-06: replaces the fake setTimeout stub in Settings.tsx.
