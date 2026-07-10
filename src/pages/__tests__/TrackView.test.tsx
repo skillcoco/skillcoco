@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import type { LearningPath, LearningTrack } from "@/types";
+import type { LearningPath, LearningTrack, ModuleProgress } from "@/types";
 import type { TopicPack } from "@/types/topic-packs";
 
 // ── Mocks ────────────────────────────────────────────────────────────────
@@ -34,6 +34,19 @@ vi.mock("@/lib/tauri-commands", () => ({
     nextLevel: "Associate",
     criteria: "Master 25% of modules",
   }),
+  // Phase 18 Plan 05 (Wave 3) — ExportReportDialog identity pre-fill.
+  getOrCreateProfile: vi.fn().mockResolvedValue({
+    id: "lp-1",
+    displayName: "Ada Lovelace",
+  }),
+}));
+
+// Phase 18 Plan 05 (Wave 3) — ExportReportDialog is mounted by TrackView but
+// exercised in its own test file; stub it here so TrackView tests stay
+// focused on the entry-point button + D-16 practical mastery display.
+vi.mock("@/pages/ExportReportDialog", () => ({
+  ExportReportDialog: (props: { open: boolean }) =>
+    props.open ? <div data-testid="export-report-dialog-stub" /> : null,
 }));
 
 // Plan 06-05 (Wave 4) — CertificationProgress also reads the
@@ -61,7 +74,7 @@ const mockSetTrackBrowseMode = vi.fn();
 const mockStoreState: {
   currentTrack: LearningTrack | null;
   currentPath: LearningPath | null;
-  moduleProgress: never[];
+  moduleProgress: ModuleProgress[];
   isLoading: boolean;
   selectTrack: () => Promise<void>;
   setTrackBrowseMode: typeof mockSetTrackBrowseMode;
@@ -395,5 +408,132 @@ describe("TrackView free-mode DAG openability (Plan 10-03 Task 2)", () => {
     // Basic smoke: the toggle should show "free" in the header
     const toggle = screen.getByTestId("browse-mode-toggle");
     expect(toggle).toHaveValue("free");
+  });
+});
+
+// ── Phase 18 (Skill Reports) — Plan 05 (Wave 3) ──
+
+function makeModuleProgress(
+  overrides: Partial<ModuleProgress> = {},
+): ModuleProgress {
+  return {
+    id: "mp-1",
+    moduleId: "mod-1",
+    learnerId: "lp-1",
+    status: "in_progress",
+    score: null,
+    timeSpent: 0,
+    attempts: 0,
+    masteryLevel: 0.5,
+    practicalMastery: 0,
+    startedAt: "2026-07-01T00:00:00Z",
+    completedAt: null,
+    ...overrides,
+  };
+}
+
+function makePathWithOneModule(): LearningPath {
+  return {
+    id: "path-1",
+    trackId: "trk-attr",
+    version: 1,
+    generatedByModel: "claude-haiku-4-5",
+    modulesJson: JSON.stringify([
+      {
+        id: "mod-1",
+        title: "RBAC Basics",
+        description: "Learn RBAC",
+        type: "lesson",
+        difficulty: 3,
+        estimatedMinutes: 20,
+        objectives: ["Understand RBAC"],
+        prerequisites: [],
+      },
+    ]),
+    edgesJson: "[]",
+    estimatedHours: 8,
+    createdAt: "2026-06-15T00:00:00Z",
+  };
+}
+
+describe("TrackView export entry point (Phase 18 Plan 05)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStoreState.currentTrack = makeTrack();
+    mockStoreState.currentPath = makePath("");
+    mockStoreState.moduleProgress = [];
+    mockStoreState.isLoading = false;
+    mockStoreState.selectTrack = vi.fn().mockResolvedValue(undefined);
+    listTopicPacksAdminMock.mockResolvedValue([]);
+  });
+
+  it("renders a secondary 'Export skill report' button beside Export course", async () => {
+    renderTrackView();
+    const button = await screen.findByTestId("export-skill-report-button");
+    expect(button).toBeInTheDocument();
+    expect(button.textContent).toContain("Export skill report");
+    // Secondary (outline) styling — matches export-course-button tier, not primary fill.
+    expect(button.className).toContain("border-border");
+    expect(button.className).not.toContain("bg-primary");
+  });
+
+  it("opens the export dialog scoped to this track when clicked", async () => {
+    const user = userEvent.setup();
+    renderTrackView();
+    const button = await screen.findByTestId("export-skill-report-button");
+    await user.click(button);
+    expect(
+      await screen.findByTestId("export-report-dialog-stub"),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("TrackView D-16 practical mastery display (Phase 18 Plan 05)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStoreState.currentTrack = makeTrack();
+    mockStoreState.currentPath = makePathWithOneModule();
+    mockStoreState.isLoading = false;
+    mockStoreState.selectTrack = vi.fn().mockResolvedValue(undefined);
+    listTopicPacksAdminMock.mockResolvedValue([]);
+  });
+
+  it("renders 'Working · 40%' for a module with practical mastery in range", async () => {
+    mockStoreState.moduleProgress = [
+      makeModuleProgress({ moduleId: "mod-1", practicalMastery: 0.4 }),
+    ];
+    renderTrackView();
+
+    const node = await screen.findByText("RBAC Basics");
+    await userEvent.setup().click(node);
+
+    expect(await screen.findByText("Practical")).toBeInTheDocument();
+    expect(screen.getByText("Working · 40%")).toBeInTheDocument();
+  });
+
+  it("renders 'Not assessed' (never '0%') for a module with zero practical mastery", async () => {
+    mockStoreState.moduleProgress = [
+      makeModuleProgress({ moduleId: "mod-1", practicalMastery: 0 }),
+    ];
+    renderTrackView();
+
+    const node = await screen.findByText("RBAC Basics");
+    await userEvent.setup().click(node);
+
+    expect(await screen.findByText("Practical")).toBeInTheDocument();
+    expect(screen.getByText("Not assessed")).toBeInTheDocument();
+    expect(screen.queryByText(/· 0%/)).not.toBeInTheDocument();
+  });
+
+  it("renders 'Mastered · 90%' for high practical mastery", async () => {
+    mockStoreState.moduleProgress = [
+      makeModuleProgress({ moduleId: "mod-1", practicalMastery: 0.9 }),
+    ];
+    renderTrackView();
+
+    const node = await screen.findByText("RBAC Basics");
+    await userEvent.setup().click(node);
+
+    expect(await screen.findByText("Mastered · 90%")).toBeInTheDocument();
   });
 });

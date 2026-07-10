@@ -6,17 +6,32 @@
 // Reuses AchievementCard so the certificate vs badge visual variants
 // match the Dashboard.
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Download } from "lucide-react";
 import { useAchievementsStore } from "@/stores/useAchievementsStore";
 import { AchievementCard } from "@/components/achievements/AchievementCard";
+import { ExportReportDialog } from "@/pages/ExportReportDialog";
+import { getOrCreateProfile } from "@/lib/tauri-commands";
 
 export function Achievements() {
   const achievements = useAchievementsStore((s) => s.achievements);
   const loadAchievements = useAchievementsStore((s) => s.loadAchievements);
 
+  // Phase 18 Plan 05 (Wave 3) — page-level primary "Export skill report"
+  // entry point, defaulted to the whole-profile scope (18-UI-SPEC.md
+  // placement contract: Achievements is inherently cross-track).
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [learnerName, setLearnerName] = useState("");
+
   useEffect(() => {
     loadAchievements();
   }, [loadAchievements]);
+
+  useEffect(() => {
+    getOrCreateProfile()
+      .then((p) => setLearnerName(p.displayName))
+      .catch((err) => console.error("Failed to load profile:", err));
+  }, []);
 
   // Sort by issuedAt DESC (newest first) within the full list, then
   // partition by kind. The store does not guarantee sort order; we sort
@@ -39,11 +54,25 @@ export function Achievements() {
       aria-label="All Achievements"
       className="mx-auto max-w-4xl space-y-6 px-4 py-8"
     >
-      <header>
-        <h1 className="text-2xl font-bold text-foreground">All Achievements</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Every certificate and milestone you have earned, newest first.
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">All Achievements</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Every certificate and milestone you have earned, newest first.
+          </p>
+        </div>
+        {/* Phase 18 Plan 05 — primary "Export skill report" entry point.
+            This IS the page's primary focal point (no competing filled
+            button exists here today — 18-UI-SPEC.md placement contract). */}
+        <button
+          type="button"
+          onClick={() => setReportDialogOpen(true)}
+          data-testid="export-skill-report-button"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          <Download size={13} />
+          Export skill report
+        </button>
       </header>
 
       {!hasAny ? (
@@ -90,6 +119,13 @@ export function Achievements() {
           )}
         </div>
       )}
+
+      <ExportReportDialog
+        open={reportDialogOpen}
+        onOpenChange={setReportDialogOpen}
+        defaultScope="whole-profile"
+        learnerName={learnerName}
+      />
     </main>
   );
 }
