@@ -20,9 +20,13 @@
 //!   `topic_packs` table CRUD honoring D-09 enabled-on-conflict +
 //!   CR-02 source-column stickiness.
 //! - [`achievements`] — `SqliteAchievementStore<'a>(&'a Connection)`
-//!   (Phase 7 Wave 8 — eighth and final application of the per-module
-//!   storage-trait recipe). `track_mastery_aggregate` method body
-//!   delegates to the [`threshold`] free fn (Wave 4 seam closed).
+//!   (Phase 7 Wave 8 — eighth application of the per-module storage-trait
+//!   recipe). `track_mastery_aggregate` method body delegates to the
+//!   [`threshold`] free fn (Wave 4 seam closed).
+//! - [`reports`] — `SqliteReportStore<'a>(&'a Connection)` (Phase 18-03 —
+//!   ninth application). Per-track `ReportStore` methods over
+//!   capability_tags/module_progress/quiz_attempts/lab_progress/achievements,
+//!   with D-03.4 title-fallback and Warning-3 evidence_class validation.
 //!
 //! All adapters use the local-newtype pattern to satisfy Rust's orphan rule
 //! (E0117) — see each module's "Orphan-rule note" for details.
@@ -35,6 +39,7 @@ pub mod bkt;
 pub mod blocks;
 pub mod microlearning;
 pub mod packs;
+pub mod reports;
 pub mod signing;
 pub mod sr;
 pub mod threshold;
