@@ -124,7 +124,29 @@ fn assemble_report_inner(
     // means the signature covers the *empty* placeholder learner_name from
     // assemble(). Re-sign is required so the confirmed name is inside the
     // signed region (T-18-07).
-    envelope.payload.learner_name = learner_name.to_string();
+    //
+    // CR-02 / T-18-09-01 — an org-submitted (or any) blank/whitespace
+    // learner_name must never be signed. Fall back to the already-resolved
+    // learner's learner_profiles.display_name (defense in depth for any
+    // caller that supplies an empty confirmed name). Explicit non-blank
+    // names always win — the fallback only fires when the caller-supplied
+    // name is blank/whitespace-only, and only when the profile's own
+    // display_name is itself non-blank; otherwise the original (possibly
+    // empty) learner_name is used verbatim so behavior is unchanged when
+    // no better name is available.
+    let effective_name = if learner_name.trim().is_empty() {
+        conn.query_row(
+            "SELECT display_name FROM learner_profiles WHERE id = ?1",
+            [&learner_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| learner_name.to_string())
+    } else {
+        learner_name.to_string()
+    };
+    envelope.payload.learner_name = effective_name;
     // The core is DB-agnostic and can only label a track scope with its id
     // (learnforge-core reports::assemble). Managers read this label in the
     // PDF title — swap in the human-readable track topic before the re-sign

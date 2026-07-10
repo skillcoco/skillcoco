@@ -48,6 +48,7 @@ const SUBMIT_FAILED_COPY =
 export function SettingsReportServerSection() {
   const [reportServerUrl, setReportServerUrl] = useState("");
   const [reportServerToken, setReportServerToken] = useState("");
+  const [learnerDisplayName, setLearnerDisplayName] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -68,6 +69,9 @@ export function SettingsReportServerSection() {
         }
         if (typeof prefs.reportServerToken === "string") {
           setReportServerToken(prefs.reportServerToken);
+        }
+        if (typeof profile.displayName === "string") {
+          setLearnerDisplayName(profile.displayName);
         }
       } catch (err) {
         console.error("SettingsReportServerSection: failed to load profile", err);
@@ -108,9 +112,12 @@ export function SettingsReportServerSection() {
     }
     setSubmitting(true);
     try {
+      // The backend fallback (assemble_report_inner) is the safety net for
+      // any blank/unknown name — the primary path here always passes the
+      // learner's real profile display name (CR-02 gap closure).
       const result = await commands.submitEvidenceReport({
         scope: "whole-profile",
-        learnerName: "",
+        learnerName: learnerDisplayName,
       });
       setSubmitOutcome(result.accepted ? "accepted" : "queued");
     } catch {

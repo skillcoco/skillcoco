@@ -159,4 +159,68 @@ describe("SettingsReportServerSection — Phase 18 (18-06 / D-13)", () => {
     });
     expect(submitEvidenceReportMock).not.toHaveBeenCalled();
   });
+
+  it("submitting to org server passes the loaded profile's real displayName as learnerName (CR-02 gap closure)", async () => {
+    getOrCreateProfileMock.mockResolvedValue(
+      baseProfile({
+        displayName: "Ada Lovelace",
+        preferencesJson: JSON.stringify({
+          reportServerUrl: "https://reports.example.org",
+          reportServerToken: "tok",
+        }),
+      }),
+    );
+    submitEvidenceReportMock.mockResolvedValue({ accepted: true });
+
+    render(<SettingsReportServerSection />);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/report server url/i)).toHaveValue(
+        "https://reports.example.org",
+      );
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /submit to org server/i }),
+    );
+
+    await waitFor(() => {
+      expect(submitEvidenceReportMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scope: "whole-profile",
+          learnerName: "Ada Lovelace",
+        }),
+      );
+    });
+  });
+
+  it("submitting to org server still transitions to the accepted outcome state without a blocking modal", async () => {
+    getOrCreateProfileMock.mockResolvedValue(
+      baseProfile({
+        displayName: "Ada Lovelace",
+        preferencesJson: JSON.stringify({
+          reportServerUrl: "https://reports.example.org",
+          reportServerToken: "tok",
+        }),
+      }),
+    );
+    submitEvidenceReportMock.mockResolvedValue({ accepted: true });
+
+    render(<SettingsReportServerSection />);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/report server url/i)).toHaveValue(
+        "https://reports.example.org",
+      );
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /submit to org server/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/submitted to your organization's report server/i),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
