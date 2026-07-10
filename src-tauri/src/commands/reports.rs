@@ -125,6 +125,24 @@ fn assemble_report_inner(
     // assemble(). Re-sign is required so the confirmed name is inside the
     // signed region (T-18-07).
     envelope.payload.learner_name = learner_name.to_string();
+    // The core is DB-agnostic and can only label a track scope with its id
+    // (learnforge-core reports::assemble). Managers read this label in the
+    // PDF title — swap in the human-readable track topic before the re-sign
+    // below so the signature covers the displayed label.
+    if let Some(id) = track_id {
+        if envelope.payload.scope_label == *id {
+            let topic: Option<String> = conn
+                .query_row(
+                    "SELECT topic FROM learning_tracks WHERE id = ?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .ok();
+            if let Some(topic) = topic {
+                envelope.payload.scope_label = topic;
+            }
+        }
+    }
     let canonical = canonical_json_bytes(&envelope.payload)?;
     let key = key_store.get_or_init()?;
     let sig = learnforge_core::signing::sign_payload(&key, &canonical);

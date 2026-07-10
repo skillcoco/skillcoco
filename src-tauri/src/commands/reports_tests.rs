@@ -112,6 +112,43 @@ fn assemble_report_inner_bakes_confirmed_learner_name_into_payload() {
 }
 
 #[test]
+fn assemble_report_inner_track_scope_label_is_topic_not_track_id() {
+    // 18-05 human-verify UAT: PDF title rendered "Skill Report — c4bba882-…"
+    // (raw track UUID). Managers read the title; it must carry the track
+    // topic. The signature must cover the human-readable label too.
+    let conn = fresh_conn();
+    seed_track_with_module(&conn, "trk1", "Kubernetes");
+    let key_dir = temp_key_dir();
+    let signing_key: Mutex<Option<ed25519_dalek::SigningKey>> = Mutex::new(None);
+
+    let envelope = assemble_report_inner(
+        &conn,
+        &signing_key,
+        key_dir.path(),
+        "track",
+        &Some("trk1".to_string()),
+        "Ada Lovelace",
+    )
+    .expect("assemble");
+
+    assert_eq!(
+        envelope.payload.scope_label, "Kubernetes",
+        "scope_label must be the track topic, not the track id"
+    );
+
+    // Signed region must include the topic label (re-sign happened after
+    // the override).
+    let canonical = canonical_json_bytes(&envelope.payload).unwrap();
+    let key_store = MutexCachedKeyStore::new(&signing_key, key_dir.path());
+    key_store.get_or_init().unwrap();
+    let pem = key_store.export_public_pem().unwrap();
+    assert!(
+        verify_payload(&pem, &canonical, &envelope.signature_hex),
+        "signature must verify over payload containing the topic label"
+    );
+}
+
+#[test]
 fn export_report_json_bytes_round_trip_into_report_envelope_v1() {
     let conn = fresh_conn();
     seed_track_with_module(&conn, "trk1", "Kubernetes");
