@@ -40,6 +40,7 @@ pub mod v011_track_browse_mode;
 pub mod v012_lesson_videos;
 pub mod v013_section_video_granularity;
 pub mod v014_drop_module_video_unique_index;
+pub mod v015_learning_path_verified;
 
 /// A single schema migration.
 pub struct Migration {
@@ -121,6 +122,11 @@ fn registered_migrations() -> Vec<Migration> {
             version: v014_drop_module_video_unique_index::VERSION,
             name: v014_drop_module_video_unique_index::NAME,
             up: v014_drop_module_video_unique_index::up,
+        },
+        Migration {
+            version: v015_learning_path_verified::VERSION,
+            name: v015_learning_path_verified::NAME,
+            up: v015_learning_path_verified::up,
         },
     ]
 }
@@ -211,7 +217,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 14, "After all migrations, version must be 14 (v1..v13 + v14 drop_module_video_unique_index)");
+        assert_eq!(version, 15, "After all migrations, version must be 15 (v1..v14 + v15 learning_path_verified)");
     }
 
     #[test]
@@ -228,7 +234,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 14, "Idempotent: exactly fourteen rows in schema_migrations (v1..v13 + v14 drop_module_video_unique_index)");
+        assert_eq!(count, 15, "Idempotent: exactly fifteen rows in schema_migrations (v1..v14 + v15 learning_path_verified)");
     }
 
     #[test]
@@ -252,9 +258,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3..v14.
-        // Max is now 14.
-        assert_eq!(version, 14, "current_version returns MAX(version) = 14 after v3..v14 applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3..v15.
+        // Max is now 15.
+        assert_eq!(version, 15, "current_version returns MAX(version) = 15 after v3..v15 applied");
     }
 
     #[test]
