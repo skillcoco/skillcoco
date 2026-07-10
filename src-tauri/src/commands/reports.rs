@@ -17,10 +17,13 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::reports::artifacts::{ReportCapabilityRow, ReportPdfInput};
 use crate::storage_impl::reports::SqliteReportStore;
 use crate::storage_impl::signing::MutexCachedKeyStore;
 use learnforge_core::canonical_json::canonical_json_bytes;
-use learnforge_core::reports::{self as reports, ReportEnvelopeV1, ReportError, ReportScope};
+use learnforge_core::reports::{
+    self as reports, CapabilityRow, ReportEnvelopeV1, ReportError, ReportPayloadV1, ReportScope,
+};
 use learnforge_core::signing::SigningKeyStore;
 
 // ── Defensive limits ──────────────────────────────────────────────────────
@@ -46,6 +49,20 @@ pub struct AssembleReportRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportReportRequest {
+    /// "track" | "whole-profile".
+    pub scope: String,
+    #[serde(default)]
+    pub track_id: Option<String>,
+    /// D-10 confirm-at-export learner name, baked into the signed payload.
+    pub learner_name: String,
+}
+
+/// Same wire shape as `ExportReportRequest` — a distinct type so the PDF
+/// and JSON export IPC surfaces can diverge independently later without a
+/// shared-request-type refactor.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportReportPdfRequest {
     /// "track" | "whole-profile".
     pub scope: String,
     #[serde(default)]
@@ -116,6 +133,67 @@ fn assemble_report_inner(
     Ok(envelope)
 }
 
+/// Format one dimension's display string per D-05: "{Band} · {pct}%".
+fn format_dimension(band: &str, pct: f64) -> String {
+    format!("{} · {:.0}%", band, pct * 100.0)
+}
+
+/// Format one evidence item into a single flattened display line for the
+/// PDF renderer's evidence ledger (D-06). Time-to-mastery never appears as
+/// its own numeric column (D-08) — this function only ever emits label +
+/// detail + date context text.
+fn format_evidence_line(item: &learnforge_core::reports::EvidenceItem) -> String {
+    format!("{} — {} ({})", item.label, item.detail, item.date)
+}
+
+/// Transform an assembled `ReportPayloadV1` into the src-tauri-side
+/// `ReportPdfInput` the renderer consumes. T-18-10 mitigation: this is the
+/// ONLY place band/% display strings are derived for the PDF, and it
+/// derives them from the SAME assembled payload `export_report_json`
+/// serializes — no independent score computation.
+fn report_payload_to_pdf_input(payload: &ReportPayloadV1) -> ReportPdfInput {
+    let scope_label = if payload.scope_label.trim().is_empty() {
+        "Whole Profile".to_string()
+    } else {
+        payload.scope_label.clone()
+    };
+
+    let capabilities = payload
+        .capabilities
+        .iter()
+        .map(capability_row_to_pdf_row)
+        .collect();
+
+    ReportPdfInput {
+        learner_name: payload.learner_name.clone(),
+        scope_label,
+        generated_at: payload.metadata.generated_at.clone(),
+        app_version: payload.metadata.app_version.clone(),
+        pack_provenance: payload.metadata.pack_provenance.clone(),
+        verified_issuer: payload.metadata.verified_issuer.clone(),
+        key_fingerprint_short: payload.key_fingerprint.clone(),
+        capabilities,
+    }
+}
+
+fn capability_row_to_pdf_row(row: &CapabilityRow) -> ReportCapabilityRow {
+    let knowledge_display = format_dimension(&row.knowledge.band, row.knowledge.pct);
+    let practical_display = match &row.practical {
+        Some(dim) => format_dimension(&dim.band, dim.pct),
+        // D-05 — "not assessed" (no lab content for this capability),
+        // NEVER a bare "0%".
+        None => "Not assessed".to_string(),
+    };
+    let evidence_lines = row.evidence.iter().map(format_evidence_line).collect();
+
+    ReportCapabilityRow {
+        label: row.label.clone(),
+        knowledge_display,
+        practical_display,
+        evidence_lines,
+    }
+}
+
 // ── IPC handlers ─────────────────────────────────────────────────────────
 
 /// Assemble and sign a skill report for the given scope. Returns the full
@@ -159,6 +237,31 @@ pub fn export_report_json(
     .map_err(|e| e.to_string())?;
 
     canonical_json_bytes(&envelope).map_err(|e| e.to_string())
+}
+
+/// Assemble the signed report then render it to a paginated, manager-
+/// readable PDF (REP-01 PDF half). The `ReportPdfInput` fed to the
+/// renderer is derived from the SAME assembled payload
+/// `export_report_json` serializes (T-18-10) — no independent score
+/// computation for the PDF path.
+#[tauri::command]
+pub fn export_report_pdf(
+    request: ExportReportPdfRequest,
+    state: State<'_, crate::AppState>,
+) -> Result<Vec<u8>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let envelope = assemble_report_inner(
+        &db.conn,
+        &state.signing_key,
+        &state.signing_key_path,
+        &request.scope,
+        &request.track_id,
+        &request.learner_name,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let pdf_input = report_payload_to_pdf_input(&envelope.payload);
+    crate::reports::artifacts::render_report_pdf(&pdf_input).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

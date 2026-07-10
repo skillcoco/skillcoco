@@ -11,10 +11,11 @@
 //!   - image 0.25.10 — raster sink + PNG encoder.
 
 use super::AchievementError;
+use crate::pdf_util::push_line;
 use image::{ImageBuffer, Luma, Rgba, RgbaImage};
 use printpdf::{
-    BuiltinFont, Color, Mm, Op, PdfDocument, PdfFontHandle, PdfPage, PdfSaveOptions, Point, Pt,
-    RawImage, Rgb, TextItem, XObjectTransform,
+    BuiltinFont, Color, Mm, Op, PdfDocument, PdfFontHandle, PdfPage, PdfSaveOptions, RawImage,
+    Rgb, XObjectTransform,
 };
 use qrcode::{EcLevel, QrCode};
 use serde::{Deserialize, Serialize};
@@ -200,37 +201,9 @@ pub fn render_certificate_pdf(
     Ok(bytes)
 }
 
-/// Helper: push one line of text at (x_mm, y_mm) with the given font + size.
-fn push_line(
-    ops: &mut Vec<Op>,
-    font: &PdfFontHandle,
-    size_pt: f32,
-    x_mm: f32,
-    y_mm: f32,
-    text: &str,
-) {
-    // Each line is its own text object (BT…ET). printpdf's SetTextCursor
-    // emits PDF `Td`, which positions RELATIVE to the previous text line.
-    // Sharing one text section made every line after the first accumulate the
-    // prior offsets and fly off the page — only the title rendered. Wrapping
-    // each line in its own section resets the text matrix so the cursor is
-    // absolute from the page origin.
-    ops.push(Op::StartTextSection);
-    ops.push(Op::SetFont {
-        font: font.clone(),
-        size: Pt(size_pt),
-    });
-    ops.push(Op::SetTextCursor {
-        pos: Point {
-            x: Mm(x_mm).into_pt(),
-            y: Mm(y_mm).into_pt(),
-        },
-    });
-    ops.push(Op::ShowText {
-        items: vec![TextItem::Text(text.to_string())],
-    });
-    ops.push(Op::EndTextSection);
-}
+// `push_line` moved to `crate::pdf_util` (Phase 18 Plan 04) — shared with
+// the report renderer so the printpdf Td-relative fix cannot be
+// re-implemented (and potentially re-broken) a second time.
 
 // ── PNG badge ─────────────────────────────────────────────────────────────
 
@@ -375,36 +348,9 @@ mod tests {
         assert!(bytes.len() >= 2048, "expected >= 2KB, got {}", bytes.len());
     }
 
-    /// Regression (Phase 06 UAT): the certificate rendered only its title —
-    /// every other line flew off the page. printpdf's SetTextCursor emits PDF
-    /// `Td` (relative to the previous text line), so sharing one text section
-    /// accumulated offsets. Each line must be its own BT…ET text object so the
-    /// cursor is absolute.
-    #[test]
-    fn push_line_emits_self_contained_text_object() {
-        let mut ops: Vec<Op> = Vec::new();
-        let font = PdfFontHandle::Builtin(BuiltinFont::Helvetica);
-        push_line(&mut ops, &font, 12.0, 20.0, 100.0, "hello");
-
-        assert!(
-            matches!(ops.first(), Some(Op::StartTextSection)),
-            "line must open its own text section"
-        );
-        assert!(
-            matches!(ops.last(), Some(Op::EndTextSection)),
-            "line must close its own text section"
-        );
-        let starts = ops
-            .iter()
-            .filter(|o| matches!(o, Op::StartTextSection))
-            .count();
-        let ends = ops
-            .iter()
-            .filter(|o| matches!(o, Op::EndTextSection))
-            .count();
-        assert_eq!(starts, 1, "exactly one StartTextSection per line");
-        assert_eq!(ends, 1, "exactly one EndTextSection per line");
-    }
+    // `push_line_emits_self_contained_text_object` regression test moved to
+    // `crate::pdf_util::tests` (Phase 18 Plan 04) alongside the extracted
+    // `push_line` helper it guards.
 
     /// Phase 08.1 (Cert Split) — when the caller passes an empty
     /// `qr_png_bytes` buffer, the PDF renders successfully without QR
