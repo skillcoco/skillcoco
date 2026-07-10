@@ -28,14 +28,14 @@ Creator Studio's roadmap will need the following from the learner app —
 each belongs in this repo's own planning when prioritized:
 
 1. **Pack-schema extension for new artifact types** — upcoming external
-   packs will carry slide decks, video lessons (bundled mp4), and labs.
-   Schema evolution must be coordinated and backward compatible (old
-   packs keep importing). Expect a schema RFC before any exporter ships.
-2. **Video lesson playback** — render pack-bundled explainer videos
-   (local mp4 assets; asset-size strategy needed).
-3. **Learner lab polish** — feed `lab_check_step` validation results
+   packs will carry slide decks and labs. Schema evolution must be
+   coordinated and backward compatible (old packs keep importing).
+   Expect a schema RFC before any exporter ships. Video lessons need
+   NO new work: external packs reference YouTube video ids exactly like
+   today's lessons — existing YT rendering covers them.
+2. **Learner lab polish** — feed `lab_check_step` validation results
    into scoring/grading; add a browser preview pane for web-service labs.
-4. **Phase 14 signing rail** — issuer certs + signature envelope over
+3. **Phase 14 signing rail** — issuer certs + signature envelope over
    `licensed:{pack_id}|{licensor}`; externally produced signed packs
    depend on it.
 
