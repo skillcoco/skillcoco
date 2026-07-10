@@ -36,6 +36,8 @@
 
 pub mod bands;
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -295,6 +297,246 @@ pub fn normalize_tag(raw: &str) -> String {
     out
 }
 
+// ── Storage trait (per-track granularity — D-04 merge lives in assemble) ──
+
+/// Abstract storage surface for report assembly.
+///
+/// Declared next to the algorithm per the A3 storage-trait-location
+/// convention. The rusqlite-backed implementation lives in
+/// `src-tauri/src/storage_impl/reports.rs` (9th orphan-rule newtype
+/// application).
+///
+/// Every mastery/evidence method takes an explicit `track_id` — this is
+/// what makes D-04 whole-profile attribution reachable: the store never
+/// pre-aggregates across tracks. For [`ReportScope::WholeProfile`],
+/// [`capability_tags_for_scope`](ReportStore::capability_tags_for_scope)
+/// returns one tuple PER (track, slug) pair (no merging); [`assemble`]
+/// does the merge + attribution itself.
+pub trait ReportStore {
+    /// Return `(track_id, slug, label)` tuples for the given scope. For
+    /// [`ReportScope::Track`], every tuple carries that one track_id. For
+    /// [`ReportScope::WholeProfile`], returns per-track rows — MUST NOT
+    /// pre-merge across tracks (merge + attribution are `assemble`'s job).
+    fn capability_tags_for_scope(
+        &self,
+        scope: &ReportScope,
+        learner_id: &str,
+    ) -> Result<Vec<(String, String, String)>, ReportError>;
+
+    /// Knowledge mastery fraction (`0.0..=1.0`, BKT-derived) for one
+    /// (track, capability-slug) pair.
+    fn knowledge_mastery(
+        &self,
+        track_id: &str,
+        slug: &str,
+        learner_id: &str,
+    ) -> Result<f64, ReportError>;
+
+    /// Practical mastery fraction for one (track, capability-slug) pair.
+    /// `None` means "not assessed" — no lab content backs this
+    /// capability, never `0.0`.
+    fn practical_mastery(
+        &self,
+        track_id: &str,
+        slug: &str,
+        learner_id: &str,
+    ) -> Result<Option<f64>, ReportError>;
+
+    /// Itemized evidence ledger (D-06) for one (track, capability-slug)
+    /// pair. Each returned [`EvidenceItem`] MUST set `track_id`/
+    /// `track_topic` so merged whole-profile rows keep per-item
+    /// attribution.
+    fn evidence_ledger(
+        &self,
+        track_id: &str,
+        slug: &str,
+        learner_id: &str,
+    ) -> Result<Vec<EvidenceItem>, ReportError>;
+
+    /// Report metadata seed (pack provenance, verified-issuer state) for
+    /// the given scope. `assemble` overwrites `generated_at` /
+    /// `app_version` from the injected clock and crate version.
+    fn report_metadata(
+        &self,
+        scope: &ReportScope,
+        learner_id: &str,
+    ) -> Result<ReportMetadata, ReportError>;
+}
+
+// ── assemble (A5 clock injection) ─────────────────────────────────────────
+
+/// Assemble, sign, and return a [`ReportEnvelopeV1`] for the given scope.
+///
+/// Follows the `maybe_issue` signature shape exactly — explicit `now`,
+/// generic over both traits, never `Utc::now()` inline (A5 clock
+/// injection).
+///
+/// # Behavior
+///
+/// 1. Gather `(track_id, slug, label)` tuples via
+///    [`ReportStore::capability_tags_for_scope`].
+/// 2. For each tuple, build a per-(track, slug) [`CapabilityRow`] via
+///    [`bands::band_for`] + the store's mastery/evidence methods.
+/// 3. For [`ReportScope::Track`], emit rows directly
+///    (`contributing_tracks = [track_id]`).
+/// 4. For [`ReportScope::WholeProfile`], group rows by
+///    [`normalize_tag`]\(slug\) and merge: keep the highest-knowledge-pct
+///    row as the winner, set `contributing_tracks` to the sorted unique
+///    set of every merged track, and concatenate evidence across the
+///    group (each item keeps its own track attribution) — D-04
+///    best-evidence-wins.
+/// 5. Fill [`ReportMetadata`] (`generated_at` from `now`, `app_version`
+///    from `env!("CARGO_PKG_VERSION")`).
+/// 6. Sign: `canonical_json_bytes(&payload)` -> `sign_payload` -> hex.
+/// 7. Return the [`ReportEnvelopeV1`].
+pub fn assemble<S, K>(
+    store: &S,
+    key_store: &K,
+    scope: ReportScope,
+    learner_id: &str,
+    now: DateTime<Utc>,
+) -> Result<ReportEnvelopeV1, ReportError>
+where
+    S: ReportStore,
+    K: SigningKeyStore,
+{
+    let tuples = store.capability_tags_for_scope(&scope, learner_id)?;
+
+    // Build one per-(track, slug) row first.
+    let mut per_track_rows: Vec<CapabilityRow> = Vec::with_capacity(tuples.len());
+    for (track_id, slug, label) in &tuples {
+        let knowledge_pct = store.knowledge_mastery(track_id, slug, learner_id)?;
+        let practical_pct = store.practical_mastery(track_id, slug, learner_id)?;
+        let evidence = store.evidence_ledger(track_id, slug, learner_id)?;
+
+        per_track_rows.push(CapabilityRow {
+            slug: normalize_tag(slug),
+            label: label.clone(),
+            knowledge: MasteryDimension {
+                band: bands::band_for(knowledge_pct).to_string(),
+                pct: knowledge_pct,
+            },
+            practical: practical_pct.map(|pct| MasteryDimension {
+                band: bands::band_for(pct).to_string(),
+                pct,
+            }),
+            contributing_tracks: vec![track_id.clone()],
+            evidence,
+        });
+    }
+
+    let capabilities: Vec<CapabilityRow> = match &scope {
+        ReportScope::Track(_) => per_track_rows,
+        ReportScope::WholeProfile => merge_whole_profile(per_track_rows),
+    };
+
+    let mut metadata = store.report_metadata(&scope, learner_id)?;
+    metadata.generated_at = now.to_rfc3339();
+    metadata.app_version = env!("CARGO_PKG_VERSION").to_string();
+
+    let key = key_store.get_or_init()?;
+    let key_fingerprint = public_key_fingerprint(&key.verifying_key());
+
+    let scope_label = match &scope {
+        ReportScope::Track(track_id) => track_id.clone(),
+        ReportScope::WholeProfile => "Whole Profile".to_string(),
+    };
+
+    let payload = ReportPayloadV1 {
+        learner_name: String::new(),
+        learner_id: learner_id.to_string(),
+        scope_label,
+        capabilities,
+        metadata,
+        issuer: None,
+        key_fingerprint: key_fingerprint.clone(),
+        payload_version: 1,
+    };
+
+    let canonical = canonical_json_bytes(&payload)?;
+    let sig = sign_payload(&key, &canonical);
+    let signature_hex = hex::encode(sig.to_bytes());
+
+    Ok(ReportEnvelopeV1 {
+        payload,
+        signature_hex,
+        key_fingerprint,
+    })
+}
+
+/// D-04 whole-profile merge: group `rows` by [`normalize_tag`]\(slug\)
+/// (rows already carry normalized slugs from `assemble`, but re-normalize
+/// defensively) and merge each group into a single best-evidence-wins
+/// row. Deterministic ordering: groups appear in first-seen order;
+/// `contributing_tracks` is sorted for stability.
+fn merge_whole_profile(rows: Vec<CapabilityRow>) -> Vec<CapabilityRow> {
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<CapabilityRow>> = HashMap::new();
+
+    for row in rows {
+        let key = normalize_tag(&row.slug);
+        if !groups.contains_key(&key) {
+            order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(row);
+    }
+
+    order
+        .into_iter()
+        .map(|key| {
+            let group = groups.remove(&key).unwrap_or_default();
+            merge_group(key, group)
+        })
+        .collect()
+}
+
+/// Merge one group of same-slug rows (from different tracks) into a
+/// single row: highest-knowledge-pct row wins for the summary dimensions
+/// and label; `contributing_tracks` accumulates every track in the group
+/// (sorted, deduped); evidence is concatenated across the group (each
+/// item retains its own track attribution).
+fn merge_group(slug: String, group: Vec<CapabilityRow>) -> CapabilityRow {
+    debug_assert!(!group.is_empty(), "merge_group called with empty group");
+
+    let winner_idx = group
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| {
+            a.knowledge
+                .pct
+                .partial_cmp(&b.knowledge.pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    let mut contributing_tracks: Vec<String> = group
+        .iter()
+        .flat_map(|r| r.contributing_tracks.iter().cloned())
+        .collect();
+    contributing_tracks.sort();
+    contributing_tracks.dedup();
+
+    let mut evidence: Vec<EvidenceItem> = Vec::new();
+    for row in &group {
+        evidence.extend(row.evidence.iter().cloned());
+    }
+
+    let winner = &group[winner_idx];
+    CapabilityRow {
+        slug,
+        label: winner.label.clone(),
+        knowledge: winner.knowledge.clone(),
+        practical: winner.practical.clone(),
+        contributing_tracks,
+        evidence,
+    }
+}
+
 #[cfg(test)]
 #[path = "_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "_tests2.rs"]
+mod tests2;
