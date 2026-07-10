@@ -42,6 +42,7 @@ pub mod v013_section_video_granularity;
 pub mod v014_drop_module_video_unique_index;
 pub mod v015_learning_path_verified;
 pub mod v016_quiz_attempts;
+pub mod v017_skill_reports;
 
 /// A single schema migration.
 pub struct Migration {
@@ -134,6 +135,11 @@ fn registered_migrations() -> Vec<Migration> {
             name: v016_quiz_attempts::NAME,
             up: v016_quiz_attempts::up,
         },
+        Migration {
+            version: v017_skill_reports::VERSION,
+            name: v017_skill_reports::NAME,
+            up: v017_skill_reports::up,
+        },
     ]
 }
 
@@ -223,7 +229,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 16, "After all migrations, version must be 16 (v1..v15 + v16 quiz_attempts)");
+        assert_eq!(version, 17, "After all migrations, version must be 17 (v1..v15 + v16 quiz_attempts + v17 skill_reports)");
     }
 
     #[test]
@@ -240,7 +246,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 16, "Idempotent: exactly sixteen rows in schema_migrations (v1..v15 + v16 quiz_attempts)");
+        assert_eq!(count, 17, "Idempotent: exactly seventeen rows in schema_migrations (v1..v15 + v16 quiz_attempts + v17 skill_reports)");
     }
 
     #[test]
@@ -264,9 +270,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3..v16.
-        // Max is now 16.
-        assert_eq!(version, 16, "current_version returns MAX(version) = 16 after v3..v16 applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3..v17.
+        // Max is now 17.
+        assert_eq!(version, 17, "current_version returns MAX(version) = 17 after v3..v17 applied");
     }
 
     #[test]
