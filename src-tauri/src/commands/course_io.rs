@@ -1963,6 +1963,70 @@ mod tests {
         );
     }
 
+    /// CR-01 (14-06) — verified/issuer_name must be PERSISTED to learning_paths,
+    /// not just returned once over the import IPC response. This is a real,
+    /// non-mocked DB SELECT after import — proves the badge's production data
+    /// path (get_path reads this same column) actually has a value to read.
+    #[test]
+    fn valid_signed_import_persists_verified_and_issuer_name_to_db() {
+        let conn = fresh_conn_with_learner();
+        let (_tmp, path) = write_tmp_json(FIXTURE_VALID_SIGNED);
+
+        let result = import_course_impl(&conn, &path);
+        assert!(result.is_ok(), "valid signed pack must import; got: {:?}", result);
+        let r = result.unwrap();
+
+        let (verified, issuer_name): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT verified, issuer_name FROM learning_paths WHERE track_id = ?1",
+                rusqlite::params![r.track_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("learning_paths row must exist for imported track");
+
+        assert_eq!(
+            verified, 1,
+            "CR-01: learning_paths.verified must be persisted as 1 for a valid signed import (real DB row, not a mock)"
+        );
+        assert_eq!(
+            issuer_name.as_deref(),
+            Some("Test Publisher"),
+            "CR-01: learning_paths.issuer_name must be persisted from the verified issuer cert"
+        );
+    }
+
+    /// CR-01 (14-06) — an unsigned/free (Open-tier) import must leave
+    /// verified=0 / issuer_name=NULL in the persisted row (backward-compat /
+    /// fail-closed default — no badge without proof).
+    #[test]
+    fn unsigned_import_persists_verified_zero_and_null_issuer_name() {
+        let conn = fresh_conn_with_learner();
+        let json = minimal_export_json("pack-open-tier", "generated");
+        let (_tmp, path) = write_tmp_json(&json);
+
+        let result = import_course_impl(&conn, &path);
+        assert!(result.is_ok(), "unsigned open-tier pack must import; got: {:?}", result);
+        let r = result.unwrap();
+        assert!(!r.verified, "unsigned import must have verified=false in the IPC result");
+
+        let (verified, issuer_name): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT verified, issuer_name FROM learning_paths WHERE track_id = ?1",
+                rusqlite::params![r.track_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("learning_paths row must exist for imported track");
+
+        assert_eq!(
+            verified, 0,
+            "unsigned import must persist verified=0 (fail-closed default)"
+        );
+        assert_eq!(
+            issuer_name, None,
+            "unsigned import must persist issuer_name=NULL"
+        );
+    }
+
     /// TRUST-03 — a pack whose body was edited after signing (fixture
     /// tampered-body.json) is rejected via the typed `SignatureTampered`
     /// variant with ZERO DB writes.
