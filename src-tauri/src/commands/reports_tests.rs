@@ -92,6 +92,64 @@ fn assemble_report_inner_produces_signed_envelope_with_capabilities() {
 }
 
 #[test]
+fn assemble_report_inner_blank_learner_name_falls_back_to_profile_display_name() {
+    // CR-02 / Truth 8 gap closure: a blank learner_name must never be
+    // signed. assemble_report_inner must fall back to the seeded
+    // learner_profiles.display_name ("Ada") before the re-sign.
+    let conn = fresh_conn();
+    seed_track_with_module(&conn, "trk1", "Kubernetes");
+    let key_dir = temp_key_dir();
+    let signing_key: Mutex<Option<ed25519_dalek::SigningKey>> = Mutex::new(None);
+
+    let envelope = assemble_report_inner(
+        &conn,
+        &signing_key,
+        key_dir.path(),
+        "track",
+        &Some("trk1".to_string()),
+        "",
+    )
+    .expect("assemble");
+
+    assert_eq!(
+        envelope.payload.learner_name, "Ada",
+        "blank learner_name must fall back to learner_profiles.display_name"
+    );
+
+    let canonical = canonical_json_bytes(&envelope.payload).unwrap();
+    let key_store = MutexCachedKeyStore::new(&signing_key, key_dir.path());
+    key_store.get_or_init().unwrap();
+    let pem = key_store.export_public_pem().unwrap();
+    assert!(
+        verify_payload(&pem, &canonical, &envelope.signature_hex),
+        "signature must verify over the fallback (non-blank) name"
+    );
+}
+
+#[test]
+fn assemble_report_inner_whitespace_learner_name_falls_back_to_profile_display_name() {
+    let conn = fresh_conn();
+    seed_track_with_module(&conn, "trk1", "Kubernetes");
+    let key_dir = temp_key_dir();
+    let signing_key: Mutex<Option<ed25519_dalek::SigningKey>> = Mutex::new(None);
+
+    let envelope = assemble_report_inner(
+        &conn,
+        &signing_key,
+        key_dir.path(),
+        "track",
+        &Some("trk1".to_string()),
+        "   ",
+    )
+    .expect("assemble");
+
+    assert_eq!(
+        envelope.payload.learner_name, "Ada",
+        "whitespace-only learner_name must fall back to learner_profiles.display_name"
+    );
+}
+
+#[test]
 fn assemble_report_inner_bakes_confirmed_learner_name_into_payload() {
     let conn = fresh_conn();
     seed_track_with_module(&conn, "trk1", "Kubernetes");
