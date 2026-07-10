@@ -22,6 +22,23 @@ change here must keep externally produced packs (including
 `licensed:{pack_id}|{licensor}` provenance) importable. That is the only
 hard coupling.
 
+## Roadmap-coupled work (this repo's side)
+
+Creator Studio's roadmap will need the following from the learner app —
+each belongs in this repo's own planning when prioritized:
+
+1. **Pack-schema extension for new artifact types** — upcoming external
+   packs will carry slide decks, video lessons (bundled mp4), and labs.
+   Schema evolution must be coordinated and backward compatible (old
+   packs keep importing). Expect a schema RFC before any exporter ships.
+2. **Video lesson playback** — render pack-bundled explainer videos
+   (local mp4 assets; asset-size strategy needed).
+3. **Learner lab polish** — feed `lab_check_step` validation results
+   into scoring/grading; add a browser preview pane for web-service labs.
+4. **Phase 14 signing rail** — issuer certs + signature envelope over
+   `licensed:{pack_id}|{licensor}`; externally produced signed packs
+   depend on it.
+
 ## Rules
 
 1. No cross-repo build dependency, in either direction.
