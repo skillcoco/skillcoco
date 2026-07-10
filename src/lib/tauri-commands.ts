@@ -580,6 +580,35 @@ export async function exportReportJson(
   return path;
 }
 
+// ── Phase 18 (18-06 / D-13) — fire-and-forget org submission ────────────
+
+export interface SubmitEvidenceReportRequest {
+  /// "track" | "whole-profile" — mirrors ExportReportRequest's scope shape.
+  scope: "track" | "whole-profile";
+  trackId?: string;
+  /// D-10 confirm-at-export learner name, baked into the signed payload.
+  learnerName: string;
+}
+
+export interface SubmitEvidenceReportResult {
+  /// true only on an actual 2xx ack from the report server. `false` means
+  /// the submission was queued for retry (offline, non-2xx, no URL
+  /// configured, timeout) — NEVER an error the learner flow blocks on
+  /// (D-13 fire-and-forget).
+  accepted: boolean;
+  reportId?: string;
+}
+
+/// Assemble + sign a skill report and POST it to the configured
+/// `reportServerUrl` (Settings). Always resolves — a failed/offline POST
+/// resolves with `{ accepted: false }` (queued for retry) rather than
+/// rejecting, so callers never need a try/catch to stay non-blocking.
+export async function submitEvidenceReport(
+  request: SubmitEvidenceReportRequest,
+): Promise<SubmitEvidenceReportResult> {
+  return invoke("submit_evidence_report", { request });
+}
+
 // ── Ollama connection probe ──────────────────────────────────────────────────
 //
 // WR-06: replaces the fake setTimeout stub in Settings.tsx.

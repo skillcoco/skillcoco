@@ -98,9 +98,17 @@ export interface VerifySignatureResult {
   /// Dispatch tag. Phase 6 emits 1; Phase 14 introduces 2.
   payloadVersion: number;
   /// Structured error code on failure ("payload_too_large",
-  /// "malformed_envelope", "invalid_base64", "signature_mismatch", …).
-  /// `null` on `valid=true`.
+  /// "malformed_envelope", "invalid_base64", "signature_mismatch",
+  /// "report_json_too_large", …). `null` on `valid=true`.
   error: string | null;
+  // ── Report-shaped fields (Phase 18 / 18-06 / REP-02) ─────────────────
+  // Populated ONLY when the pasted payload is a raw ReportEnvelopeV1 JSON
+  // (the exact bytes export_report_json writes) — undefined for cert
+  // payloads.
+  reportLearnerName?: string;
+  reportScopeLabel?: string;
+  reportCapabilityCount?: number;
+  reportGeneratedAt?: string;
 }
 
 export interface GetTrackCertificationsRequest {

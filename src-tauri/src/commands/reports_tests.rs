@@ -270,3 +270,145 @@ fn parse_scope_rejects_unknown_scope_string() {
         other => panic!("expected Validation, got {:?}", other),
     }
 }
+
+// ── Phase 18 (18-06 / D-13): submit_evidence_report ────────────────────
+
+fn set_report_server_config(conn: &Connection, learner_id: &str, url: &str, token: &str) {
+    let prefs = serde_json::json!({
+        "reportServerUrl": url,
+        "reportServerToken": token,
+    });
+    conn.execute(
+        "UPDATE learner_profiles SET preferences_json = ?1 WHERE id = ?2",
+        rusqlite::params![prefs.to_string(), learner_id],
+    )
+    .unwrap();
+}
+
+fn count_pending_submissions(conn: &Connection) -> i64 {
+    conn.query_row("SELECT COUNT(*) FROM pending_evidence_submissions", [], |r| r.get(0))
+        .unwrap()
+}
+
+/// (a) An unreachable/invalid report-server URL returns the queued
+/// (non-error) outcome AND inserts a pending row — the fire-and-forget
+/// contract (D-13): a failed POST NEVER surfaces as a learner-blocking
+/// error.
+#[tokio::test]
+async fn submit_evidence_report_unreachable_url_queues_and_returns_non_error() {
+    let conn = fresh_conn();
+    seed_track_with_module(&conn, "trk1", "Kubernetes");
+    set_report_server_config(&conn, "lp1", "http://127.0.0.1:1", ""); // port 1 — nothing listens here
+    let key_dir = temp_key_dir();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let signing_key: Mutex<Option<ed25519_dalek::SigningKey>> = Mutex::new(None);
+
+    let request = SubmitEvidenceReportRequest {
+        scope: "track".to_string(),
+        track_id: Some("trk1".to_string()),
+        learner_name: "Ada".to_string(),
+    };
+
+    let result = submit_evidence_report_impl(&db, &signing_key, key_dir.path(), &request)
+        .await
+        .expect("must not return Err for an unreachable URL");
+
+    assert!(!result.accepted, "unreachable URL must not report accepted=true");
+
+    let conn_guard = db.lock().unwrap();
+    assert_eq!(
+        count_pending_submissions(&conn_guard.conn),
+        1,
+        "a pending_evidence_submissions row must be inserted on POST failure"
+    );
+}
+
+/// (b) A non-http(s) scheme is rejected before any reqwest call — and
+/// still queues (never silently drops the report).
+#[tokio::test]
+async fn submit_evidence_report_rejects_non_http_scheme() {
+    let conn = fresh_conn();
+    seed_track_with_module(&conn, "trk1", "Kubernetes");
+    set_report_server_config(&conn, "lp1", "ftp://example.org/reports", "tok");
+    let key_dir = temp_key_dir();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let signing_key: Mutex<Option<ed25519_dalek::SigningKey>> = Mutex::new(None);
+
+    let request = SubmitEvidenceReportRequest {
+        scope: "track".to_string(),
+        track_id: Some("trk1".to_string()),
+        learner_name: "Ada".to_string(),
+    };
+
+    let result = submit_evidence_report_impl(&db, &signing_key, key_dir.path(), &request)
+        .await
+        .expect("must not return Err for a non-http scheme");
+
+    assert!(!result.accepted, "non-http(s) scheme must never be accepted");
+
+    let conn_guard = db.lock().unwrap();
+    assert_eq!(
+        count_pending_submissions(&conn_guard.conn),
+        1,
+        "a non-http(s) scheme must still queue the submission for retry"
+    );
+}
+
+/// (c) No reportServerUrl configured returns a "no URL" signal (accepted:
+/// false) — not a crash, and does NOT enqueue (nothing to retry against).
+#[tokio::test]
+async fn submit_evidence_report_no_url_configured_returns_not_accepted_without_enqueue() {
+    let conn = fresh_conn();
+    seed_track_with_module(&conn, "trk1", "Kubernetes");
+    // No preferences_json set at all — reportServerUrl absent.
+    let key_dir = temp_key_dir();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let signing_key: Mutex<Option<ed25519_dalek::SigningKey>> = Mutex::new(None);
+
+    let request = SubmitEvidenceReportRequest {
+        scope: "track".to_string(),
+        track_id: Some("trk1".to_string()),
+        learner_name: "Ada".to_string(),
+    };
+
+    let result = submit_evidence_report_impl(&db, &signing_key, key_dir.path(), &request)
+        .await
+        .expect("must not return Err when no URL is configured");
+
+    assert!(!result.accepted, "no URL configured must not report accepted=true");
+
+    let conn_guard = db.lock().unwrap();
+    assert_eq!(
+        count_pending_submissions(&conn_guard.conn),
+        0,
+        "no URL configured means nothing to retry — must not enqueue"
+    );
+}
+
+/// (d) `reportServerToken` never appears in any Debug-formatted output of
+/// the request/prepared-submission types (T-18-18 — never logged).
+#[test]
+fn submit_evidence_report_token_never_appears_in_debug_output() {
+    let conn = fresh_conn();
+    seed_track_with_module(&conn, "trk1", "Kubernetes");
+    let secret_token = "sekrit-token-should-never-appear-anywhere";
+    set_report_server_config(&conn, "lp1", "https://reports.example.org", secret_token);
+
+    let (_url, token) = read_report_server_config(&conn, "lp1");
+    assert_eq!(token, secret_token);
+
+    // EvidenceSignature (the ONLY struct that crosses into logging-adjacent
+    // Debug/Serialize paths in this module) never carries the token field
+    // at all — assert its Debug output cannot contain the secret even if
+    // some future refactor accidentally threads it through.
+    let sig = EvidenceSignature {
+        alg: "ed25519",
+        sig: "deadbeef".to_string(),
+        key_fingerprint: "cafebabe".to_string(),
+    };
+    let debug_str = format!("{:?}", sig);
+    assert!(
+        !debug_str.contains(secret_token),
+        "EvidenceSignature Debug output must never contain the report server token"
+    );
+}

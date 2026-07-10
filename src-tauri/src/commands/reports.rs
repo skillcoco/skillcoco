@@ -282,6 +282,299 @@ pub fn export_report_pdf(
     crate::reports::artifacts::render_report_pdf(&pdf_input).map_err(|e| e.to_string())
 }
 
+// ── D-13: org evidence submission (fire-and-forget, offline-safe) ────────
+
+/// Wire request for `submit_evidence_report` — same scope/trackId/
+/// learnerName shape as `ExportReportRequest` (mirrors the frontend
+/// `SubmitEvidenceReportRequest` type in `src/lib/tauri-commands.ts`).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitEvidenceReportRequest {
+    /// "track" | "whole-profile".
+    pub scope: String,
+    #[serde(default)]
+    pub track_id: Option<String>,
+    /// D-10 confirm-at-export learner name, baked into the signed payload.
+    pub learner_name: String,
+}
+
+/// Outcome of a `submit_evidence_report` call. `accepted: false` covers
+/// EVERY non-2xx outcome (offline, timeout, non-http scheme, no URL
+/// configured) — none of these are learner-blocking errors (D-13).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitEvidenceReportResult {
+    pub accepted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report_id: Option<String>,
+}
+
+/// Signature block of the `/v1/evidence/reports` wire contract
+/// (`.planning/notes/entitlement-api-contract.md`).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EvidenceSignature {
+    alg: &'static str,
+    sig: String,
+    key_fingerprint: String,
+}
+
+/// `POST /v1/evidence/reports` body — the report is an OPAQUE signed
+/// envelope (payload + signatureHex + keyFingerprint); the report server
+/// never needs to understand LearnForge's mastery model, only verify the
+/// signature (entitlement-api-contract.md).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EvidenceSubmissionBody {
+    learner_id: String,
+    skill_id: String,
+    report: ReportEnvelopeV1,
+    signature: EvidenceSignature,
+}
+
+/// Minimal ack shape from the report server on 2xx.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EvidenceAckResponse {
+    #[serde(default)]
+    accepted: bool,
+    #[serde(default)]
+    report_id: Option<String>,
+}
+
+/// Read `reportServerUrl`/`reportServerToken` from the active learner's
+/// `preferences_json` (same storage surface `SettingsReportServerSection`
+/// writes via `update_profile`). Returns `(None, _)` when no URL is
+/// configured — callers treat this as "queued, not an error" per D-13.
+fn read_report_server_config(conn: &Connection, learner_id: &str) -> (Option<String>, String) {
+    let prefs_json: Option<String> = conn
+        .query_row(
+            "SELECT preferences_json FROM learner_profiles WHERE id = ?1",
+            [learner_id],
+            |r| r.get(0),
+        )
+        .ok()
+        .flatten();
+
+    let Some(prefs_json) = prefs_json else {
+        return (None, String::new());
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&prefs_json) else {
+        return (None, String::new());
+    };
+    let url = v
+        .get("reportServerUrl")
+        .and_then(|x| x.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let token = v
+        .get("reportServerToken")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    (url, token)
+}
+
+/// Insert a queued row into `pending_evidence_submissions` (18-01's D-13
+/// durable retry queue) so a failed/offline/no-URL submission is never
+/// silently dropped. NEVER logs `signature_json`'s token — the token is
+/// not part of the signature block at all (it travels as a bearer header,
+/// never persisted to the queue table).
+fn enqueue_pending_submission(
+    conn: &Connection,
+    envelope: &ReportEnvelopeV1,
+    signature: &EvidenceSignature,
+    report_server_url: &str,
+) -> Result<(), String> {
+    let payload_json = serde_json::to_string(envelope).map_err(|e| e.to_string())?;
+    let signature_json = serde_json::to_string(signature).map_err(|e| e.to_string())?;
+    let id = uuid::Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO pending_evidence_submissions
+         (id, payload_json, signature_json, report_server_url, attempts)
+         VALUES (?1, ?2, ?3, ?4, 0)",
+        rusqlite::params![id, payload_json, signature_json, report_server_url],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Prepared submission state — everything derived synchronously from the
+/// DB (assembly, signing, config read) BEFORE the async network call.
+/// Splitting this out lets the caller drop its `std::sync::MutexGuard`
+/// (not `Send`) before the `.await` boundary, and lets tests exercise the
+/// preparation step without any network dependency.
+struct PreparedSubmission {
+    envelope: ReportEnvelopeV1,
+    signature: EvidenceSignature,
+    report_server_url: Option<String>,
+    report_server_token: String,
+}
+
+/// Synchronous preparation step: assemble + sign the report, then read
+/// the report-server config for that learner. No network I/O — safe to
+/// call while holding a `std::sync::MutexGuard`.
+fn prepare_submission(
+    conn: &Connection,
+    signing_key: &std::sync::Mutex<Option<ed25519_dalek::SigningKey>>,
+    signing_key_path: &std::path::Path,
+    scope: &str,
+    track_id: &Option<String>,
+    learner_name: &str,
+) -> Result<PreparedSubmission, String> {
+    let envelope = assemble_report_inner(
+        conn,
+        signing_key,
+        signing_key_path,
+        scope,
+        track_id,
+        learner_name,
+    )
+    .map_err(|e| e.to_string())?;
+    let learner_id = envelope.payload.learner_id.clone();
+    let (report_server_url, report_server_token) = read_report_server_config(conn, &learner_id);
+    let signature = EvidenceSignature {
+        alg: "ed25519",
+        sig: envelope.signature_hex.clone(),
+        key_fingerprint: envelope.key_fingerprint.clone(),
+    };
+    Ok(PreparedSubmission {
+        envelope,
+        signature,
+        report_server_url,
+        report_server_token,
+    })
+}
+
+/// Shared implementation for `submit_evidence_report` — takes the DB
+/// mutex + signing state directly (NOT `tauri::State`) so tests can drive
+/// it with a plain in-memory `Database` behind an `Arc<Mutex<_>>`, no
+/// Tauri app instance required. Locks `db` ONLY for synchronous DB work
+/// (`prepare_submission`, and the queue-on-failure insert), never across
+/// the network `.await` — `rusqlite::Connection` is `Send` but NOT
+/// `Sync`, so neither the `std::sync::MutexGuard` NOR a borrowed
+/// `&Connection` may cross an await point in a future the Tauri async
+/// runtime must treat as `Send`.
+async fn submit_evidence_report_impl(
+    db: &std::sync::Mutex<crate::db::Database>,
+    signing_key: &std::sync::Mutex<Option<ed25519_dalek::SigningKey>>,
+    signing_key_path: &std::path::Path,
+    request: &SubmitEvidenceReportRequest,
+) -> Result<SubmitEvidenceReportResult, String> {
+    let prepared = {
+        let conn_guard = db.lock().map_err(|e| e.to_string())?;
+        prepare_submission(
+            &conn_guard.conn,
+            signing_key,
+            signing_key_path,
+            &request.scope,
+            &request.track_id,
+            &request.learner_name,
+        )?
+    };
+
+    // No URL configured — not an error, a "nothing to do" signal (D-13).
+    let Some(report_server_url) = prepared.report_server_url.clone() else {
+        return Ok(SubmitEvidenceReportResult {
+            accepted: false,
+            report_id: None,
+        });
+    };
+
+    // T-18-19 — reject non-http(s) schemes BEFORE the reqwest call (basic
+    // SSRF hygiene; the URL is the org's own server, an intentional
+    // container-registry-style feature, not an open redirect target).
+    let is_http_scheme =
+        report_server_url.starts_with("http://") || report_server_url.starts_with("https://");
+    if !is_http_scheme {
+        let conn_guard = db.lock().map_err(|e| e.to_string())?;
+        enqueue_pending_submission(&conn_guard.conn, &prepared.envelope, &prepared.signature, &report_server_url)?;
+        return Ok(SubmitEvidenceReportResult {
+            accepted: false,
+            report_id: None,
+        });
+    }
+
+    let body = EvidenceSubmissionBody {
+        learner_id: prepared.envelope.payload.learner_id.clone(),
+        skill_id: prepared.envelope.payload.scope_label.clone(),
+        report: prepared.envelope.clone(),
+        signature: EvidenceSignature {
+            alg: prepared.signature.alg,
+            sig: prepared.signature.sig.clone(),
+            key_fingerprint: prepared.signature.key_fingerprint.clone(),
+        },
+    };
+    let endpoint = format!("{}/v1/evidence/reports", report_server_url.trim_end_matches('/'));
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            let conn_guard = db.lock().map_err(|e| e.to_string())?;
+            enqueue_pending_submission(&conn_guard.conn, &prepared.envelope, &prepared.signature, &report_server_url)?;
+            return Ok(SubmitEvidenceReportResult {
+                accepted: false,
+                report_id: None,
+            });
+        }
+    };
+
+    // Network I/O — no lock held across this `.await` (T-18-19 / Send
+    // safety). The token is used ONLY here, as a bearer header value —
+    // never string-interpolated into a log/error message (T-18-18).
+    let send_result = client
+        .post(&endpoint)
+        .bearer_auth(&prepared.report_server_token)
+        .json(&body)
+        .send()
+        .await;
+
+    match send_result {
+        Ok(resp) if resp.status().is_success() => {
+            let ack: EvidenceAckResponse = resp.json().await.unwrap_or(EvidenceAckResponse {
+                accepted: true,
+                report_id: None,
+            });
+            Ok(SubmitEvidenceReportResult {
+                accepted: ack.accepted,
+                report_id: ack.report_id,
+            })
+        }
+        // Any non-2xx or network-level failure: queue, don't propagate as
+        // a learner-blocking Err (D-13 fire-and-forget). Re-lock briefly
+        // ONLY for this synchronous insert — never across the `.await`
+        // above.
+        _ => {
+            let conn_guard = db.lock().map_err(|e| e.to_string())?;
+            enqueue_pending_submission(&conn_guard.conn, &prepared.envelope, &prepared.signature, &report_server_url)?;
+            Ok(SubmitEvidenceReportResult {
+                accepted: false,
+                report_id: None,
+            })
+        }
+    }
+}
+
+/// Assemble, sign, and POST a skill report to the learner's configured
+/// `reportServerUrl` (Settings). Thin `tauri::command` shim over
+/// `submit_evidence_report_impl`.
+#[tauri::command]
+pub async fn submit_evidence_report(
+    request: SubmitEvidenceReportRequest,
+    state: State<'_, crate::AppState>,
+) -> Result<SubmitEvidenceReportResult, String> {
+    submit_evidence_report_impl(
+        state.db.as_ref(),
+        &state.signing_key,
+        &state.signing_key_path,
+        &request,
+    )
+    .await
+}
+
 #[cfg(test)]
 #[path = "reports_tests.rs"]
 mod tests;
