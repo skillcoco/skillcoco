@@ -16,8 +16,13 @@ bumps may include backwards-incompatible changes).
 
 ## [Unreleased]
 
-_No unreleased changes. Phase 8 Wave 7 populates this section as the
-first signed-on-macOS desktop release approaches._
+### Removed
+
+- `scripts/` (sheet2pack converter + enrichment pipeline and its test
+  suite) and the `enrich-course` skill — creator-side tooling relocated
+  to the private LearnForge Creator Studio product (2026-07-10). The
+  learner app has no code, CI, or build dependency on these; pack
+  import (including licensed packs) is unaffected. See COORDINATION.md.
 
 ## [0.1.0] - planned
 
