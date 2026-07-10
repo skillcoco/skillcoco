@@ -475,6 +475,23 @@ pub async fn submit_quiz(
         }
     }
 
+    // 14. REP-01 — durable per-attempt persistence. History, not upsert: each
+    // submission is a distinct row so the evidence ledger (D-06) can read
+    // full attempt history, not just the latest score.
+    if let Err(e) = db.conn.execute(
+        "INSERT INTO quiz_attempts (id, learner_id, module_id, block_id, score_percent, passed) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            uuid::Uuid::new_v4().to_string(),
+            learner_id,
+            req.module_id,
+            req.block_id,
+            score_percent,
+            if passed { 1i64 } else { 0i64 },
+        ],
+    ) {
+        log::warn!("submit_quiz: failed to record quiz_attempts row: {}", e);
+    }
+
     Ok(SubmitQuizResult {
         score_percent,
         passed,
@@ -3385,5 +3402,85 @@ mod phase3_tests {
         )
         .unwrap();
         assert!(!flipped_again, "second call must be a no-op (idempotent)");
+    }
+
+    // ── Phase 18 (REP-01): quiz_attempts write-path tests ──
+    // submit_quiz can't be invoked directly in unit tests (requires
+    // tauri::State<AppState>) — these tests replicate the exact INSERT the
+    // handler performs, mirroring the existing complete_exercises_* pattern.
+
+    /// After a quiz submission, exactly one quiz_attempts row exists for that
+    /// (learner_id, module_id, block_id) with score_percent + passed +
+    /// completed_at populated.
+    #[test]
+    fn submit_quiz_writes_one_attempt_row() {
+        let conn = fresh_conn();
+        let (_lp, _trk, mod_id, blk_id) = seed_quiz_env(&conn, "o2", 1);
+
+        let score_percent = 100.0f64;
+        let passed = true;
+        conn.execute(
+            "INSERT INTO quiz_attempts (id, learner_id, module_id, block_id, score_percent, passed) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                uuid::Uuid::new_v4().to_string(),
+                "lp1",
+                mod_id,
+                blk_id,
+                score_percent,
+                if passed { 1i64 } else { 0i64 },
+            ],
+        )
+        .unwrap();
+
+        let (stored_score, stored_passed, completed_at): (f64, i64, String) = conn
+            .query_row(
+                "SELECT score_percent, passed, completed_at FROM quiz_attempts WHERE learner_id = 'lp1' AND module_id = 'mod1' AND block_id = 'blk1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert!((stored_score - 100.0).abs() < 1e-9, "score_percent must match submitted score");
+        assert_eq!(stored_passed, 1, "passed must be stored as integer 1 (never a string)");
+        assert!(!completed_at.is_empty(), "completed_at must be populated");
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM quiz_attempts WHERE learner_id = 'lp1' AND module_id = 'mod1' AND block_id = 'blk1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "exactly one attempt row must exist after one submission");
+    }
+
+    /// Two submissions of the same quiz produce TWO rows — history, not
+    /// upsert. The evidence ledger needs attempt history, not last-value.
+    #[test]
+    fn submit_quiz_records_history_not_upsert() {
+        let conn = fresh_conn();
+        let (_lp, _trk, mod_id, blk_id) = seed_quiz_env(&conn, "o2", 1);
+
+        for score in [50.0f64, 100.0f64] {
+            conn.execute(
+                "INSERT INTO quiz_attempts (id, learner_id, module_id, block_id, score_percent, passed) VALUES (?1, 'lp1', ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    uuid::Uuid::new_v4().to_string(),
+                    mod_id,
+                    blk_id,
+                    score,
+                    if score >= 70.0 { 1i64 } else { 0i64 },
+                ],
+            )
+            .unwrap();
+        }
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM quiz_attempts WHERE learner_id = 'lp1' AND module_id = 'mod1' AND block_id = 'blk1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2, "two submissions must produce two rows, not an upserted single row");
     }
 }
