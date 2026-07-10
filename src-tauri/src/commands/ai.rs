@@ -139,9 +139,16 @@ pub async fn generate_learning_path(
          Generate 6-10 modules with REAL topic-specific titles and descriptions. \
          Each module ID MUST be a UUID (use format like \"mod-01\", \"mod-02\" etc). \
          \
+         For each module, also list 1-3 capability tags in can-do phrasing — \
+         short statements of what the learner will be ABLE TO DO after the module \
+         (e.g. \"Can configure RBAC policies\", \"Can debug pod networking\"), never \
+         topic nouns (NOT \"RBAC\", NOT \"Pod networking\"). If a module doesn't map \
+         cleanly to a distinct capability, return an empty skills array for it. \
+         \
          Return ONLY raw JSON, no markdown: \
          {{\"modules\": [{{\"id\": \"mod-01\", \"title\": \"...\", \"description\": \"...\", \
-         \"difficulty\": 1, \"estimated_minutes\": 30, \"objectives\": [\"...\"]}}], \
+         \"difficulty\": 1, \"estimated_minutes\": 30, \"objectives\": [\"...\"], \
+         \"skills\": [\"Can configure RBAC policies\"]}}], \
          \"edges\": [{{\"from\": \"mod-01\", \"to\": \"mod-02\"}}]}} \
          \
          Make titles SPECIFIC to {topic}, not generic. \
@@ -250,10 +257,11 @@ pub async fn generate_learning_path(
 
     for (i, module) in modules_arr.iter().enumerate() {
         let module_id = module["id"].as_str().unwrap_or("").to_string();
+        let skills_json = build_skills_json(&module["skills"]);
 
         db.conn
             .execute(
-                "INSERT INTO modules (id, path_id, title, description, difficulty, estimated_minutes, objectives_json, ordering) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO modules (id, path_id, title, description, difficulty, estimated_minutes, objectives_json, ordering, skills_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![
                     module_id,
                     path_id,
@@ -263,6 +271,7 @@ pub async fn generate_learning_path(
                     module["estimated_minutes"].as_i64().unwrap_or(30),
                     serde_json::to_string(&module["objectives"]).unwrap_or_default(),
                     i as i32,
+                    skills_json,
                 ],
             )
             .map_err(|e| e.to_string())?;
@@ -283,6 +292,35 @@ pub async fn generate_learning_path(
         "modules": path_data["modules"],
         "edges": path_data["edges"],
     }))
+}
+
+/// D-03.2 — build the `modules.skills_json` value from an AI-generated
+/// module's `skills` field (an array of can-do phrasing strings, per the
+/// path-generation prompt above). Each entry is stored as `{label, slug}`
+/// where `slug = normalize_tag(label)` (Pitfall 4 — consistent dedup key
+/// across tracks). Non-array/absent `skills` fields, or a field containing
+/// no valid strings, produce `"[]"` — the `SqliteReportStore` title-fallback
+/// (Task 1 / D-03.4) covers reporting for those modules. Deterministic:
+/// tags are persisted at generation time from the SAME AI response that
+/// generated the module, never inferred at export time (D-03 lock, no
+/// second LLM call).
+fn build_skills_json(skills_value: &serde_json::Value) -> String {
+    let tags: Vec<serde_json::Value> = skills_value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| s.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(|label| {
+                    json!({
+                        "label": label,
+                        "slug": learnforge_core::reports::normalize_tag(label),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string())
 }
 
 // ── Pack-sourced path generation (Phase 5 Q3) ──
@@ -1734,5 +1772,120 @@ mod tests {
             intro_count, 2,
             "namespacing must let both packs' 'intro' modules coexist"
         );
+    }
+
+    // ── build_skills_json (D-03.2 — path-generation capability-tag emission) ──
+
+    #[test]
+    fn build_skills_json_persists_label_and_normalized_slug() {
+        let skills = json!(["Can configure RBAC policies", "Can debug pod networking"]);
+        let out = build_skills_json(&skills);
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let arr = parsed.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["label"], "Can configure RBAC policies");
+        assert_eq!(
+            arr[0]["slug"],
+            learnforge_core::reports::normalize_tag("Can configure RBAC policies")
+        );
+        assert_eq!(arr[1]["label"], "Can debug pod networking");
+    }
+
+    #[test]
+    fn build_skills_json_empty_array_when_field_absent() {
+        let out = build_skills_json(&serde_json::Value::Null);
+        assert_eq!(out, "[]");
+    }
+
+    #[test]
+    fn build_skills_json_empty_array_when_not_an_array() {
+        let out = build_skills_json(&json!("not an array"));
+        assert_eq!(out, "[]");
+    }
+
+    #[test]
+    fn build_skills_json_filters_blank_and_non_string_entries() {
+        let skills = json!(["Can configure RBAC policies", "", "   ", 42, null]);
+        let out = build_skills_json(&skills);
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let arr = parsed.as_array().unwrap();
+        assert_eq!(arr.len(), 1, "blank/non-string entries must be filtered out");
+        assert_eq!(arr[0]["label"], "Can configure RBAC policies");
+    }
+
+    /// D-03.2 — persisted tag slugs must be produced via normalize_tag so
+    /// cross-track merge dedupes casing/whitespace variants (Pitfall 4).
+    #[test]
+    fn build_skills_json_slug_matches_normalize_tag_exactly() {
+        let skills = json!(["  Can Configure  RBAC-Policies "]);
+        let out = build_skills_json(&skills);
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let arr = parsed.as_array().unwrap();
+        assert_eq!(
+            arr[0]["slug"],
+            learnforge_core::reports::normalize_tag("  Can Configure  RBAC-Policies ")
+        );
+    }
+
+    /// End-to-end persistence: generate_learning_path's module-insert loop
+    /// writes build_skills_json's output into modules.skills_json. This
+    /// test exercises the INSERT statement shape directly (bypassing the
+    /// async AI call) to prove the column is populated at generation time,
+    /// not left as the v017 default '[]' when the AI response carries tags.
+    #[test]
+    fn module_insert_persists_skills_json_from_ai_response() {
+        let conn = fresh_conn_with_schema();
+        conn.execute(
+            "INSERT OR IGNORE INTO learner_profiles (id) VALUES ('lp-skills')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO learning_tracks (id, learner_id, topic, domain_module) VALUES ('trk-skills', 'lp-skills', 'Kubernetes', 'devops')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO learning_paths (id, track_id) VALUES ('path-skills', 'trk-skills')",
+            [],
+        )
+        .unwrap();
+
+        let module = json!({
+            "id": "mod-skills-1",
+            "title": "Pods and Nodes",
+            "description": "desc",
+            "difficulty": 1,
+            "estimated_minutes": 30,
+            "objectives": [],
+            "skills": ["Can configure RBAC policies"],
+        });
+        let skills_json = build_skills_json(&module["skills"]);
+
+        conn.execute(
+            "INSERT INTO modules (id, path_id, title, description, difficulty, estimated_minutes, objectives_json, ordering, skills_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                module["id"].as_str().unwrap(),
+                "path-skills",
+                module["title"].as_str().unwrap(),
+                module["description"].as_str().unwrap(),
+                module["difficulty"].as_i64().unwrap(),
+                module["estimated_minutes"].as_i64().unwrap(),
+                serde_json::to_string(&module["objectives"]).unwrap(),
+                0,
+                skills_json,
+            ],
+        )
+        .unwrap();
+
+        let stored: String = conn
+            .query_row(
+                "SELECT skills_json FROM modules WHERE id = 'mod-skills-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&stored).unwrap();
+        assert_eq!(parsed[0]["label"], "Can configure RBAC policies");
     }
 }
