@@ -255,6 +255,17 @@ pub async fn generate_learning_path(
         )
         .map_err(|e| e.to_string())?;
 
+    // CR-01 gap closure (18-08): resolve the learner ONCE before the loop —
+    // mirrors the adjacent module_progress INSERT's subquery, but resolved
+    // into a variable so the capability_tags writer below doesn't re-run the
+    // subquery per module/tag. `None` (no learner_profiles row yet) means the
+    // capability_tags writer is skipped entirely for this generation — the
+    // D-03.4 title fallback still covers reporting in that edge case.
+    let learner_id: Option<String> = db
+        .conn
+        .query_row("SELECT id FROM learner_profiles LIMIT 1", [], |r| r.get(0))
+        .ok();
+
     for (i, module) in modules_arr.iter().enumerate() {
         let module_id = module["id"].as_str().unwrap_or("").to_string();
         let skills_json = build_skills_json(&module["skills"]);
@@ -284,6 +295,23 @@ pub async fn generate_learning_path(
                 rusqlite::params![uuid::Uuid::new_v4().to_string(), module_id, status],
             )
             .map_err(|e| e.to_string())?;
+
+        // CR-01 gap closure (18-08): materialize capability_tags rows from
+        // the skills_json we just built/persisted, so the report read path
+        // (`SqliteReportStore::capability_tags_for_scope`) finds AI-authored
+        // capability tags instead of always falling through to the D-03.4
+        // module-title fallback. No-op when learner_id is None or skills_json
+        // decodes to an empty array (T-18-08-01/03).
+        if let Some(learner_id) = learner_id.as_deref() {
+            write_capability_tags(
+                &db.conn,
+                learner_id,
+                &request.track_id,
+                &module_id,
+                &skills_json,
+            )
+            .map_err(|e| e.to_string())?;
+        }
     }
 
     Ok(serde_json::json!({
@@ -321,6 +349,47 @@ fn build_skills_json(skills_value: &serde_json::Value) -> String {
         })
         .unwrap_or_default();
     serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// CR-01 gap closure (18-08) — the production writer that bridges
+/// `modules.skills_json` (D-03.2) into the `capability_tags` table (D-01/D-02)
+/// that `SqliteReportStore::capability_tags_for_scope` actually queries.
+///
+/// Decodes `skills_json` (the exact string just persisted to `modules`,
+/// produced by [`build_skills_json`] — never re-derived) into its `{label,
+/// slug}` entries and INSERTs one `capability_tags` row per entry with
+/// `evidence_class = 'module'`. An empty/`"[]"` or malformed `skills_json`
+/// inserts nothing — this is the expected shape for modules with no
+/// AI-authored capability tags (D-03.4 title-fallback covers those at read
+/// time). Entries missing either `label` or `slug` are skipped defensively.
+fn write_capability_tags(
+    conn: &rusqlite::Connection,
+    learner_id: &str,
+    track_id: &str,
+    module_id: &str,
+    skills_json: &str,
+) -> rusqlite::Result<()> {
+    let tags: Vec<serde_json::Value> = serde_json::from_str(skills_json).unwrap_or_default();
+    for tag in &tags {
+        let (label, slug) = match (tag["label"].as_str(), tag["slug"].as_str()) {
+            (Some(label), Some(slug)) if !label.trim().is_empty() && !slug.trim().is_empty() => {
+                (label, slug)
+            }
+            _ => continue,
+        };
+        conn.execute(
+            "INSERT INTO capability_tags (id, learner_id, track_id, module_id, tag_slug, tag_label, evidence_class) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'module')",
+            rusqlite::params![
+                uuid::Uuid::new_v4().to_string(),
+                learner_id,
+                track_id,
+                module_id,
+                slug,
+                label,
+            ],
+        )?;
+    }
+    Ok(())
 }
 
 // ── Pack-sourced path generation (Phase 5 Q3) ──
@@ -1887,5 +1956,163 @@ mod tests {
             .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&stored).unwrap();
         assert_eq!(parsed[0]["label"], "Can configure RBAC policies");
+    }
+
+    // ── CR-01 gap closure (18-08): write_capability_tags production writer ──
+
+    fn seed_learner_track_module_for_capability_tags(
+        conn: &rusqlite::Connection,
+        learner_id: &str,
+        track_id: &str,
+        module_id: &str,
+    ) {
+        conn.execute(
+            "INSERT OR IGNORE INTO learner_profiles (id) VALUES (?1)",
+            [learner_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO learning_tracks (id, learner_id, topic, domain_module) VALUES (?1, ?2, 'Kubernetes', 'devops')",
+            rusqlite::params![track_id, learner_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO learning_paths (id, track_id) VALUES (?1, ?2)",
+            rusqlite::params![format!("path-{}", track_id), track_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO modules (id, path_id, title, objectives_json) VALUES (?1, ?2, 'Test Module', '[]')",
+            rusqlite::params![module_id, format!("path-{}", track_id)],
+        )
+        .unwrap();
+    }
+
+    /// Behavior 1 (plan): after generate_learning_path persists a module
+    /// whose AI response includes skills, a capability_tags row exists for
+    /// each {label, slug} with matching module_id/track_id/learner_id,
+    /// tag_slug=slug, tag_label=label, evidence_class='module'.
+    #[test]
+    fn write_capability_tags_inserts_one_row_per_skills_json_entry() {
+        let conn = fresh_conn_with_schema();
+        seed_learner_track_module_for_capability_tags(&conn, "lp-ct1", "trk-ct1", "mod-ct1");
+
+        let skills = json!(["Can configure RBAC policies", "Can debug pod networking"]);
+        let skills_json = build_skills_json(&skills);
+
+        write_capability_tags(&conn, "lp-ct1", "trk-ct1", "mod-ct1", &skills_json)
+            .expect("write_capability_tags must succeed");
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT tag_slug, tag_label, evidence_class FROM capability_tags \
+                 WHERE learner_id = 'lp-ct1' AND track_id = 'trk-ct1' AND module_id = 'mod-ct1' \
+                 ORDER BY tag_label",
+            )
+            .unwrap();
+        let rows: Vec<(String, String, String)> = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            })
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(rows.len(), 2, "one capability_tags row per skills_json entry");
+        assert_eq!(rows[0].1, "Can configure RBAC policies");
+        assert_eq!(
+            rows[0].0,
+            learnforge_core::reports::normalize_tag("Can configure RBAC policies")
+        );
+        assert_eq!(rows[0].2, "module");
+        assert_eq!(rows[1].1, "Can debug pod networking");
+    }
+
+    /// Behavior 2 (plan): a module whose skills_json decodes to an empty
+    /// array INSERTs zero capability_tags rows (title-fallback path stays
+    /// intact).
+    #[test]
+    fn write_capability_tags_empty_skills_json_inserts_nothing() {
+        let conn = fresh_conn_with_schema();
+        seed_learner_track_module_for_capability_tags(&conn, "lp-ct2", "trk-ct2", "mod-ct2");
+
+        write_capability_tags(&conn, "lp-ct2", "trk-ct2", "mod-ct2", "[]")
+            .expect("write_capability_tags must succeed on empty array");
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM capability_tags WHERE module_id = 'mod-ct2'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0, "empty skills_json must insert zero capability_tags rows");
+    }
+
+    /// Behavior 3 (plan, end-to-end): assembling a report for a track seeded
+    /// through write_capability_tags (the same writer generate_learning_path
+    /// calls, not a hand-inserted capability_tags row constructed by the
+    /// test) yields a capability row whose label equals an AI-authored skill
+    /// label, NOT the module title.
+    #[test]
+    fn assembled_report_uses_ai_authored_capability_not_module_title() {
+        use crate::storage_impl::reports::SqliteReportStore;
+        use crate::storage_impl::signing::MutexCachedKeyStore;
+        use learnforge_core::reports::{ReportScope, ReportStore};
+
+        let conn = fresh_conn_with_schema();
+        seed_learner_track_module_for_capability_tags(
+            &conn,
+            "lp-e2e",
+            "trk-e2e",
+            "mod-e2e",
+        );
+        conn.execute(
+            "INSERT INTO module_progress (id, module_id, learner_id, mastery_level) VALUES ('mp-e2e', 'mod-e2e', 'lp-e2e', 0.8)",
+            [],
+        )
+        .unwrap();
+
+        // Seed via the SAME production writer generate_learning_path calls —
+        // not a hand-inserted capability_tags row.
+        let skills = json!(["Can configure RBAC policies"]);
+        let skills_json = build_skills_json(&skills);
+        write_capability_tags(&conn, "lp-e2e", "trk-e2e", "mod-e2e", &skills_json)
+            .expect("seed via production writer");
+
+        // Sanity: capability_tags_for_scope (the real report read path) sees
+        // the AI-authored tag, not the module title "Test Module".
+        let store = SqliteReportStore(&conn);
+        let tags = store
+            .capability_tags_for_scope(&ReportScope::Track("trk-e2e".to_string()), "lp-e2e")
+            .expect("capability_tags_for_scope");
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].2, "Can configure RBAC policies");
+        assert_ne!(tags[0].2, "Test Module");
+
+        // Full end-to-end: run the actual signed-assembly algorithm
+        // (same call `assemble_report_inner` makes) and assert the resulting
+        // capability row label is the AI-authored tag, not the module title.
+        let key_dir = tempfile::tempdir().expect("tempdir");
+        let signing_key: std::sync::Mutex<Option<ed25519_dalek::SigningKey>> =
+            std::sync::Mutex::new(None);
+        let key_store = MutexCachedKeyStore::new(&signing_key, key_dir.path());
+
+        let envelope = learnforge_core::reports::assemble(
+            &store,
+            &key_store,
+            ReportScope::Track("trk-e2e".to_string()),
+            "lp-e2e",
+            chrono::Utc::now(),
+        )
+        .expect("assemble must succeed");
+
+        assert_eq!(envelope.payload.capabilities.len(), 1);
+        assert_eq!(
+            envelope.payload.capabilities[0].label,
+            "Can configure RBAC policies",
+            "assembled report capability label must be the AI-authored skill label, not the module title"
+        );
+        assert_ne!(envelope.payload.capabilities[0].label, "Test Module");
     }
 }
