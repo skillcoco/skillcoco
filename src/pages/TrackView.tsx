@@ -27,9 +27,57 @@ import {
   pickNextModule,
   computeCertGate,
 } from "@/lib/learning-path";
-import { listTopicPacksAdmin, exportCourse } from "@/lib/tauri-commands";
+import { listTopicPacksAdmin, exportCourse, getOrCreateProfile } from "@/lib/tauri-commands";
 import { save } from "@tauri-apps/plugin-dialog";
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
+import { ExportReportDialog } from "@/pages/ExportReportDialog";
+
+// ── D-16 / D-05 — mastery band helper ──
+//
+// Locked band taxonomy (18-UI-SPEC.md Mastery Bands table): Novice (0-24%),
+// Working (25-59%), Proficient (60-84%), Mastered (85-100%). Practical
+// mastery renders "Not assessed" (never "0%") when the module has not been
+// assessed via a hands-on lab — see `formatPracticalMastery` below for the
+// frontend heuristic and its documented limitation.
+export function masteryBand(pct: number): "Novice" | "Working" | "Proficient" | "Mastered" {
+  if (pct >= 85) return "Mastered";
+  if (pct >= 60) return "Proficient";
+  if (pct >= 25) return "Working";
+  return "Novice";
+}
+
+const MASTERY_BAND_CLASS: Record<ReturnType<typeof masteryBand>, string> = {
+  Novice: "text-muted-foreground",
+  Working: "text-foreground",
+  Proficient: "text-emerald-400",
+  Mastered: "text-emerald-500",
+};
+
+/**
+ * D-16 practical mastery formatter — "{band} · {pct}%" or a "Not assessed"
+ * chip, never "0%" (18-UI-SPEC.md D-05 lock).
+ *
+ * KNOWN LIMITATION (flagged for planner/checkpoint review): the frontend
+ * `ModuleProgress` IPC shape carries `practicalMastery: number` with no
+ * signal distinguishing "no lab content for this module" from "assessed at
+ * exactly 0%" (the backend's `SqliteReportStore::practical_mastery` in
+ * `storage_impl/reports.rs` correctly returns `None` via a `lab_progress`
+ * table lookup, but that lookup is not exposed on `get_module_progress`).
+ * Until a `hasLabContent`-style field is added to that IPC response (an
+ * additive, non-breaking backend change outside this frontend-only plan's
+ * scope), this helper treats `practicalMastery === 0` as "not assessed" —
+ * which is correct for every module that has never had lab activity
+ * (the v006 migration default is 0.0) but would also mask a lab genuinely
+ * scored at 0%. Surfaced explicitly at the Task 3 human-verify checkpoint.
+ */
+export function formatPracticalMastery(
+  practicalMastery: number,
+): { band: string; label: string; className: string } | null {
+  if (practicalMastery <= 0) return null;
+  const pct = Math.round(practicalMastery * 100);
+  const band = masteryBand(pct);
+  return { band, label: `${band} · ${pct}%`, className: MASTERY_BAND_CLASS[band] };
+}
 
 // ── D-10 UI mirror: exportability predicate ──
 //
@@ -263,6 +311,7 @@ function ModuleDetailPanel({
   trackId,
   onClose,
   isOpenable,
+  practicalMastery,
 }: {
   module: PathModule;
   status: ModuleStatus;
@@ -270,10 +319,14 @@ function ModuleDetailPanel({
   trackId: string;
   onClose: () => void;
   isOpenable?: boolean;
+  /** D-16 — raw 0-1 practical mastery for this module, or undefined if no
+   * progress row is loaded yet. */
+  practicalMastery?: number;
 }) {
   const navigate = useNavigate();
   // Phase 10 Plan 03 (D-07): isOpenable overrides status-based lock in free mode.
   const isClickable = isOpenable !== undefined ? isOpenable : status !== "locked";
+  const practical = formatPracticalMastery(practicalMastery ?? 0);
 
   return (
     <div className="glass-strong rounded-xl border border-border p-6">
@@ -308,6 +361,25 @@ function ModuleDetailPanel({
             <div className="flex items-center gap-1.5">
               <DifficultyDots level={module.difficulty} />
             </div>
+          </div>
+
+          {/* Phase 18 Plan 05 (D-16) — practical mastery peer line item.
+              Reads as a peer to the Stats row above — no new visual weight
+              (no badge shape, no new bold). "Not assessed" (amber chip) is
+              rendered instead of "0%" per the 18-UI-SPEC.md D-05 lock. */}
+          <div className="flex items-center gap-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">
+              Practical
+            </span>
+            {practical ? (
+              <span className={cn("text-sm font-medium", practical.className)}>
+                {practical.label}
+              </span>
+            ) : (
+              <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-400">
+                Not assessed
+              </span>
+            )}
           </div>
 
           {/* Objectives */}
@@ -398,6 +470,15 @@ export function TrackView() {
     "idle" | "exporting" | "success" | "error"
   >("idle");
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+
+  // ── Phase 18 Plan 05 (Wave 3) — Export skill report dialog state ──
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [learnerName, setLearnerName] = useState("");
+  useEffect(() => {
+    getOrCreateProfile()
+      .then((p) => setLearnerName(p.displayName))
+      .catch((err) => console.error("Failed to load profile:", err));
+  }, []);
 
   // Phase 5 Plan 05 (Wave 4) — R1 / T-05-17 mitigation: when this track was
   // generated from a Topic Pack AND the pack's source is "skill" (i.e.
@@ -663,6 +744,19 @@ export function TrackView() {
                 )}
               </button>
             )}
+            {/* Phase 18 Plan 05 — "Export skill report" entry point.
+                Secondary (outline) tier — deliberately does not compete with
+                "Export course" above (18-UI-SPEC.md placement contract). */}
+            <button
+              type="button"
+              onClick={() => setReportDialogOpen(true)}
+              data-testid="export-skill-report-button"
+              title="Export a signed skill report for this track"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Download size={13} />
+              Export skill report
+            </button>
             <div className="text-right">
               <div className="text-2xl font-bold text-foreground">
                 {Math.round(currentTrack.progressPercent)}%
@@ -884,8 +978,19 @@ export function TrackView() {
           trackId={trackId}
           onClose={() => setSelectedModuleId(null)}
           isOpenable={effectiveOpenable(selectedStatus)}
+          practicalMastery={progressMap.get(selectedModule.id)?.practicalMastery}
         />
       )}
+
+      {/* Phase 18 Plan 05 — Export skill report dialog, scoped to this track. */}
+      <ExportReportDialog
+        open={reportDialogOpen}
+        onOpenChange={setReportDialogOpen}
+        defaultScope="track"
+        trackId={trackId}
+        trackTopic={currentTrack.topic}
+        learnerName={learnerName}
+      />
     </div>
   );
 }
