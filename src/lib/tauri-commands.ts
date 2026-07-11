@@ -342,6 +342,30 @@ export async function labRuntimeDetect(
   return invoke("lab_runtime_detect", { request });
 }
 
+// ── Phase 19: Exam-sim IPC wrappers (19-03) ──
+//
+// D-15 — examAttemptSubmit's request carries attemptId + currentStep ONLY;
+// every step verdict is server-derived from lab_progress, never supplied
+// by the client (T-19-10 mitigation).
+
+export async function examAttemptStart(
+  request: import("@/types/learning").ExamAttemptStartRequest,
+): Promise<import("@/types/learning").ExamAttemptStartResult> {
+  return invoke("exam_attempt_start", { request });
+}
+
+export async function examAttemptSubmit(
+  request: import("@/types/learning").ExamAttemptSubmitRequest,
+): Promise<import("@/types/learning").ExamAttemptResult> {
+  return invoke("exam_attempt_submit", { request });
+}
+
+export async function examAttemptGet(
+  request: import("@/types/learning").ExamAttemptGetRequest,
+): Promise<import("@/types/learning").ExamAttemptResult> {
+  return invoke("exam_attempt_get", { request });
+}
+
 // ── Phase 4 Microlearning IPC wrappers ──
 //
 // All four wrappers use the `{ request }` envelope per FIX-02 + Phase
