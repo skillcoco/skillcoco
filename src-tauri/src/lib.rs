@@ -279,6 +279,10 @@ pub fn run() {
             commands::labs::state::lab_reset,
             commands::labs::state::lab_get_progress,
             commands::labs::session::lab_runtime_detect,
+            // Exam-sim commands (Phase 19 — Wave 2, 19-03)
+            commands::labs::exam::exam_attempt_start,
+            commands::labs::exam::exam_attempt_submit,
+            commands::labs::exam::exam_attempt_get,
             // Microlearning (Phase 4 — daily challenge IPCs)
             commands::microlearning::get_daily_challenge,
             commands::microlearning::start_daily_challenge,

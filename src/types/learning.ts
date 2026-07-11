@@ -527,6 +527,58 @@ export interface LabRuntimeDetectResult {
   setting: LabRuntimeChoice;
 }
 
+// ── Phase 19: Exam-sim IPC types (19-03) ──
+//
+// D-15 — ExamAttemptSubmitRequest carries attemptId + currentStep ONLY.
+// No stepVerdicts field exists on this type; every verdict is derived
+// server-side from lab_progress (T-19-10 mitigation).
+
+export interface ExamAttemptStartRequest {
+  blockId: string;
+  trackId: string;
+  moduleId: string;
+  learnerId: string;
+}
+
+export interface ExamAttemptStartResult {
+  attemptId: string;
+  startedAt: string;
+  deadlineAt: string;
+  timeLimitMinutes: number;
+  passThresholdPct: number;
+  totalSteps: number;
+}
+
+export interface ExamAttemptSubmitRequest {
+  attemptId: string;
+  /** Display-only telemetry — never trusted for scoring. */
+  currentStep?: number;
+}
+
+export interface ExamAttemptGetRequest {
+  attemptId: string;
+}
+
+export interface StepVerdict {
+  stepId: string;
+  title: string;
+  outcome: "pass" | "fail" | "manual" | "indeterminate";
+  passedTowardScore: boolean;
+  checkReason: string | null;
+}
+
+export interface ExamAttemptResult {
+  attemptId: string;
+  status: "in_progress" | "completed" | "timed_out_partial";
+  scorePercent: number;
+  passed: boolean;
+  startedAt: string;
+  finishedAt: string | null;
+  deadlineAt: string;
+  totalSteps: number;
+  stepVerdicts: StepVerdict[];
+}
+
 // ── Phase 4 Microlearning types ──
 //
 // IPC result shapes for the four daily-challenge commands. All requests
