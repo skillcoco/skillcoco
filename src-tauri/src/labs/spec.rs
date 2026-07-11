@@ -154,6 +154,7 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
             return Err(LabError::Spec(format!("duplicate step id: {:?}", s.id)));
         }
         validate_step_check(&s.check)?;
+        validate_step_weight(&s.id, s.weight)?;
         if s.prompt.trim().is_empty() {
             return Err(LabError::Spec(format!(
                 "step {:?} is missing `prompt:` (the markdown body that tells \
@@ -204,6 +205,7 @@ pub fn validate_spec(spec: &LabSpec) -> Result<(), LabError> {
             return Err(LabError::Spec(format!("duplicate step id: {:?}", s.id)));
         }
         validate_step_check(&s.check)?;
+        validate_step_weight(&s.id, s.weight)?;
         if s.prompt.trim().is_empty() {
             return Err(LabError::Spec(format!(
                 "step {:?} is missing `prompt:` (the markdown body that tells \
@@ -239,6 +241,20 @@ fn validate_exam_meta(exam: &ExamMeta) -> Result<(), LabError> {
                 minutes
             )));
         }
+    }
+    Ok(())
+}
+
+/// Phase 19 (WR-02, D-07/T-19-02) — step weights feed directly into the
+/// weighted-score numerator/denominator. Negative weights make mixed-sign
+/// totals exceed 100% (trivially-true `passed`); NaN poisons the whole
+/// score into a silent always-fail. Only positive finite weights are valid.
+fn validate_step_weight(step_id: &str, weight: f64) -> Result<(), LabError> {
+    if !weight.is_finite() || weight <= 0.0 {
+        return Err(LabError::Spec(format!(
+            "step {:?}: weight must be a positive finite number, got {}",
+            step_id, weight
+        )));
     }
     Ok(())
 }

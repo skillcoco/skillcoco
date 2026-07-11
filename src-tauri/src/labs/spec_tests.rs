@@ -281,6 +281,58 @@ fn exam_meta_rejects_time_limit_out_of_range() {
     );
 }
 
+/// WR-02 (D-07/T-19-02) — non-positive step weights corrupt scoring
+/// (mixed-sign weights can yield >100% and trivially-true `passed`);
+/// `validate_spec` must reject them.
+#[test]
+fn validate_spec_rejects_non_positive_weight() {
+    for bad_weight in [0.0, -1.0] {
+        let mut spec = exam_spec_fixture();
+        spec.steps[0].weight = bad_weight;
+        assert!(
+            validate_spec(&spec).is_err(),
+            "weight {} must be rejected by validate_spec (WR-02)",
+            bad_weight
+        );
+    }
+}
+
+/// WR-02 — a NaN/infinite weight makes total_weight NaN and the score
+/// silently always-fail; `validate_spec` must reject non-finite weights.
+#[test]
+fn validate_spec_rejects_non_finite_weight() {
+    for bad_weight in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut spec = exam_spec_fixture();
+        spec.steps[0].weight = bad_weight;
+        assert!(
+            validate_spec(&spec).is_err(),
+            "weight {} must be rejected by validate_spec (WR-02)",
+            bad_weight
+        );
+    }
+}
+
+/// WR-02 — the same guard applies at the LAB.md parse boundary.
+#[test]
+fn parse_lab_md_rejects_negative_weight() {
+    let md = r#"---
+slug: weight-test
+title: Weight test
+image: alpine
+steps:
+  - id: s1
+    title: S1
+    prompt: Do the thing
+    check:
+      kind: exit_code
+      expected: 0
+    weight: -1
+---
+Body.
+"#;
+    assert_spec_err_msg(parse_lab_md(md), &["weight"]);
+}
+
 /// Minimal valid (non-exam) LabSpec fixture reused by the range-validation
 /// RED tests above.
 fn exam_spec_fixture() -> LabSpec {
