@@ -18,6 +18,7 @@ use crate::labs::spec::LabSpec;
 use serde::{Deserialize, Serialize};
 
 pub mod eval;
+pub mod exam;
 pub mod session;
 pub mod state;
 
@@ -200,6 +201,7 @@ mod tests {
                 dockerfile: None,
                 requires_docker: true,
                 creates: vec![],
+                exam: None,
                 steps: vec![],
             },
             progress: LabProgress {

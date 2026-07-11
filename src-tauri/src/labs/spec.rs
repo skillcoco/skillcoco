@@ -26,7 +26,25 @@ pub struct LabSpec {
     pub dockerfile: Option<String>,
     pub requires_docker: bool,
     pub creates: Vec<String>,
+    /// Phase 19 (EXAM-01/D-01/D-02) — Wave 0 scaffold field. `parse_lab_md`
+    /// does NOT yet read the `exam:` frontmatter block into this field
+    /// (always `None` today); 19-02 wires the real parsing + defaults
+    /// (D-03 30min / D-08 70%) + range validation (T-19-02). Only authored
+    /// exam specs populate this — a regular lab must stay `None` (D-02).
+    #[serde(default)]
+    pub exam: Option<ExamMeta>,
     pub steps: Vec<LabStep>,
+}
+
+/// Phase 19 (EXAM-01) — pack-authored exam calibration. Wave 0 scaffold
+/// type only; 19-02 wires parsing/defaults/validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamMeta {
+    /// Minutes allotted for the attempt. `None` -> default 30 (D-03).
+    pub time_limit_minutes: Option<u32>,
+    /// Percentage required to pass. `None` -> default 70.0 (D-08).
+    pub pass_threshold_pct: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +58,16 @@ pub struct LabStep {
     pub prompt: String,
     pub check: StepCheck,
     pub hints: Vec<String>,
+    /// Phase 19 (D-07) — Wave 0 scaffold field. `parse_lab_md` does NOT yet
+    /// read the per-step `weight:` frontmatter value into this field
+    /// (always hardcoded to `1.0` today, never the authored value); 19-02
+    /// wires the real serde default (1.0) + frontmatter round-trip.
+    #[serde(default = "default_step_weight")]
+    pub weight: f64,
+}
+
+fn default_step_weight() -> f64 {
+    1.0
 }
 
 /// One of four check kinds. Tagged enum so LAB.md frontmatter parses naturally:
@@ -136,6 +164,9 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
         dockerfile: raw.dockerfile,
         requires_docker: raw.requires_docker,
         creates: raw.creates,
+        // Wave 0 scaffold — always None until 19-02 reads the `exam:`
+        // frontmatter block (see LabSpec.exam doc comment).
+        exam: None,
         steps: raw
             .steps
             .into_iter()
@@ -145,6 +176,10 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
                 prompt: s.prompt,
                 check: s.check,
                 hints: s.hints,
+                // Wave 0 scaffold — always 1.0 until 19-02 reads the
+                // per-step `weight:` frontmatter value (see LabStep.weight
+                // doc comment).
+                weight: 1.0,
             })
             .collect(),
     };
@@ -286,174 +321,5 @@ pub fn reset_lab(workspace: &Path, creates: &[String]) -> Result<Vec<PathBuf>, L
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const VALID_LAB_MD: &str =
-        include_str!("../../tests/fixtures/labs/specs/valid-pod-create.lab.md");
-    const MALFORMED_LAB_MD: &str =
-        include_str!("../../tests/fixtures/labs/specs/malformed-frontmatter.lab.md");
-    const BOTH_IMAGE_DOCKERFILE: &str =
-        include_str!("../../tests/fixtures/labs/specs/image-and-dockerfile-both.lab.md");
-    const TRAVERSAL_LAB_MD: &str =
-        include_str!("../../tests/fixtures/labs/specs/creates-traversal.lab.md");
-
-    fn assert_spec_err_msg(result: Result<(LabSpec, String), LabError>, needles: &[&str]) {
-        match result {
-            Err(LabError::Spec(msg)) => {
-                let lower = msg.to_lowercase();
-                assert!(
-                    needles.iter().any(|n| lower.contains(n)),
-                    "expected one of {:?} in error, got: {}",
-                    needles,
-                    msg
-                );
-            }
-            other => panic!("expected LabError::Spec, got {:?}", other),
-        }
-    }
-
-    /// LAB-04 — valid LAB.md parses to a 4-step LabSpec.
-    #[test]
-    fn parse_valid_lab_md() {
-        let (spec, body) = parse_lab_md(VALID_LAB_MD).expect("valid LAB.md must parse");
-        assert_eq!(spec.slug, "pod-create-and-inspect");
-        assert_eq!(spec.title, "Create and inspect a Pod");
-        assert_eq!(spec.steps.len(), 4);
-        assert_eq!(spec.image.as_deref(), Some("kindest/node:v1.30"));
-        assert!(spec.dockerfile.is_none());
-        assert!(spec.requires_docker);
-        assert!(spec.creates.iter().any(|p| p == "manifests/pod.yaml"));
-        assert!(spec.creates.iter().any(|p| p == "notes/run-output.txt"));
-        assert!(!body.trim().is_empty(), "markdown body must be preserved");
-        assert!(
-            body.contains("Step 1") || body.contains("# Create and inspect a Pod"),
-            "body must include markdown headings, got {:?}",
-            body
-        );
-    }
-
-    /// LAB-04 — malformed YAML surfaces LabError::Spec with a useful message.
-    #[test]
-    fn parse_malformed_frontmatter_fails() {
-        assert_spec_err_msg(
-            parse_lab_md(MALFORMED_LAB_MD),
-            &["frontmatter", "yaml", "missing", "invalid"],
-        );
-    }
-
-    /// LAB-04 — image and dockerfile are mutually exclusive.
-    #[test]
-    fn image_xor_dockerfile() {
-        match parse_lab_md(BOTH_IMAGE_DOCKERFILE) {
-            Err(LabError::Spec(msg)) => {
-                let lower = msg.to_lowercase();
-                assert!(
-                    lower.contains("image") && lower.contains("dockerfile"),
-                    "error should mention both, got: {}",
-                    msg
-                );
-            }
-            other => panic!("expected LabError::Spec, got {:?}", other),
-        }
-    }
-
-    /// LAB-04 / LAB-07 — creates with absolute or `..` paths is rejected.
-    #[test]
-    fn creates_path_traversal_rejected() {
-        assert_spec_err_msg(
-            parse_lab_md(TRAVERSAL_LAB_MD),
-            &["creates", "absolute", "..", "traversal"],
-        );
-    }
-
-    /// LAB-04 / LAB-06 — ai_judge criteria must be substantive.
-    #[test]
-    fn ai_judge_criteria_minimum_length() {
-        let spec = LabSpec {
-            slug: "x".to_string(),
-            title: "x".to_string(),
-            image: Some("alpine".to_string()),
-            dockerfile: None,
-            requires_docker: false,
-            creates: vec![],
-            steps: vec![LabStep {
-                id: "s1".to_string(),
-                title: "s1".to_string(),
-                prompt: "do the thing".to_string(),
-                check: StepCheck::AiJudge {
-                    criteria: "ok".to_string(),
-                    threshold: 0.7,
-                },
-                hints: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-            }],
-        };
-        // Slug "x" passes (single char alphanumeric); ai_judge fails.
-        assert!(validate_spec(&spec).is_err());
-    }
-
-    /// LAB-04 — StepCheck round-trips with snake_case `kind:` tag.
-    #[test]
-    fn step_check_serializes_with_snake_case_kind() {
-        for (check, needle) in [
-            (
-                StepCheck::CommandRegex {
-                    pattern: "x".to_string(),
-                    match_stderr: false,
-                },
-                "\"kind\":\"command_regex\"",
-            ),
-            (StepCheck::ExitCode { expected: 0 }, "\"kind\":\"exit_code\""),
-            (
-                StepCheck::FileState {
-                    path: "p".to_string(),
-                    contains: None,
-                },
-                "\"kind\":\"file_state\"",
-            ),
-            (
-                StepCheck::AiJudge {
-                    criteria: "explain what the output shows about scheduling".to_string(),
-                    threshold: 0.7,
-                },
-                "\"kind\":\"ai_judge\"",
-            ),
-        ] {
-            let json = serde_json::to_string(&check).unwrap();
-            assert!(json.contains(needle), "missing {} in {}", needle, json);
-        }
-    }
-
-    /// LAB-07 — reset_lab is surgical: deletes ONLY declared creates,
-    /// leaves sibling files untouched.
-    #[test]
-    fn reset_lab_surgical() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let root = tmp.path();
-        std::fs::write(root.join("foo.txt"), "foo").unwrap();
-        std::fs::write(root.join("bar.txt"), "bar").unwrap();
-        std::fs::create_dir_all(root.join("manifests")).unwrap();
-        std::fs::write(root.join("manifests/pod.yaml"), "kind: Pod\n").unwrap();
-        std::fs::create_dir_all(root.join("notes")).unwrap();
-        std::fs::write(root.join("notes/run-output.txt"), "Running\n").unwrap();
-
-        let creates = vec![
-            "manifests/pod.yaml".to_string(),
-            "notes/run-output.txt".to_string(),
-        ];
-        let removed = reset_lab(root, &creates).expect("reset_lab must succeed");
-        assert_eq!(removed.len(), 2);
-        assert!(root.join("foo.txt").exists());
-        assert!(root.join("bar.txt").exists());
-        assert!(!root.join("manifests/pod.yaml").exists());
-        assert!(!root.join("notes/run-output.txt").exists());
-    }
-
-    /// LAB-07 — reset_lab refuses absolute / traversal paths.
-    #[test]
-    fn reset_lab_rejects_unsafe_paths() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        assert!(reset_lab(tmp.path(), &["../etc/passwd".to_string()]).is_err());
-        assert!(reset_lab(tmp.path(), &["/etc/passwd".to_string()]).is_err());
-    }
-}
+#[path = "spec_tests.rs"]
+mod tests;
