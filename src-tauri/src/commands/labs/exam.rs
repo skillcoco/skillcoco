@@ -202,11 +202,20 @@ fn derive_step_verdicts(
             if let Some(judge) = last_ai_judge {
                 let judge_step_index = judge.get("step_index").and_then(|v| v.as_u64());
                 if judge_step_index == Some(idx as u64) {
-                    let outcome = judge
-                        .get("outcome")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("fail")
-                        .to_string();
+                    let raw_outcome =
+                        judge.get("outcome").and_then(|v| v.as_str()).unwrap_or("fail");
+                    // WR-04 — this branch is only reached when the step is
+                    // NOT in completed_step_ids, i.e. it did NOT count
+                    // toward the score. A judge "pass" here is stale (e.g.
+                    // lab_reset cleared progress but left the verdict);
+                    // rendering it as green "Passed" would contradict the
+                    // headline score. Sanitize to "indeterminate", keeping
+                    // the reason. Anything else copies through verbatim.
+                    let outcome = if raw_outcome == "pass" {
+                        "indeterminate".to_string()
+                    } else {
+                        raw_outcome.to_string()
+                    };
                     let reason =
                         judge.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string());
                     // Only Pass counts toward the score; manual/indeterminate/fail

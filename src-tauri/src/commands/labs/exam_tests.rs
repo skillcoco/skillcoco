@@ -596,6 +596,51 @@ fn exam_attempt_retake_starts_from_zero_progress() {
     assert!((first_again.score_percent - 100.0).abs() < 1e-9);
 }
 
+/// WR-04 — a judge "pass" NOT backed by `completed_step_ids` (e.g. a
+/// stale verdict left behind after lab_reset cleared progress) must never
+/// render as a green "Passed" row while contributing zero score. The
+/// outcome is sanitized to "indeterminate" with the reason preserved.
+#[test]
+fn exam_attempt_stale_judge_pass_is_sanitized_to_indeterminate() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let started = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+
+    // Judge says "pass" for step 1 but completed_step_ids is empty — the
+    // step did NOT count toward the score.
+    seed_lab_progress(
+        &conn,
+        &learner,
+        &module,
+        &block,
+        "[]",
+        "{\"last_ai_judge\":{\"step_index\":1,\"outcome\":\"pass\",\"reason\":\"stale judge pass\"}}",
+    );
+
+    let result = finalize_attempt_conn(&conn, &started.attempt_id, &clock).unwrap();
+    let verdict = &result.step_verdicts[1];
+    assert_ne!(
+        verdict.outcome, "pass",
+        "an unbacked judge pass must never display as Passed (WR-04)"
+    );
+    assert_eq!(verdict.outcome, "indeterminate");
+    assert!(!verdict.passed_toward_score);
+    assert_eq!(
+        verdict.check_reason.as_deref(),
+        Some("stale judge pass"),
+        "the judge's reason must be preserved"
+    );
+    assert!(result.score_percent.abs() < 1e-9);
+}
+
 /// CR-01 — an attempt whose lab session never opened (no `lab_progress`
 /// row at all: Docker/runtime start failure, or submit racing the async
 /// session open) must still finalize: status="completed", score 0.0 —
