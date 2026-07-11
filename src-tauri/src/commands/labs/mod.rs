@@ -15,6 +15,7 @@
 //!   + `reset_surgical` + `reset_clears_progress`.
 
 use crate::labs::spec::LabSpec;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 pub mod eval;
@@ -32,6 +33,48 @@ pub use state::{
     lab_get_progress, lab_reset, recompute_practical_mastery, reset_clears_progress,
     reset_surgical,
 };
+
+/// Phase 19 (19-03) — the single promoted read-lab-spec helper, taking a
+/// bare `&Connection` so it's usable both from `State`-threaded IPC
+/// handlers (via a short-lived `state.db.lock()`) AND directly from unit
+/// tests without needing a `tauri::State<AppState>` (which cannot be
+/// constructed outside the Tauri runtime). `session::read_lab_spec`
+/// delegates to this for its production (State-based) callers so there is
+/// still exactly ONE copy of the payload_json/params_json fallback logic
+/// (PATTERNS map note — avoids a third copy alongside
+/// `eval.rs::read_lab_spec_from_db`).
+pub(crate) fn read_lab_spec_conn(
+    conn: &Connection,
+    block_id: &str,
+) -> Result<(LabSpec, String), String> {
+    let block = {
+        use learnforge_core::blocks::BlockStore;
+        crate::storage_impl::blocks::SqliteBlockStore(conn)
+            .get_by_id(block_id)
+            .map_err(|e| format!("get_block: {}", e))?
+            .ok_or_else(|| format!("block not found: {}", block_id))?
+    };
+
+    // Try payload_json.spec first (PagePlanner-emitted).
+    if !block.payload_json.trim().is_empty() && block.payload_json != "{}" {
+        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&block.payload_json) {
+            if let Some(spec_val) = payload.get("spec") {
+                if let Ok(spec) = serde_json::from_value::<LabSpec>(spec_val.clone()) {
+                    return Ok((spec, String::new()));
+                }
+            }
+        }
+    }
+
+    // Fall back to params_json.labMd (raw markdown).
+    if let Ok(params) = serde_json::from_str::<serde_json::Value>(&block.params_json) {
+        if let Some(md) = params.get("labMd").and_then(|v| v.as_str()) {
+            return crate::labs::spec::parse_lab_md(md).map_err(|e| format!("parse_lab_md: {}", e));
+        }
+    }
+
+    Err(format!("block {} has no readable lab spec", block_id))
+}
 
 // ── IPC structs (all camelCase) ──
 

@@ -362,36 +362,7 @@ pub(crate) fn read_lab_spec(
         .db
         .lock()
         .map_err(|e| format!("db lock poisoned: {}", e))?;
-    let conn = &db.conn;
-    let block = {
-        use learnforge_core::blocks::BlockStore;
-        crate::storage_impl::blocks::SqliteBlockStore(conn)
-            .get_by_id(block_id)
-            .map_err(|e| format!("get_block: {}", e))?
-            .ok_or_else(|| format!("block not found: {}", block_id))?
-    };
-
-    // Try payload_json.spec first.
-    if !block.payload_json.trim().is_empty() && block.payload_json != "{}" {
-        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&block.payload_json) {
-            if let Some(spec_val) = payload.get("spec") {
-                if let Ok(spec) = serde_json::from_value::<crate::labs::spec::LabSpec>(spec_val.clone())
-                {
-                    return Ok((spec, String::new()));
-                }
-            }
-        }
-    }
-
-    // Fall back to params_json.labMd (raw markdown).
-    if let Ok(params) = serde_json::from_str::<serde_json::Value>(&block.params_json) {
-        if let Some(md) = params.get("labMd").and_then(|v| v.as_str()) {
-            return crate::labs::spec::parse_lab_md(md)
-                .map_err(|e| format!("parse_lab_md: {}", e));
-        }
-    }
-
-    Err(format!("block {} has no readable lab spec", block_id))
+    super::read_lab_spec_conn(&db.conn, block_id)
 }
 
 fn ensure_lab_progress(

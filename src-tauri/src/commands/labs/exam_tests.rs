@@ -1,16 +1,15 @@
-//! RED scaffolds for `commands::labs::exam` (Phase 19, Wave 0). Every test
-//! here fails today because the production handlers are `unimplemented!`
-//! stubs — 19-03 turns them GREEN. Naming convention matches the
-//! Phase 01/03.1 Wave 0 pattern: assertions describe WHAT must be true,
-//! panics from `unimplemented!` name the implementer plan.
+//! GREEN tests for `commands::labs::exam` (Phase 19, 19-03). Exercises the
+//! `Connection`-based inner helpers (`exam_attempt_start_conn`,
+//! `finalize_attempt_conn`, `exam_attempt_get_conn`) directly — these carry
+//! all production logic; the `#[tauri::command]` wrappers only add the
+//! `state.db.lock()` step, which isn't constructible in a unit test.
 //!
 //! Seeding strategy: tests write directly into `lab_progress` (the
 //! server-authoritative rails 19-03 reads — state.rs:123, eval.rs:187-255)
-//! so the eventual GREEN implementation is asserted against a DERIVED
-//! score, never a client-supplied one (D-15 / T-19-10).
+//! so every score assertion is against a DERIVED score, never a
+//! client-supplied one (D-15 / T-19-10).
 
 use super::*;
-use std::time::Duration;
 
 fn fresh_conn() -> rusqlite::Connection {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
@@ -20,9 +19,58 @@ fn fresh_conn() -> rusqlite::Connection {
     conn
 }
 
-/// Seed a learner/track/path/module/block quad plus a 2-step lab_progress
-/// row so exam scoring has a >1 denominator (mirrors the exam fixture:
-/// one file_state step + one ai_judge step).
+/// A fake clock pinned to a fixed instant so timeout logic is
+/// deterministic — mirrors `labs::prompt_detect`'s tick-driven approach
+/// without depending on wall-clock `Utc::now()`.
+struct FakeClock {
+    now: chrono::DateTime<chrono::Utc>,
+}
+
+impl Clock for FakeClock {
+    fn now(&self) -> chrono::DateTime<chrono::Utc> {
+        self.now
+    }
+}
+
+/// Two-step exam spec: one file_state-style step ("write-manifest") and one
+/// ai_judge step ("explain-scheduling"), each weight 1.0 (equal weighting),
+/// with a 45-minute time limit and 70% pass threshold — stored in the
+/// block's `payload_json.spec` (the PagePlanner-emitted shape
+/// `read_lab_spec_conn` tries first).
+fn exam_spec_json() -> serde_json::Value {
+    serde_json::json!({
+        "spec": {
+            "slug": "exam-fixture",
+            "title": "Exam Fixture",
+            "image": null,
+            "dockerfile": null,
+            "requiresDocker": false,
+            "creates": [],
+            "exam": { "timeLimitMinutes": 45, "passThresholdPct": 70.0 },
+            "steps": [
+                {
+                    "id": "write-manifest",
+                    "title": "Write the manifest",
+                    "prompt": "Write a Pod manifest.",
+                    "check": { "kind": "file_state", "path": "pod.yaml" },
+                    "hints": [],
+                    "weight": 1.0
+                },
+                {
+                    "id": "explain-scheduling",
+                    "title": "Explain scheduling",
+                    "prompt": "Explain how the scheduler placed the pod.",
+                    "check": { "kind": "ai_judge", "criteria": "Explanation covers node selection basics", "threshold": 0.7 },
+                    "hints": [],
+                    "weight": 1.0
+                }
+            ]
+        }
+    })
+}
+
+/// Seed a learner/track/path/module/block quad with the two-step exam spec
+/// wired into `payload_json.spec` so `read_lab_spec_conn` resolves it.
 fn seed_exam_module(conn: &rusqlite::Connection) -> (String, String, String) {
     let learner = "lp-exam-1".to_string();
     let track = "trk-exam-1".to_string();
@@ -54,217 +102,308 @@ fn seed_exam_module(conn: &rusqlite::Connection) -> (String, String, String) {
         "INSERT INTO module_blocks (id, module_id, ordering, block_type, status,
             params_json, payload_json, source_anchors_json, metadata_json, retry_count,
             created_at, updated_at)
-         VALUES (?1, ?2, 0, 'lab', 'ready', '{}', '{}', '[]', '{}', 0,
+         VALUES (?1, ?2, 0, 'lab', 'ready', '{}', ?3, '[]', '{}', 0,
             datetime('now'), datetime('now'))",
-        rusqlite::params![block, module],
+        rusqlite::params![block, module, exam_spec_json().to_string()],
     )
     .unwrap();
     (learner, module, block)
 }
 
-/// A fake clock pinned to a fixed instant so timeout logic is
-/// deterministic — mirrors `labs::prompt_detect`'s tick-driven approach
-/// without depending on wall-clock `Utc::now()`.
-struct FakeClock {
-    now: chrono::DateTime<chrono::Utc>,
+fn seed_lab_progress(
+    conn: &rusqlite::Connection,
+    learner: &str,
+    module: &str,
+    block: &str,
+    completed_step_ids: &str,
+    metadata_json: &str,
+) {
+    conn.execute(
+        "INSERT INTO lab_progress
+            (learner_id, module_id, block_id, current_step, completed_step_ids,
+             total_steps, metadata_json, last_updated)
+         VALUES (?1, ?2, ?3, 1, ?4, 2, ?5, datetime('now'))",
+        rusqlite::params![learner, module, block, completed_step_ids, metadata_json],
+    )
+    .unwrap();
 }
 
-impl Clock for FakeClock {
-    fn now(&self) -> chrono::DateTime<chrono::Utc> {
-        self.now
-    }
-}
-
-/// RED until 19-02/19-03 — `exam_attempt_start` must persist an
-/// `exam_attempts` row with status='in_progress' and
-/// `deadline_at = started_at + timeLimitMinutes`. This test genuinely
-/// FAILS today (not `should_panic` — a real assertion failure) because
-/// `exam_attempts` does not exist yet (19-02's job) — the failure message
-/// names the implementer plan directly, matching the Phase 01/03.1 Wave 0
-/// convention.
+/// `exam_attempt_start` must persist an `exam_attempts` row with
+/// status='in_progress' and `deadline_at = started_at + timeLimitMinutes`.
 #[test]
 fn exam_attempt_start_persists_in_progress_row_with_deadline() {
     let conn = fresh_conn();
     let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
 
-    let insert_result = conn.execute(
-        "INSERT INTO exam_attempts
-            (id, learner_id, module_id, block_id, started_at, deadline_at,
-             status, score_percent, passed, step_verdicts_json, total_steps)
-         VALUES ('ea-1', ?1, ?2, ?3, datetime('now'), datetime('now', '+45 minutes'),
-            'in_progress', 0.0, 0, '[]', 2)",
-        rusqlite::params![learner, module, block],
-    );
-    assert!(
-        insert_result.is_ok(),
-        "19-02 must create the exam_attempts table (v019::up() is still a Wave 0 no-op): {:?}",
-        insert_result.err()
-    );
+    let request = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let result = exam_attempt_start_conn(&conn, &request, &clock).expect("exam_attempt_start_conn");
+
+    assert_eq!(result.total_steps, 2);
+    assert_eq!(result.time_limit_minutes, 45);
+    assert!((result.pass_threshold_pct - 70.0).abs() < 1e-9);
+    assert_eq!(result.started_at, clock.now.to_rfc3339());
+    let expected_deadline = (clock.now + chrono::Duration::minutes(45)).to_rfc3339();
+    assert_eq!(result.deadline_at, expected_deadline);
+
+    // Row persisted with status='in_progress'.
+    let status: String = conn
+        .query_row(
+            "SELECT status FROM exam_attempts WHERE id = ?1",
+            rusqlite::params![result.attempt_id],
+            |r| r.get(0),
+        )
+        .expect("row must exist");
+    assert_eq!(status, "in_progress");
 }
 
-/// RED until 19-03 — submit DERIVES per-step verdicts from
+/// A second `exam_attempt_start` call for the same learner/module/block
+/// produces a DISTINCT attempt row (D-05 — unlimited retakes, each its own
+/// history row via INSERT, never upserted).
+#[test]
+fn exam_attempt_start_twice_creates_distinct_history_rows() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+    let request = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+
+    let first = exam_attempt_start_conn(&conn, &request, &clock).unwrap();
+    let second = exam_attempt_start_conn(&conn, &request, &clock).unwrap();
+    assert_ne!(first.attempt_id, second.attempt_id);
+
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM exam_attempts", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 2, "each start is a distinct history row (D-05)");
+}
+
+/// `exam_attempt_submit` DERIVES per-step verdicts from
 /// `lab_progress.completed_step_ids` (Pass) and
-/// `metadata_json.$.last_ai_judge` (fail/manual/indeterminate), never
-/// from client input. Seeds one completed step + one AI-judge Fail
-/// verdict, then asserts the expected DERIVED score (50%) — the contract
-/// 19-03 must satisfy. `ExamAttemptSubmitRequest` has no verdicts field
-/// (D-15) so there is nothing for a malicious caller to override.
+/// `metadata_json.$.last_ai_judge` (fail/manual/indeterminate) — never from
+/// client input. Seeds one completed step + one AI-judge Fail verdict, then
+/// asserts the expected DERIVED score of 50%. `ExamAttemptSubmitRequest`
+/// has no verdicts field (D-15) so there is nothing for a caller to
+/// override.
 #[test]
 fn exam_attempt_submit_derives_score_from_lab_progress_never_from_client() {
     let conn = fresh_conn();
     let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
 
-    // Seed lab_progress: step "write-manifest" completed (Pass), step
-    // "explain-scheduling" AI-judged Fail.
-    conn.execute(
-        "INSERT INTO lab_progress
-            (learner_id, module_id, block_id, current_step, completed_step_ids,
-             total_steps, metadata_json, last_updated)
-         VALUES (?1, ?2, ?3, 1, '[\"write-manifest\"]', 2,
-            '{\"last_ai_judge\":{\"step_index\":1,\"outcome\":\"fail\",\"reason\":\"insufficient detail\"}}',
-            datetime('now'))",
-        rusqlite::params![learner, module, block],
-    )
-    .unwrap();
-
-    let progress = crate::commands::labs::state::read_lab_progress(&conn, &learner, &module, &block)
-        .expect("read_lab_progress must succeed — this is the server-authoritative source 19-03 reads");
-    assert_eq!(
-        progress.completed_step_ids,
-        vec!["write-manifest".to_string()],
-        "completed_step_ids is the Pass-verdict source of truth"
-    );
-
-    // 19-03's real submit() must compute score_percent = 1/2 * 100 = 50.0
-    // from exactly this data — locking the expected derivation before any
-    // implementation exists. The request purposefully has NO verdicts
-    // field to override this (D-15 / T-19-10).
-    let request = ExamAttemptSubmitRequest {
-        attempt_id: "ea-1".to_string(),
-        current_step: Some(2),
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
     };
-    assert_eq!(
-        request.current_step,
-        Some(2),
-        "submit request carries current_step only — no step_verdicts field exists on this struct"
+    let started = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+
+    // Seed lab_progress: step "write-manifest" completed (Pass, index 0),
+    // step "explain-scheduling" (index 1) AI-judged Fail.
+    seed_lab_progress(
+        &conn,
+        &learner,
+        &module,
+        &block,
+        "[\"write-manifest\"]",
+        "{\"last_ai_judge\":{\"step_index\":1,\"outcome\":\"fail\",\"reason\":\"insufficient detail\"}}",
     );
 
     // Compile-time contract check: ExamAttemptSubmitRequest must NOT admit
     // a verdicts field (D-15). Constructing it with only the two declared
-    // fields (attempt_id, current_step) is itself the enforcement — this
-    // line fails to compile if a third field is later added without
-    // updating every call site, surfacing the change for review.
-    let ExamAttemptSubmitRequest { attempt_id: _, current_step: _ } = request;
+    // fields is itself the enforcement.
+    let submit_req = ExamAttemptSubmitRequest { attempt_id: started.attempt_id.clone(), current_step: Some(2) };
+    let ExamAttemptSubmitRequest { attempt_id: _, current_step: _ } = submit_req.clone();
+
+    let result = finalize_attempt_conn(&conn, &submit_req.attempt_id, &clock)
+        .expect("finalize_attempt_conn must succeed");
+
+    assert_eq!(result.status, "completed");
+    assert!(
+        (result.score_percent - 50.0).abs() < 1e-9,
+        "expected 50.0, got {}",
+        result.score_percent
+    );
+    assert!(!result.passed, "50% < 70% pass threshold");
+    assert_eq!(result.step_verdicts.len(), 2);
+    assert_eq!(result.step_verdicts[0].outcome, "pass");
+    assert!(result.step_verdicts[0].passed_toward_score);
+    assert_eq!(result.step_verdicts[1].outcome, "fail");
+    assert!(!result.step_verdicts[1].passed_toward_score);
 }
 
-/// RED until 19-03 — a submit past `deadline_at` must be treated as
-/// `timed_out_partial` regardless of client claim (Pattern 3 tamper
-/// resistance / T-19-01). Uses the injected FakeClock so the deadline
-/// comparison is deterministic.
+/// A submit past `deadline_at` must be treated as `timed_out_partial`
+/// regardless of client claim (Pattern 3 tamper resistance / T-19-01).
+/// Steps not in `completed_step_ids` count as Fail (D-04).
 #[test]
 fn exam_attempt_submit_past_deadline_is_timed_out_partial_regardless_of_client_claim() {
-    let started_at = chrono::Utc::now() - chrono::Duration::minutes(50);
-    let deadline_at = started_at + chrono::Duration::minutes(45);
-    let clock = FakeClock { now: chrono::Utc::now() };
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let start_time = chrono::Utc::now() - chrono::Duration::minutes(50);
+    let start_clock = FakeClock { now: start_time };
 
-    // Deadline has passed relative to the fake "now".
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let started = exam_attempt_start_conn(&conn, &start_req, &start_clock).unwrap();
+    // deadline_at = start_time + 45 minutes; "now" below is start_time itself,
+    // which is > deadline only once we advance past 45 minutes.
+    let now_clock = FakeClock { now: start_time + chrono::Duration::minutes(46) };
     assert!(
-        clock.now() > deadline_at,
+        now_clock.now.to_rfc3339().as_str() > started.deadline_at.as_str(),
         "test setup: fake clock must be past the deadline"
     );
 
-    // 19-03's real submit() must recompute timeout status from the
-    // PERSISTED deadline_at, never trust a client-supplied status. This
-    // scaffold locks the comparison direction; the actual handler call
-    // will replace this once exam_attempt_submit stops panicking.
-    let would_be_timed_out = clock.now() > deadline_at;
-    assert!(
-        would_be_timed_out,
-        "19-03: exam_attempt_submit must reconcile to timed_out_partial past deadline_at (T-19-01)"
-    );
+    // Only step 0 completed — step 1 has no verdict at all (never checked).
+    seed_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+
+    let result = finalize_attempt_conn(&conn, &started.attempt_id, &now_clock)
+        .expect("finalize_attempt_conn");
+    assert_eq!(result.status, "timed_out_partial");
+    assert_eq!(result.step_verdicts[1].outcome, "fail");
+    assert!(!result.step_verdicts[1].passed_toward_score);
 }
 
-/// RED until 19-03 — Manual/Indeterminate outcomes count as Fail in the
-/// scoring denominator (UI-SPEC lock), never silently excluded.
+/// Manual/Indeterminate outcomes count as Fail in the scoring denominator
+/// (UI-SPEC lock), never silently excluded.
 #[test]
 fn exam_attempt_manual_and_indeterminate_count_as_fail_in_denominator() {
     let conn = fresh_conn();
     let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
 
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let started = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+
+    // No steps completed; step 1 AI-judged Manual (budget exhausted).
+    seed_lab_progress(
+        &conn,
+        &learner,
+        &module,
+        &block,
+        "[]",
+        "{\"last_ai_judge\":{\"step_index\":1,\"outcome\":\"manual\",\"reason\":\"budget exhausted\"}}",
+    );
+
+    let result = finalize_attempt_conn(&conn, &started.attempt_id, &clock).unwrap();
+    assert!(
+        result.score_percent.abs() < 1e-9,
+        "manual/indeterminate steps stay IN the denominator, never excluded — expected 0.0, got {}",
+        result.score_percent
+    );
+    assert_eq!(result.step_verdicts.len(), 2, "denominator must include both steps");
+    assert_eq!(result.step_verdicts[1].outcome, "manual");
+    assert!(!result.step_verdicts[1].passed_toward_score);
+}
+
+/// `exam_attempt_get` on an in_progress row past its deadline must lazily
+/// reconcile it to `timed_out_partial` (D-04) — a learner who closed the
+/// app never sends submit.
+#[test]
+fn exam_attempt_get_reconciles_stale_in_progress_past_deadline() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let start_time = chrono::Utc::now() - chrono::Duration::minutes(60);
+    let start_clock = FakeClock { now: start_time };
+
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let started = exam_attempt_start_conn(&conn, &start_req, &start_clock).unwrap();
+
+    seed_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+
+    // "Now" is far past the 45-minute deadline computed at start_time.
+    let get_clock = FakeClock { now: chrono::Utc::now() };
+    assert!(
+        get_clock.now.to_rfc3339().as_str() > started.deadline_at.as_str(),
+        "test setup: attempt must be past its deadline"
+    );
+
+    let result = exam_attempt_get_conn(&conn, &started.attempt_id, &get_clock)
+        .expect("exam_attempt_get_conn");
+    assert_eq!(
+        result.status, "timed_out_partial",
+        "exam_attempt_get must reconcile a stale in_progress attempt past deadline_at (D-04)"
+    );
+
+    // Reconciliation persisted — re-reading the row shows the same status.
+    let persisted_status: String = conn
+        .query_row(
+            "SELECT status FROM exam_attempts WHERE id = ?1",
+            rusqlite::params![started.attempt_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(persisted_status, "timed_out_partial");
+}
+
+/// Two submits for the same attempt_id: second is idempotent — no
+/// double-scoring (T-19-05). Asserts unchanged score_percent and
+/// finished_at across both calls.
+#[test]
+fn exam_attempt_second_submit_on_finalized_attempt_is_idempotent() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let started = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+    seed_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+
+    let first = finalize_attempt_conn(&conn, &started.attempt_id, &clock).unwrap();
+
+    // Advance the clock and mutate lab_progress — if submit re-scored, this
+    // would change the result. It must not.
+    let later_clock = FakeClock { now: clock.now + chrono::Duration::minutes(5) };
     conn.execute(
-        "INSERT INTO lab_progress
-            (learner_id, module_id, block_id, current_step, completed_step_ids,
-             total_steps, metadata_json, last_updated)
-         VALUES (?1, ?2, ?3, 0, '[]', 2,
-            '{\"last_ai_judge\":{\"step_index\":1,\"outcome\":\"manual\",\"reason\":\"budget exhausted\"}}',
-            datetime('now'))",
+        "UPDATE lab_progress SET completed_step_ids = '[\"write-manifest\",\"explain-scheduling\"]'
+         WHERE learner_id = ?1 AND module_id = ?2 AND block_id = ?3",
         rusqlite::params![learner, module, block],
     )
     .unwrap();
 
-    let progress = crate::commands::labs::state::read_lab_progress(&conn, &learner, &module, &block)
-        .expect("read_lab_progress");
-    assert!(
-        progress.completed_step_ids.is_empty(),
-        "no steps in completed_step_ids — both must score Fail, not be excluded from the denominator"
-    );
-    // 19-03 must produce score_percent = 0.0 / 2 steps = 0%, not skip the
-    // manual-verdict step out of the total. This assertion is the
-    // documented expectation the eventual GREEN implementation is graded
-    // against.
-    let expected_denominator = 2;
-    assert_eq!(
-        expected_denominator, 2,
-        "manual/indeterminate steps stay IN the denominator (UI-SPEC lock)"
-    );
+    let second = finalize_attempt_conn(&conn, &started.attempt_id, &later_clock).unwrap();
+    assert_eq!(second.score_percent, first.score_percent, "second submit must not re-score");
+    assert_eq!(second.finished_at, first.finished_at, "second submit must not overwrite finished_at");
+    assert_eq!(second.status, first.status);
 }
 
-/// RED until 19-03 — `exam_attempt_get` on a stale `in_progress` attempt
-/// past its deadline must lazily reconcile to `timed_out_partial` (D-04).
-#[tokio::test]
-async fn exam_attempt_get_reconciles_stale_in_progress_past_deadline() {
-    // The production handler is still `unimplemented!()` — calling it
-    // must panic naming 19-03. We can't construct `tauri::State` outside
-    // the runtime, so this test documents the expected behavior contract
-    // and exercises the pure-logic half (deadline comparison) the way
-    // 19-03's inner `_with`-style helper will.
-    let started_at = chrono::Utc::now() - chrono::Duration::minutes(60);
-    let deadline_at = started_at + chrono::Duration::minutes(30); // default fallback (D-03)
-    let now = chrono::Utc::now();
-
-    assert!(
-        now > deadline_at,
-        "test setup: attempt must be past its deadline"
-    );
-
-    // 19-03: exam_attempt_get must reconcile this in_progress row to
-    // timed_out_partial on read, not merely on submit.
-    let reconciled_status = if now > deadline_at { "timed_out_partial" } else { "in_progress" };
-    assert_eq!(
-        reconciled_status, "timed_out_partial",
-        "19-03: exam_attempt_get must reconcile a stale in_progress attempt past deadline_at (D-04)"
-    );
-
-    // Sanity: Duration import stays used across the module (avoids an
-    // unused-import warning if a future edit trims the chrono-only path).
-    let _ = Duration::from_secs(0);
-}
-
-/// RED until 19-03 — the production handler bodies are literal
-/// `unimplemented!("19-03: ...")` stubs (acceptance criterion: `rg
-/// "unimplemented!" src-tauri/src/commands/labs/exam.rs` returns 3 stub
-/// bodies). This test fails on purpose — a real assertion failure, not
-/// `should_panic` — so `cargo test --lib commands::labs::exam` surfaces
-/// the literal word "unimplemented" in its FAILED output, satisfying the
-/// plan's `<verify>` grep contract directly.
+/// The production handler bodies must no longer be `unimplemented!` stubs.
 #[test]
-fn exam_ipc_handlers_are_still_unimplemented_stubs_pending_19_03() {
+fn exam_ipc_handlers_are_implemented() {
     let source = include_str!("exam.rs");
-    let stub_count = source.matches("unimplemented!(\"19-03:").count();
+    let stub_count = source.matches("unimplemented!(").count();
     assert_eq!(
         stub_count, 0,
-        "19-03: exam IPC lifecycle still has {} unimplemented stub(s) in exam.rs — \
-         exam_attempt_start/submit/get must be implemented before this test can pass",
+        "exam.rs still has {} unimplemented!() stub(s) — 19-03 must fully implement \
+         exam_attempt_start/submit/get",
         stub_count
     );
 }
