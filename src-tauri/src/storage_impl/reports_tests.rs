@@ -330,7 +330,7 @@ fn evidence_ledger_emits_best_attempt_exam_evidence_with_attempt_count_and_date(
                 (id, learner_id, module_id, block_id, started_at, deadline_at,
                  finished_at, status, score_percent, passed, step_verdicts_json, total_steps)
              VALUES (?1, 'lp1', 'mod1', 'blk-exam1', ?4, ?4,
-                ?4, 'submitted', ?2, ?3, '[]', 2)",
+                ?4, 'completed', ?2, ?3, '[]', 2)",
             rusqlite::params![id, score, passed, date],
         );
         assert!(

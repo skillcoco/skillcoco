@@ -31,6 +31,11 @@
 //!   `lab_progress.metadata_json.last_ai_judge` → `EvidenceClass::Lab`,
 //!   `achievements` → `EvidenceClass::Cert`. Each item carries `track_id`
 //!   (+`track_topic` where resolvable) for D-04 whole-profile attribution.
+//! - **exam evidence**: exam_attempts (v019) → `EvidenceClass::Exam` (19-04) — the BEST
+//!   attempt (highest `score_percent` among `completed`/`timed_out_partial`
+//!   rows) per block, annotated with the total attempt count and the best
+//!   attempt's date (D-06). Additive — never overwrites Quiz/Lab/Cert
+//!   evidence in the same ledger (D-09).
 //!
 //! ## Evidence-class validation (Warning 3)
 //!
@@ -407,6 +412,59 @@ impl<'a> ReportStore for SqliteReportStore<'a> {
                         label: format!("Lab: {}", block_id),
                         detail,
                         date: last_updated,
+                        track_id: Some(track_id.to_string()),
+                        track_topic: topic.clone(),
+                    });
+                }
+            }
+
+            // Exam evidence (19-04, D-06) — BEST attempt per block, additive
+            // to Quiz/Lab/Cert (D-09). Only `completed`/`timed_out_partial`
+            // rows count as evidence; `in_progress` attempts are excluded.
+            // Aggregate to (best score_percent, attempt count, best date) per
+            // block_id rather than emitting one item per row like Quiz does.
+            {
+                let mut stmt = self
+                    .0
+                    .prepare(
+                        "SELECT block_id, score_percent, finished_at, COUNT(*) OVER (
+                            PARTITION BY block_id
+                         ) AS attempt_count
+                         FROM exam_attempts
+                         WHERE module_id = ?1 AND learner_id = ?2
+                           AND status IN ('completed', 'timed_out_partial')
+                         ORDER BY block_id, score_percent DESC",
+                    )
+                    .map_err(db_err)?;
+                let rows = stmt
+                    .query_map([module_id.as_str(), learner_id], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, f64>(1)?,
+                            r.get::<_, Option<String>>(2)?,
+                            r.get::<_, i64>(3)?,
+                        ))
+                    })
+                    .map_err(db_err)?;
+                // Rows arrive ordered (block_id, score DESC) so the first row
+                // seen for a given block_id is the BEST attempt for that
+                // block; subsequent rows for the same block_id are skipped.
+                let mut seen_blocks: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                for row in rows {
+                    let (block_id, best_score, best_date, attempt_count) = row.map_err(db_err)?;
+                    if !seen_blocks.insert(block_id.clone()) {
+                        continue;
+                    }
+                    let best_date = best_date.unwrap_or_default();
+                    items.push(EvidenceItem {
+                        class: EvidenceClass::Exam,
+                        label: format!("Exam: {}", block_id),
+                        detail: format!(
+                            "{:.0}% (best of {} attempts, {})",
+                            best_score, attempt_count, best_date
+                        ),
+                        date: best_date,
                         track_id: Some(track_id.to_string()),
                         track_topic: topic.clone(),
                     });
