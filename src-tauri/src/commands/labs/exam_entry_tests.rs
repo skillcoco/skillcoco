@@ -25,7 +25,7 @@ fn lab_spec_json(exam_flagged: bool) -> serde_json::Value {
         "spec": {
             "slug": "fixture-lab",
             "title": "Fixture Lab",
-            "image": null,
+            "image": "alpine",
             "dockerfile": null,
             "requiresDocker": false,
             "creates": [],

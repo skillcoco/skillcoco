@@ -42,7 +42,7 @@ fn exam_spec_json() -> serde_json::Value {
         "spec": {
             "slug": "exam-fixture",
             "title": "Exam Fixture",
-            "image": null,
+            "image": "alpine",
             "dockerfile": null,
             "requiresDocker": false,
             "creates": [],
@@ -393,6 +393,36 @@ fn exam_attempt_second_submit_on_finalized_attempt_is_idempotent() {
     assert_eq!(second.score_percent, first.score_percent, "second submit must not re-score");
     assert_eq!(second.finished_at, first.finished_at, "second submit must not overwrite finished_at");
     assert_eq!(second.status, first.status);
+}
+
+/// WR-01 — DB-stored specs (`payload_json.spec`) are re-validated via
+/// `validate_spec` at read time (T-19-02): a stored spec with
+/// `passThresholdPct: 150` (or any other out-of-range/structural
+/// violation) must be rejected, never used directly at scoring time.
+#[test]
+fn read_lab_spec_conn_rejects_invalid_stored_spec() {
+    let conn = fresh_conn();
+    let (_learner, module, _block) = seed_exam_module(&conn);
+
+    let mut spec = exam_spec_json();
+    spec["spec"]["exam"]["passThresholdPct"] = serde_json::json!(150.0);
+    let bad_block = "blk-invalid-spec-1".to_string();
+    conn.execute(
+        "INSERT INTO module_blocks (id, module_id, ordering, block_type, status,
+            params_json, payload_json, source_anchors_json, metadata_json, retry_count,
+            created_at, updated_at)
+         VALUES (?1, ?2, 2, 'lab', 'ready', '{}', ?3, '[]', '{}', 0,
+            datetime('now'), datetime('now'))",
+        rusqlite::params![bad_block, module, spec.to_string()],
+    )
+    .unwrap();
+
+    let result = super::super::read_lab_spec_conn(&conn, &bad_block);
+    assert!(
+        result.is_err(),
+        "a stored spec failing validate_spec must be rejected (WR-01), got {:?}",
+        result.map(|(s, _)| s.slug)
+    );
 }
 
 /// CR-03 — the D-02 gate must live at the trust boundary: a block whose

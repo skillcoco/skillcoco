@@ -56,12 +56,26 @@ pub(crate) fn read_lab_spec_conn(
             .ok_or_else(|| format!("block not found: {}", block_id))?
     };
 
-    // Try payload_json.spec first (PagePlanner-emitted).
+    // Try payload_json.spec first (PagePlanner-emitted). WR-01/T-19-02 —
+    // a DB-stored spec is re-validated via `validate_spec` (its stated
+    // purpose): a stored spec with out-of-range exam calibration,
+    // duplicate step ids, or image+dockerfile both set must never reach
+    // scoring. Validation failure is treated like a parse failure — fall
+    // through to the params_json.labMd path (whose parser validates too).
     if !block.payload_json.trim().is_empty() && block.payload_json != "{}" {
         if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&block.payload_json) {
             if let Some(spec_val) = payload.get("spec") {
                 if let Ok(spec) = serde_json::from_value::<LabSpec>(spec_val.clone()) {
-                    return Ok((spec, String::new()));
+                    match crate::labs::spec::validate_spec(&spec) {
+                        Ok(()) => return Ok((spec, String::new())),
+                        Err(e) => {
+                            log::warn!(
+                                "read_lab_spec_conn: stored spec for block {} failed validation: {}",
+                                block_id,
+                                e
+                            );
+                        }
+                    }
                 }
             }
         }
