@@ -259,13 +259,19 @@ export function LabBlock({
             </p>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => setResetOpen(true)}
-          className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          Reset lab
-        </button>
+        {/* WR-07 — reset deletes workspace files and clears
+            completed_step_ids, which would silently zero the in-flight
+            exam attempt's score. Hidden in examMode (matches the hint
+            gate). */}
+        {!examMode && (
+          <button
+            type="button"
+            onClick={() => setResetOpen(true)}
+            className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            Reset lab
+          </button>
+        )}
       </div>
       <LabInstructions
         spec={spec}
