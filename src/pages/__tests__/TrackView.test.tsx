@@ -34,6 +34,9 @@ vi.mock("@/lib/tauri-commands", () => ({
     nextLevel: "Associate",
     criteria: "Master 25% of modules",
   }),
+  // Phase 19 Plan 06 — TrackView loads the per-module exam-flag map on
+  // mount. Empty ⇒ no Start Exam button renders (fail-closed default).
+  examBlocksForTrack: vi.fn().mockResolvedValue([]),
   // Phase 18 Plan 05 (Wave 3) — ExportReportDialog identity pre-fill.
   getOrCreateProfile: vi.fn().mockResolvedValue({
     id: "lp-1",

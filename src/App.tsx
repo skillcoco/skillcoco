@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Dashboard } from "@/pages/Dashboard";
 import { TrackView } from "@/pages/TrackView";
 import { ModuleView } from "@/pages/ModuleView";
+import { ExamRunView } from "@/pages/ExamRunView";
 import { ReviewSession } from "@/pages/ReviewSession";
 import { Settings } from "@/pages/Settings";
 import { Onboarding } from "@/pages/Onboarding";
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/track/:trackId" element={<TrackView />} />
         <Route path="/track/:trackId/module/:moduleId" element={<ModuleView />} />
+        <Route path="/track/:trackId/exam/:blockId" element={<ExamRunView />} />
         <Route path="/review" element={<ReviewSession />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/daily/today" element={<DailyChallenge />} />
