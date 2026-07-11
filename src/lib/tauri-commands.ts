@@ -366,6 +366,14 @@ export async function examAttemptGet(
   return invoke("exam_attempt_get", { request });
 }
 
+// Phase 19 (19-04) — per-track exam-flag entry-point data for TrackView's
+// Start Exam button (19-06).
+export async function examBlocksForTrack(
+  request: import("@/types/learning").ExamBlocksForTrackRequest,
+): Promise<import("@/types/learning").ExamBlockRef[]> {
+  return invoke("exam_blocks_for_track", { request });
+}
+
 // ── Phase 4 Microlearning IPC wrappers ──
 //
 // All four wrappers use the `{ request }` envelope per FIX-02 + Phase

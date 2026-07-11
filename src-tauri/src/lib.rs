@@ -283,6 +283,8 @@ pub fn run() {
             commands::labs::exam::exam_attempt_start,
             commands::labs::exam::exam_attempt_submit,
             commands::labs::exam::exam_attempt_get,
+            // Exam-sim entry-point data (Phase 19 — Wave 3, 19-04)
+            commands::labs::exam_entry::exam_blocks_for_track,
             // Microlearning (Phase 4 — daily challenge IPCs)
             commands::microlearning::get_daily_challenge,
             commands::microlearning::start_daily_challenge,

@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod eval;
 pub mod exam;
+pub mod exam_entry;
 pub mod session;
 pub mod state;
 
