@@ -355,8 +355,33 @@ pub(crate) fn exam_attempt_start_conn(
     request: &ExamAttemptStartRequest,
     clock: &dyn Clock,
 ) -> Result<ExamAttemptStartResult, String> {
+    // 0. Resolve module_id server-side from module_blocks — the client-
+    // supplied `request.module_id` is IGNORED (WR-05): a mismatched value
+    // would break finalize's lab_progress lookup key and mis-attribute
+    // Exam evidence to the wrong module in the evidence ledger.
+    let module_id: String = conn
+        .query_row(
+            "SELECT module_id FROM module_blocks WHERE id = ?1",
+            rusqlite::params![request.block_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("module_id lookup for block {}: {}", request.block_id, e))?;
+
     // 1. Read the block's parsed spec for total_steps + ExamMeta defaults.
     let (spec, _body) = super::read_lab_spec_conn(conn, &request.block_id)?;
+
+    // CR-03 — D-02 gate at the trust boundary: only authored exam specs
+    // may run as exams. The frontend filter (examBlocksForTrack) is
+    // advisory; the renderer is untrusted for exam integrity (T-19-10 /
+    // T-19-12), so a non-exam block is rejected HERE, before any
+    // exam_attempts row can be minted into the evidence ledger.
+    if spec.exam.is_none() {
+        return Err(format!(
+            "block {} is not exam-flagged; refusing to start an exam attempt (D-02)",
+            request.block_id
+        ));
+    }
+
     let time_limit_minutes = spec
         .exam
         .as_ref()
@@ -397,7 +422,7 @@ pub(crate) fn exam_attempt_start_conn(
              metadata_json = json_remove(metadata_json, '$.last_ai_judge'),
              last_updated = datetime('now')
          WHERE learner_id = ?1 AND module_id = ?2 AND block_id = ?3",
-        rusqlite::params![request.learner_id, request.module_id, request.block_id],
+        rusqlite::params![request.learner_id, module_id, request.block_id],
     )
     .map_err(|e| format!("exam start progress reset: {}", e))?;
 
@@ -410,7 +435,7 @@ pub(crate) fn exam_attempt_start_conn(
         rusqlite::params![
             attempt_id,
             request.learner_id,
-            request.module_id,
+            module_id,
             request.block_id,
             started_at_str,
             deadline_at_str,

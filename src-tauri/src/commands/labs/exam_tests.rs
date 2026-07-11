@@ -395,6 +395,92 @@ fn exam_attempt_second_submit_on_finalized_attempt_is_idempotent() {
     assert_eq!(second.status, first.status);
 }
 
+/// CR-03 — the D-02 gate must live at the trust boundary: a block whose
+/// spec has NO `exam:` frontmatter must be rejected by
+/// `exam_attempt_start`, not just filtered by the frontend. Otherwise a
+/// devtools IPC call against an easy regular lab mints a fake 100% Exam
+/// row that flows into the signed skill-report evidence ledger.
+#[test]
+fn exam_attempt_start_rejects_non_exam_block() {
+    let conn = fresh_conn();
+    let (learner, module, _block) = seed_exam_module(&conn);
+
+    // A regular (non-exam) lab block in the same module: exam == null.
+    let mut spec = exam_spec_json();
+    spec["spec"]["exam"] = serde_json::Value::Null;
+    let regular_block = "blk-regular-1".to_string();
+    conn.execute(
+        "INSERT INTO module_blocks (id, module_id, ordering, block_type, status,
+            params_json, payload_json, source_anchors_json, metadata_json, retry_count,
+            created_at, updated_at)
+         VALUES (?1, ?2, 1, 'lab', 'ready', '{}', ?3, '[]', '{}', 0,
+            datetime('now'), datetime('now'))",
+        rusqlite::params![regular_block, module, spec.to_string()],
+    )
+    .unwrap();
+
+    let clock = FakeClock { now: chrono::Utc::now() };
+    let request = ExamAttemptStartRequest {
+        block_id: regular_block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let result = exam_attempt_start_conn(&conn, &request, &clock);
+    assert!(
+        result.is_err(),
+        "a non-exam-flagged block must be rejected at the IPC boundary (D-02/CR-03)"
+    );
+
+    // No attempt row may have been persisted.
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM exam_attempts", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0, "rejected start must not persist an exam_attempts row");
+}
+
+/// WR-05 — `module_id` is resolved server-side from `module_blocks`; a
+/// bogus client-supplied value is ignored, so the attempt row (and the
+/// lab_progress reset/lookup key) always uses the block's real parent
+/// module — evidence attribution can't be spoofed or drift.
+#[test]
+fn exam_attempt_start_resolves_module_id_server_side() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+
+    let request = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: "mod-spoofed-does-not-exist".to_string(),
+        learner_id: learner.clone(),
+    };
+    let started = exam_attempt_start_conn(&conn, &request, &clock)
+        .expect("start must succeed — client module_id is ignored");
+
+    let stored_module: String = conn
+        .query_row(
+            "SELECT module_id FROM exam_attempts WHERE id = ?1",
+            rusqlite::params![started.attempt_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        stored_module, module,
+        "attempt row must carry the block's REAL parent module_id (WR-05)"
+    );
+
+    // Finalize keys lab_progress by the resolved module — progress written
+    // under the real (learner, module, block) triple counts.
+    seed_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+    let result = finalize_attempt_conn(&conn, &started.attempt_id, &clock).unwrap();
+    assert!(
+        (result.score_percent - 50.0).abs() < 1e-9,
+        "finalize must score against the resolved module key, got {}",
+        result.score_percent
+    );
+}
+
 /// CR-02 — scoring is attempt-scoped: progress earned BEFORE
 /// `exam_attempt_start` (e.g. in regular lab mode, with hints and the
 /// tutor) must NOT count toward the exam score. `exam_attempt_start`
