@@ -212,8 +212,8 @@ fn persist_outcome(
     )
     .map_err(|e| format!("ensure lab_progress: {}", e))?;
 
-    // For ai_judge outcomes (Pass/Fail/Manual), persist the verdict to
-    // metadata_json.$.last_ai_judge for diagnostics + future review.
+    // For ai_judge outcomes (Pass/Fail/Manual), persist the verdict —
+    // keyed per step (WR-06) plus the legacy last_ai_judge slot.
     if check_kind == "aiJudge" {
         let verdict_outcome = match outcome {
             EvalOutcome::Pass => "pass",
@@ -228,14 +228,7 @@ fn persist_outcome(
             "at": chrono::Utc::now().to_rfc3339(),
         })
         .to_string();
-        conn.execute(
-            "UPDATE lab_progress
-             SET metadata_json = json_set(metadata_json, '$.last_ai_judge', json(?1)),
-                 last_updated = datetime('now')
-             WHERE learner_id = ?2 AND module_id = ?3 AND block_id = ?4",
-            rusqlite::params![verdict, learner_id, module_id, block_id],
-        )
-        .map_err(|e| format!("metadata_json update: {}", e))?;
+        persist_ai_judge_verdict(conn, learner_id, module_id, block_id, step_index, &verdict)?;
     }
 
     // On Pass: append to completed_step_ids + bump current_step.
@@ -254,6 +247,38 @@ fn persist_outcome(
     let mastery = recompute_practical_mastery(conn, module_id, learner_id)?;
     let _ = read_lab_progress(conn, learner_id, module_id, block_id)?;
     Ok(mastery)
+}
+
+/// Phase 19 (WR-06) — persist an ai_judge verdict into BOTH
+/// `metadata_json.$.ai_judge_verdicts."<step_index>"` (one slot per step,
+/// so multi-ai_judge exams keep every step's latest verdict for
+/// `exam::derive_step_verdicts`) AND the legacy single-slot
+/// `$.last_ai_judge` (backward compat — older rows/readers still work).
+/// The CASE seeds `$.ai_judge_verdicts` with `{}` when absent, since
+/// `json_set` cannot create intermediate objects.
+pub(crate) fn persist_ai_judge_verdict(
+    conn: &rusqlite::Connection,
+    learner_id: &str,
+    module_id: &str,
+    block_id: &str,
+    step_index: usize,
+    verdict_json: &str,
+) -> Result<(), String> {
+    let keyed_path = format!("$.ai_judge_verdicts.\"{}\"", step_index);
+    conn.execute(
+        "UPDATE lab_progress
+         SET metadata_json = json_set(
+                 CASE WHEN json_extract(metadata_json, '$.ai_judge_verdicts') IS NULL
+                      THEN json_set(metadata_json, '$.ai_judge_verdicts', json('{}'))
+                      ELSE metadata_json END,
+                 ?1, json(?2),
+                 '$.last_ai_judge', json(?2)),
+             last_updated = datetime('now')
+         WHERE learner_id = ?3 AND module_id = ?4 AND block_id = ?5",
+        rusqlite::params![keyed_path, verdict_json, learner_id, module_id, block_id],
+    )
+    .map_err(|e| format!("metadata_json update: {}", e))?;
+    Ok(())
 }
 
 fn read_lab_spec_from_db(

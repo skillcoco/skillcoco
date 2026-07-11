@@ -521,15 +521,17 @@ fn exam_attempt_start_resets_pre_attempt_lab_progress() {
     let (learner, module, block) = seed_exam_module(&conn);
     let clock = FakeClock { now: chrono::Utc::now() };
 
-    // Learner completed BOTH steps in ordinary (non-exam) lab mode, with a
-    // stale judge verdict lying around.
+    // Learner completed BOTH steps in ordinary (non-exam) lab mode, with
+    // stale judge verdicts lying around (both the legacy single slot and
+    // the WR-06 keyed map).
     seed_lab_progress(
         &conn,
         &learner,
         &module,
         &block,
         "[\"write-manifest\",\"explain-scheduling\"]",
-        "{\"last_ai_judge\":{\"step_index\":1,\"outcome\":\"pass\",\"reason\":\"good\"}}",
+        "{\"last_ai_judge\":{\"step_index\":1,\"outcome\":\"pass\",\"reason\":\"good\"},\
+          \"ai_judge_verdicts\":{\"1\":{\"step_index\":1,\"outcome\":\"pass\",\"reason\":\"good\"}}}",
     );
 
     let start_req = ExamAttemptStartRequest {
@@ -551,6 +553,11 @@ fn exam_attempt_start_resets_pre_attempt_lab_progress() {
     assert!(
         result.step_verdicts.iter().all(|v| !v.passed_toward_score),
         "no step may score from pre-attempt progress"
+    );
+    assert!(
+        result.step_verdicts.iter().all(|v| v.outcome == "fail"),
+        "start must clear stale judge verdicts (keyed + legacy) too, got {:?}",
+        result.step_verdicts.iter().map(|v| v.outcome.clone()).collect::<Vec<_>>()
     );
 }
 
@@ -594,6 +601,59 @@ fn exam_attempt_retake_starts_from_zero_progress() {
     // Attempt 1's history row is untouched (D-05).
     let first_again = exam_attempt_get_conn(&conn, &first.attempt_id, &clock).unwrap();
     assert!((first_again.score_percent - 100.0).abs() < 1e-9);
+}
+
+/// WR-06 — an exam with MULTIPLE ai_judge steps must keep every step's
+/// latest verdict, not just the single most-recent one. Verdicts persist
+/// keyed by step index in `metadata_json.$.ai_judge_verdicts`; the legacy
+/// single-slot `$.last_ai_judge` remains for backward compat. A step the
+/// judge marked Manual must show as Manual with its reason — never
+/// degrade to a bare "fail" just because a later step was judged after it.
+#[test]
+fn exam_attempt_multi_ai_judge_steps_keep_per_step_verdicts() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let started = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+
+    // Step 0 was judged Manual (budget exhausted), then step 1 was judged
+    // Fail — last_ai_judge only remembers step 1, but the keyed map keeps
+    // both.
+    seed_lab_progress(
+        &conn,
+        &learner,
+        &module,
+        &block,
+        "[]",
+        "{\"ai_judge_verdicts\":{\
+            \"0\":{\"step_index\":0,\"outcome\":\"manual\",\"reason\":\"budget exhausted\"},\
+            \"1\":{\"step_index\":1,\"outcome\":\"fail\",\"reason\":\"insufficient detail\"}},\
+          \"last_ai_judge\":{\"step_index\":1,\"outcome\":\"fail\",\"reason\":\"insufficient detail\"}}",
+    );
+
+    let result = finalize_attempt_conn(&conn, &started.attempt_id, &clock).unwrap();
+    assert_eq!(
+        result.step_verdicts[0].outcome, "manual",
+        "step 0's Manual verdict must survive a later judge call (WR-06)"
+    );
+    assert_eq!(
+        result.step_verdicts[0].check_reason.as_deref(),
+        Some("budget exhausted"),
+        "the Manual reason must be preserved"
+    );
+    assert_eq!(result.step_verdicts[1].outcome, "fail");
+    assert_eq!(
+        result.step_verdicts[1].check_reason.as_deref(),
+        Some("insufficient detail")
+    );
+    assert!(result.score_percent.abs() < 1e-9);
 }
 
 /// WR-04 — a judge "pass" NOT backed by `completed_step_ids` (e.g. a

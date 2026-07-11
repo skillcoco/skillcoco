@@ -14,7 +14,9 @@
 //! `ExamAttemptSubmitRequest` carries `attempt_id` and `current_step` ONLY.
 //! It does NOT admit a client-supplied verdicts field. Every step verdict
 //! is DERIVED server-side from `lab_progress.completed_step_ids` (Pass) and
-//! `lab_progress.metadata_json.$.last_ai_judge` (fail/manual/indeterminate)
+//! `lab_progress.metadata_json.$.ai_judge_verdicts` (per-step keyed map,
+//! WR-06; legacy `$.last_ai_judge` as fallback) for
+//! fail/manual/indeterminate
 //! — see `commands::labs::state::read_lab_progress` (state.rs:123) and
 //! `commands::labs::eval::persist_outcome` (eval.rs:187-255), the same
 //! rails regular labs already write into. A step absent from
@@ -174,15 +176,23 @@ fn attempt_row_to_result(row: &AttemptRow, attempt_id: &str) -> Result<ExamAttem
 
 /// D-15 — server-authoritative per-step verdict derivation. For each
 /// `LabStep` in the block's parsed spec: Pass when `step.id` is present in
-/// `completed_step_ids`; otherwise consult
-/// `lab_progress.metadata_json.$.last_ai_judge` (matched by step_index) for
-/// fail/manual/indeterminate; default to Fail when absent. Manual and
-/// Indeterminate never count toward the score (UI-SPEC lock).
+/// `completed_step_ids`; otherwise consult the persisted AI-judge verdicts
+/// in `lab_progress.metadata_json` for fail/manual/indeterminate; default
+/// to Fail when absent. Manual and Indeterminate never count toward the
+/// score (UI-SPEC lock).
+///
+/// WR-06 — judge verdicts are read from the per-step keyed map
+/// `$.ai_judge_verdicts."<idx>"` first (so multi-ai_judge exams keep every
+/// step's verdict), falling back to the legacy single-slot
+/// `$.last_ai_judge` (matched by step_index) for rows written before the
+/// keyed map existed.
 fn derive_step_verdicts(
     steps: &[LabStep],
     completed_step_ids: &[String],
-    last_ai_judge: Option<&serde_json::Value>,
+    metadata: &serde_json::Value,
 ) -> Vec<StepVerdict> {
+    let keyed_verdicts = metadata.get("ai_judge_verdicts").and_then(|v| v.as_object());
+    let last_ai_judge = metadata.get("last_ai_judge");
     steps
         .iter()
         .enumerate()
@@ -197,37 +207,41 @@ fn derive_step_verdicts(
                 };
             }
 
-            // Consult the last persisted AI-judge verdict when it targets
-            // this step index; otherwise default to Fail (D-15).
-            if let Some(judge) = last_ai_judge {
-                let judge_step_index = judge.get("step_index").and_then(|v| v.as_u64());
-                if judge_step_index == Some(idx as u64) {
-                    let raw_outcome =
-                        judge.get("outcome").and_then(|v| v.as_str()).unwrap_or("fail");
-                    // WR-04 — this branch is only reached when the step is
-                    // NOT in completed_step_ids, i.e. it did NOT count
-                    // toward the score. A judge "pass" here is stale (e.g.
-                    // lab_reset cleared progress but left the verdict);
-                    // rendering it as green "Passed" would contradict the
-                    // headline score. Sanitize to "indeterminate", keeping
-                    // the reason. Anything else copies through verbatim.
-                    let outcome = if raw_outcome == "pass" {
-                        "indeterminate".to_string()
-                    } else {
-                        raw_outcome.to_string()
-                    };
-                    let reason =
-                        judge.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    // Only Pass counts toward the score; manual/indeterminate/fail
-                    // all score as not-passed (UI-SPEC lock).
-                    return StepVerdict {
-                        step_id: step.id.clone(),
-                        title: step.title.clone(),
-                        outcome,
-                        passed_toward_score: false,
-                        check_reason: reason,
-                    };
-                }
+            // Consult the persisted AI-judge verdict for this step (keyed
+            // map first, legacy slot as fallback); otherwise Fail (D-15).
+            let judge = keyed_verdicts
+                .and_then(|m| m.get(&idx.to_string()))
+                .or_else(|| {
+                    last_ai_judge.filter(|j| {
+                        j.get("step_index").and_then(|v| v.as_u64()) == Some(idx as u64)
+                    })
+                });
+            if let Some(judge) = judge {
+                let raw_outcome =
+                    judge.get("outcome").and_then(|v| v.as_str()).unwrap_or("fail");
+                // WR-04 — this branch is only reached when the step is
+                // NOT in completed_step_ids, i.e. it did NOT count
+                // toward the score. A judge "pass" here is stale (e.g.
+                // lab_reset cleared progress but left the verdict);
+                // rendering it as green "Passed" would contradict the
+                // headline score. Sanitize to "indeterminate", keeping
+                // the reason. Anything else copies through verbatim.
+                let outcome = if raw_outcome == "pass" {
+                    "indeterminate".to_string()
+                } else {
+                    raw_outcome.to_string()
+                };
+                let reason =
+                    judge.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string());
+                // Only Pass counts toward the score; manual/indeterminate/fail
+                // all score as not-passed (UI-SPEC lock).
+                return StepVerdict {
+                    step_id: step.id.clone(),
+                    title: step.title.clone(),
+                    outcome,
+                    passed_toward_score: false,
+                    check_reason: reason,
+                };
             }
 
             StepVerdict {
@@ -301,7 +315,6 @@ pub(crate) fn finalize_attempt_conn(
         .unwrap_or_else(|_| "{}".to_string());
     let metadata: serde_json::Value =
         serde_json::from_str(&metadata_json).unwrap_or(serde_json::json!({}));
-    let last_ai_judge = metadata.get("last_ai_judge").cloned();
 
     // Step 4: recompute timeout server-side from the persisted deadline —
     // never trust a client flag (T-19-01). String-lexicographic RFC-3339
@@ -311,7 +324,7 @@ pub(crate) fn finalize_attempt_conn(
 
     // Step 5: derive verdicts + weighted score (D-15).
     let step_verdicts =
-        derive_step_verdicts(&spec.steps, &progress.completed_step_ids, last_ai_judge.as_ref());
+        derive_step_verdicts(&spec.steps, &progress.completed_step_ids, &metadata);
     let score_percent = weighted_score_percent(&spec.steps, &step_verdicts);
 
     let pass_threshold_pct = spec
@@ -428,7 +441,7 @@ pub(crate) fn exam_attempt_start_conn(
         "UPDATE lab_progress
          SET completed_step_ids = '[]',
              current_step = 0,
-             metadata_json = json_remove(metadata_json, '$.last_ai_judge'),
+             metadata_json = json_remove(metadata_json, '$.last_ai_judge', '$.ai_judge_verdicts'),
              last_updated = datetime('now')
          WHERE learner_id = ?1 AND module_id = ?2 AND block_id = ?3",
         rusqlite::params![request.learner_id, module_id, request.block_id],

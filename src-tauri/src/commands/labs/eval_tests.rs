@@ -93,14 +93,10 @@ fn apply_outcome_to_db(
             "at": "2026-05-06T00:00:00Z",
         })
         .to_string();
-        conn.execute(
-            "UPDATE lab_progress
-             SET metadata_json = json_set(metadata_json, '$.last_ai_judge', json(?1)),
-                 last_updated = datetime('now')
-             WHERE learner_id = ?2 AND module_id = ?3 AND block_id = ?4",
-            rusqlite::params![verdict, learner, module, block],
-        )
-        .unwrap();
+        // WR-06 — exercise the PRODUCTION persistence helper (keyed
+        // per-step slot + legacy last_ai_judge) instead of replicating
+        // its SQL here.
+        persist_ai_judge_verdict(conn, learner, module, block, step_index, &verdict).unwrap();
     }
     if matches!(outcome, EvalOutcome::Pass) {
         conn.execute(
@@ -257,6 +253,62 @@ fn lab_check_step_ai_judge_persists_verdict_in_metadata_json() {
         .as_str()
         .unwrap_or("")
         .contains("matches"));
+}
+
+/// WR-06 — `persist_ai_judge_verdict` keeps one verdict slot PER STEP
+/// (`metadata_json.$.ai_judge_verdicts."<idx>"`) so a later judge call on
+/// another step never erases an earlier step's Manual/Indeterminate
+/// verdict. The legacy `$.last_ai_judge` single slot is still written for
+/// backward compat.
+#[test]
+fn persist_ai_judge_verdict_writes_keyed_per_step_slots() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed(&conn);
+    conn.execute(
+        "INSERT INTO lab_progress
+            (learner_id, module_id, block_id, current_step, completed_step_ids,
+             total_steps, metadata_json, last_updated)
+         VALUES (?1, ?2, ?3, 0, '[]', 4, '{}', datetime('now'))",
+        rusqlite::params![learner, module, block],
+    )
+    .unwrap();
+
+    let manual = serde_json::json!({
+        "step_index": 1, "outcome": "manual", "reason": "budget exhausted",
+        "at": "2026-05-06T00:00:00Z",
+    })
+    .to_string();
+    let fail = serde_json::json!({
+        "step_index": 2, "outcome": "fail", "reason": "wrong explanation",
+        "at": "2026-05-06T00:01:00Z",
+    })
+    .to_string();
+    persist_ai_judge_verdict(&conn, &learner, &module, &block, 1, &manual).unwrap();
+    persist_ai_judge_verdict(&conn, &learner, &module, &block, 2, &fail).unwrap();
+
+    let metadata: String = conn
+        .query_row(
+            "SELECT metadata_json FROM lab_progress
+             WHERE learner_id = ?1 AND module_id = ?2 AND block_id = ?3",
+            rusqlite::params![learner, module, block],
+            |r| r.get::<_, String>(0),
+        )
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&metadata).unwrap();
+    assert_eq!(
+        v["ai_judge_verdicts"]["1"]["outcome"].as_str(),
+        Some("manual"),
+        "step 1's Manual verdict must survive step 2's later judge call, got {}",
+        metadata
+    );
+    assert_eq!(
+        v["ai_judge_verdicts"]["1"]["reason"].as_str(),
+        Some("budget exhausted")
+    );
+    assert_eq!(v["ai_judge_verdicts"]["2"]["outcome"].as_str(), Some("fail"));
+    // Legacy single slot still tracks the most recent verdict.
+    assert_eq!(v["last_ai_judge"]["step_index"].as_u64(), Some(2));
+    assert_eq!(v["last_ai_judge"]["outcome"].as_str(), Some("fail"));
 }
 
 /// Build a tier list and verify resolve_hint emits the next tier.
