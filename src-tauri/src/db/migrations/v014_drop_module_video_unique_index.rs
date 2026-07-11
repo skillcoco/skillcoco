@@ -85,7 +85,7 @@ mod tests {
         let conn = fresh_conn();
         apply_migrations(&conn).expect("migrations must succeed");
         let version = current_version(&conn).unwrap();
-        assert_eq!(version, 18, "current_version must be 18 after v014..v018 are applied");
+        assert_eq!(version, 19, "current_version must be 19 after v014..v019 are applied");
     }
 
     #[test]
@@ -167,6 +167,6 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 18, "exactly 18 rows in schema_migrations after double-apply (v014..v018)");
+        assert_eq!(count, 19, "exactly 19 rows in schema_migrations after double-apply (v014..v019)");
     }
 }

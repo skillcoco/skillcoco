@@ -60,7 +60,7 @@ mod tests {
         apply_migrations(&conn).expect("migrations must succeed");
 
         let version = current_version(&conn).unwrap();
-        assert_eq!(version, 18, "current_version must be 18 after all migrations (v012..v018) are applied");
+        assert_eq!(version, 19, "current_version must be 19 after all migrations (v012..v019) are applied");
 
         // Verify table exists by counting its columns via PRAGMA table_info
         let mut stmt = conn
@@ -174,8 +174,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            count, 18,
-            "exactly 18 rows in schema_migrations after idempotent double-apply (v012..v018)"
+            count, 19,
+            "exactly 19 rows in schema_migrations after idempotent double-apply (v012..v019)"
         );
     }
 }

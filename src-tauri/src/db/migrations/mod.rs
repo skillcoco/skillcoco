@@ -44,10 +44,6 @@ pub mod v015_learning_path_verified;
 pub mod v016_quiz_attempts;
 pub mod v017_skill_reports;
 pub mod v018_backfill_capability_tags;
-// Wave 0 (19-01): module declared but NOT registered in
-// `registered_migrations()` yet — 19-02 registers it in the same commit
-// that bumps the 18->19 assertion literals below (atomic pairing per the
-// Phase 18 lesson, hit twice).
 pub mod v019_exam_attempts;
 
 /// A single schema migration.
@@ -151,6 +147,11 @@ fn registered_migrations() -> Vec<Migration> {
             name: v018_backfill_capability_tags::NAME,
             up: v018_backfill_capability_tags::up,
         },
+        Migration {
+            version: v019_exam_attempts::VERSION,
+            name: v019_exam_attempts::NAME,
+            up: v019_exam_attempts::up,
+        },
     ]
 }
 
@@ -240,7 +241,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 18, "After all migrations, version must be 18 (v1..v15 + v16 quiz_attempts + v17 skill_reports + v18 backfill_capability_tags)");
+        assert_eq!(version, 19, "After all migrations, version must be 19 (v1..v15 + v16 quiz_attempts + v17 skill_reports + v18 backfill_capability_tags + v19 exam_attempts)");
     }
 
     #[test]
@@ -257,7 +258,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 18, "Idempotent: exactly eighteen rows in schema_migrations (v1..v15 + v16 quiz_attempts + v17 skill_reports + v18 backfill_capability_tags)");
+        assert_eq!(count, 19, "Idempotent: exactly nineteen rows in schema_migrations (v1..v15 + v16 quiz_attempts + v17 skill_reports + v18 backfill_capability_tags + v19 exam_attempts)");
     }
 
     #[test]
@@ -281,9 +282,9 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3..v18.
-        // Max is now 18.
-        assert_eq!(version, 18, "current_version returns MAX(version) = 18 after v3..v18 applied");
+        // v1 and v2 were pre-inserted; apply_migrations runs v3..v19.
+        // Max is now 19.
+        assert_eq!(version, 19, "current_version returns MAX(version) = 19 after v3..v19 applied + v19 exam_attempts");
     }
 
     #[test]
