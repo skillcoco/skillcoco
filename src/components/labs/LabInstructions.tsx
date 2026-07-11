@@ -18,6 +18,18 @@ export interface LabInstructionsProps {
   completedStepIds: string[];
   /** Manual hint reveal handler — receives the 0-based step index. */
   onShowHint?: (stepIndex: number) => void;
+  /**
+   * Phase 19 (EXAM-01/D-11) — when true, suppresses the completion
+   * checkmark for every step (blind scoring) AND the Show-hint button,
+   * even if `onShowHint` is passed. Step number, title, and active-step
+   * highlight still render (position stays visible). LabBlock's D-10
+   * zero-diff gate (omitting `onShowHint` entirely) is the primary path;
+   * this in-component gate is defense-in-depth (T-19-07) so a caller
+   * that forgets to omit the handler still can't leak hints in exam
+   * mode. Defaults to false so regular (non-exam) labs are byte-identical
+   * (D-13).
+   */
+  examMode?: boolean;
 }
 
 export function LabInstructions({
@@ -25,6 +37,7 @@ export function LabInstructions({
   currentStep,
   completedStepIds,
   onShowHint,
+  examMode = false,
 }: LabInstructionsProps) {
   const completed = new Set(completedStepIds);
   return (
@@ -54,7 +67,7 @@ export function LabInstructions({
                   {String(i + 1).padStart(2, "0")}.
                 </span>
                 <span>{step.title}</span>
-                {isCompleted ? (
+                {isCompleted && !examMode ? (
                   <Check
                     className="h-4 w-4 text-success"
                     aria-label="Completed"
@@ -62,7 +75,7 @@ export function LabInstructions({
                   />
                 ) : null}
               </h4>
-              {onShowHint ? (
+              {onShowHint && !examMode ? (
                 <button
                   type="button"
                   onClick={() => onShowHint(i)}

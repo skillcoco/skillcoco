@@ -36,6 +36,16 @@ export interface LabBlockProps {
   learnerId?: string;
   /** Optional track id for workspace path resolution (LAB-07). */
   trackId?: string;
+  /**
+   * Phase 19 (EXAM-04) — when true, gates the lab for exam-sim: hints are
+   * unavailable (LabInstructions receives onShowHint=undefined, the
+   * zero-diff gate) and live pass/fail checkmarks are suppressed
+   * (examMode passed through to LabInstructions, D-11 blind scoring).
+   * Defaults to false so regular labs stay byte-identical (D-13). The
+   * session lifecycle (open/close) and terminal/split-pane are unchanged
+   * — exam labs use the identical lab_session_open/close IPC.
+   */
+  examMode?: boolean;
 }
 
 interface ParsedPayload {
@@ -58,7 +68,12 @@ function parsePayload(payloadJson: string): ParsedPayload {
   }
 }
 
-export function LabBlock({ block, learnerId, trackId }: LabBlockProps) {
+export function LabBlock({
+  block,
+  learnerId,
+  trackId,
+  examMode = false,
+}: LabBlockProps) {
   const { theme } = useTheme();
   const openSession = useLabStore((s) => s.openSession);
   const closeSession = useLabStore((s) => s.closeSession);
@@ -256,7 +271,8 @@ export function LabBlock({ block, learnerId, trackId }: LabBlockProps) {
         spec={spec}
         currentStep={currentStep}
         completedStepIds={completedStepIds}
-        onShowHint={onShowHint}
+        onShowHint={examMode ? undefined : onShowHint}
+        examMode={examMode}
       />
       {hintStepIndex != null && activeHints.length > 0 ? (
         <LabHintPanel
