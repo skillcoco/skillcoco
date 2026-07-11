@@ -395,6 +395,44 @@ fn exam_attempt_second_submit_on_finalized_attempt_is_idempotent() {
     assert_eq!(second.status, first.status);
 }
 
+/// CR-01 — an attempt whose lab session never opened (no `lab_progress`
+/// row at all: Docker/runtime start failure, or submit racing the async
+/// session open) must still finalize: status="completed", score 0.0 —
+/// never a hard error that would strand the attempt permanently
+/// `in_progress` and make `exam_attempt_get` fail forever after the
+/// deadline (D-04 lazy-reconcile also routes through finalize).
+#[test]
+fn exam_attempt_submit_with_no_lab_progress_row_scores_zero() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let started = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+
+    // Deliberately NO seed_lab_progress — the session never opened.
+    let result = finalize_attempt_conn(&conn, &started.attempt_id, &clock)
+        .expect("finalize must tolerate a missing lab_progress row (CR-01)");
+
+    assert_eq!(result.status, "completed");
+    assert!(
+        result.score_percent.abs() < 1e-9,
+        "no progress row means zero progress — expected 0.0, got {}",
+        result.score_percent
+    );
+    assert!(!result.passed);
+    assert_eq!(result.step_verdicts.len(), 2);
+    assert!(
+        result.step_verdicts.iter().all(|v| v.outcome == "fail"),
+        "every step defaults to Fail when no progress exists"
+    );
+}
+
 /// The production handler bodies must no longer be `unimplemented!` stubs.
 #[test]
 fn exam_ipc_handlers_are_implemented() {

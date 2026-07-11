@@ -120,6 +120,50 @@ pub(crate) fn ensure_lab_progress_row(
     read_lab_progress(conn, learner_id, module_id, block_id)
 }
 
+/// Phase 19 (CR-01) — like `read_lab_progress`, but a MISSING row is
+/// zero progress (all steps Fail), not an error. Only genuine DB errors
+/// propagate as `Err`. Used by `exam::finalize_attempt_conn`: the
+/// `lab_progress` row is created by `lab_session_open` (AFTER the runtime
+/// starts), so an exam attempt whose session never opened must still
+/// finalize with score 0 instead of stranding the attempt `in_progress`.
+pub(crate) fn read_lab_progress_or_default(
+    conn: &Connection,
+    learner_id: &str,
+    module_id: &str,
+    block_id: &str,
+) -> Result<LabProgress, String> {
+    use rusqlite::OptionalExtension;
+    let row: Option<(i64, String, String)> = conn
+        .query_row(
+            "SELECT current_step, completed_step_ids, last_updated
+             FROM lab_progress
+             WHERE learner_id = ?1 AND module_id = ?2 AND block_id = ?3",
+            rusqlite::params![learner_id, module_id, block_id],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+        )
+        .optional()
+        .map_err(|e| format!("read_lab_progress_or_default: {}", e))?;
+    let Some(row) = row else {
+        return Ok(LabProgress {
+            block_id: block_id.to_string(),
+            current_step: 0,
+            completed_step_ids: vec![],
+            last_updated: String::new(),
+            practical_mastery: 0.0,
+        });
+    };
+    let completed_step_ids: Vec<String> =
+        serde_json::from_str(&row.1).map_err(|e| format!("completed_step_ids: {}", e))?;
+    let mastery = recompute_practical_mastery(conn, module_id, learner_id).unwrap_or(0.0);
+    Ok(LabProgress {
+        block_id: block_id.to_string(),
+        current_step: row.0 as usize,
+        completed_step_ids,
+        last_updated: row.2,
+        practical_mastery: mastery,
+    })
+}
+
 pub(crate) fn read_lab_progress(
     conn: &Connection,
     learner_id: &str,

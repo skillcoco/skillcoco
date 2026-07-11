@@ -271,9 +271,17 @@ pub(crate) fn finalize_attempt_conn(
     let (spec, _body) = super::read_lab_spec_conn(conn, &row.block_id)?;
 
     // Step 3: read lab_progress (D-15 server-authoritative source) +
-    // the raw metadata_json for the last_ai_judge verdict.
-    let progress =
-        super::state::read_lab_progress(conn, &row.learner_id, &row.module_id, &row.block_id)?;
+    // the raw metadata_json for the last_ai_judge verdict. CR-01 — a
+    // MISSING row (session never opened) is zero progress, not an error:
+    // erroring here would strand the attempt `in_progress` forever, since
+    // exam_attempt_get's D-04 lazy-reconcile also routes through this
+    // function once the deadline passes.
+    let progress = super::state::read_lab_progress_or_default(
+        conn,
+        &row.learner_id,
+        &row.module_id,
+        &row.block_id,
+    )?;
     let metadata_json: String = conn
         .query_row(
             "SELECT metadata_json FROM lab_progress
