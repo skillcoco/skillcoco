@@ -18,8 +18,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { examBlocksForTrack, getModuleBlocks } from "@/lib/tauri-commands";
-import { getOrCreateProfile } from "@/lib/tauri-commands";
+import {
+  examBlocksForTrack,
+  getModuleBlocks,
+  getOrCreateProfile,
+} from "@/lib/tauri-commands";
 import { useExamStore } from "@/stores/useExamStore";
 import { useLabStore } from "@/stores/useLabStore";
 import { LabBlock } from "@/components/labs/LabBlock";
@@ -205,11 +208,28 @@ export function ExamRunView() {
     );
   }
 
-  if (view === "loading" || !block || !spec) {
+  if (view === "loading" || !block) {
     return (
       <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
         <Loader2 size={16} className="animate-spin" />
         Loading exam...
+      </div>
+    );
+  }
+
+  // WR-03 — the block loaded but its payload has no parseable spec
+  // (payload JSON invalid, or authored via params_json.labMd only).
+  // Render an actionable error instead of spinning forever.
+  if (!spec) {
+    return (
+      <div className="mx-auto max-w-3xl pb-12">
+        <div
+          role="alert"
+          className="glass-strong rounded-xl border border-destructive/40 p-6 text-sm text-destructive"
+        >
+          Couldn&apos;t start the exam. The exam content could not be loaded.
+          Try again from the course page.
+        </div>
       </div>
     );
   }
