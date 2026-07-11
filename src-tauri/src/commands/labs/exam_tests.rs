@@ -395,6 +395,91 @@ fn exam_attempt_second_submit_on_finalized_attempt_is_idempotent() {
     assert_eq!(second.status, first.status);
 }
 
+/// CR-02 — scoring is attempt-scoped: progress earned BEFORE
+/// `exam_attempt_start` (e.g. in regular lab mode, with hints and the
+/// tutor) must NOT count toward the exam score. `exam_attempt_start`
+/// resets the `lab_progress` row for (learner, module, block).
+#[test]
+fn exam_attempt_start_resets_pre_attempt_lab_progress() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+
+    // Learner completed BOTH steps in ordinary (non-exam) lab mode, with a
+    // stale judge verdict lying around.
+    seed_lab_progress(
+        &conn,
+        &learner,
+        &module,
+        &block,
+        "[\"write-manifest\",\"explain-scheduling\"]",
+        "{\"last_ai_judge\":{\"step_index\":1,\"outcome\":\"pass\",\"reason\":\"good\"}}",
+    );
+
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let started = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+
+    // Submit immediately — no work done DURING the attempt window.
+    let result = finalize_attempt_conn(&conn, &started.attempt_id, &clock).unwrap();
+    assert!(
+        result.score_percent.abs() < 1e-9,
+        "pre-attempt progress must not count (CR-02) — expected 0.0, got {}",
+        result.score_percent
+    );
+    assert!(!result.passed);
+    assert!(
+        result.step_verdicts.iter().all(|v| !v.passed_toward_score),
+        "no step may score from pre-attempt progress"
+    );
+}
+
+/// CR-02 — a retake starts from 0: the second `exam_attempt_start` must
+/// not inherit the first attempt's completed steps (D-05 retakes are each
+/// their own history row, not N copies of the same inflated score).
+#[test]
+fn exam_attempt_retake_starts_from_zero_progress() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+
+    // Attempt 1: complete both steps during the window → 100%.
+    let first = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+    seed_lab_progress(
+        &conn,
+        &learner,
+        &module,
+        &block,
+        "[\"write-manifest\",\"explain-scheduling\"]",
+        "{}",
+    );
+    let first_result = finalize_attempt_conn(&conn, &first.attempt_id, &clock).unwrap();
+    assert!((first_result.score_percent - 100.0).abs() < 1e-9);
+
+    // Attempt 2 (retake): no work done — must score 0, not inherit 100.
+    let second = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+    let second_result = finalize_attempt_conn(&conn, &second.attempt_id, &clock).unwrap();
+    assert!(
+        second_result.score_percent.abs() < 1e-9,
+        "retake must start from 0 (CR-02) — got {}",
+        second_result.score_percent
+    );
+
+    // Attempt 1's history row is untouched (D-05).
+    let first_again = exam_attempt_get_conn(&conn, &first.attempt_id, &clock).unwrap();
+    assert!((first_again.score_percent - 100.0).abs() < 1e-9);
+}
+
 /// CR-01 — an attempt whose lab session never opened (no `lab_progress`
 /// row at all: Docker/runtime start failure, or submit racing the async
 /// session open) must still finalize: status="completed", score 0.0 —

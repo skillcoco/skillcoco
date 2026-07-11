@@ -376,8 +376,33 @@ pub(crate) fn exam_attempt_start_conn(
     let deadline_at_str = deadline_at.to_rfc3339();
     let attempt_id = format!("exam-{}", uuid::Uuid::new_v4());
 
-    // 3. INSERT (not INSERT OR REPLACE) — each attempt is distinct history (D-05).
-    conn.execute(
+    // 3. Reset progress + INSERT the attempt row in ONE transaction.
+    //
+    // CR-02 — scoring is attempt-scoped: verdicts derive from
+    // `lab_progress.completed_step_ids`, which is shared with regular
+    // (non-exam) lab mode and persists across attempts. Without this
+    // reset, work done before `started_at` (with hints/tutor) and work
+    // from prior attempts would count, defeating the timer and retakes.
+    // Clearing `completed_step_ids`, `current_step`, and the persisted
+    // judge verdicts here means the attempt window starts from zero.
+    // A missing row updates 0 rows — fine (never-opened lab is CR-01's
+    // zero-progress case).
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("exam start transaction: {}", e))?;
+    tx.execute(
+        "UPDATE lab_progress
+         SET completed_step_ids = '[]',
+             current_step = 0,
+             metadata_json = json_remove(metadata_json, '$.last_ai_judge'),
+             last_updated = datetime('now')
+         WHERE learner_id = ?1 AND module_id = ?2 AND block_id = ?3",
+        rusqlite::params![request.learner_id, request.module_id, request.block_id],
+    )
+    .map_err(|e| format!("exam start progress reset: {}", e))?;
+
+    // INSERT (not INSERT OR REPLACE) — each attempt is distinct history (D-05).
+    tx.execute(
         "INSERT INTO exam_attempts
             (id, learner_id, module_id, block_id, started_at, deadline_at,
              status, score_percent, passed, step_verdicts_json, total_steps)
@@ -393,6 +418,7 @@ pub(crate) fn exam_attempt_start_conn(
         ],
     )
     .map_err(|e| format!("exam_attempts INSERT: {}", e))?;
+    tx.commit().map_err(|e| format!("exam start commit: {}", e))?;
 
     Ok(ExamAttemptStartResult {
         attempt_id,
