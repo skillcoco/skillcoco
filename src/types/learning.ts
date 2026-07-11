@@ -579,6 +579,22 @@ export interface ExamAttemptResult {
   stepVerdicts: StepVerdict[];
 }
 
+// ── Phase 19: exam entry-point IPC types (19-04) ──
+//
+// exam_blocks_for_track(trackId) — per-module exam-flag + block id data so
+// TrackView (19-06) can render/gate the Start Exam entry point and resolve
+// the target blockId. Modules with no exam-flagged lab block are omitted
+// (fail-closed, D-02).
+
+export interface ExamBlocksForTrackRequest {
+  trackId: string;
+}
+
+export interface ExamBlockRef {
+  moduleId: string;
+  blockId: string;
+}
+
 // ── Phase 4 Microlearning types ──
 //
 // IPC result shapes for the four daily-challenge commands. All requests
