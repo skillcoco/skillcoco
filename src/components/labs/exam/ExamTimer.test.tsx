@@ -7,7 +7,7 @@
 // `deadlineAt`.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 
 // 19-06: implementer plan — module does not exist yet, so this import
 // itself fails RED (module not found) until ExamTimer.tsx is created.
@@ -72,7 +72,9 @@ describe("ExamTimer — Phase 19 Wave 0 (RED until 19-06)", () => {
   it("exam_timer_counts_down_on_tick — advancing 1s decrements the displayed seconds", () => {
     render(<ExamTimer deadlineAt={deadlineInMinutes(1)} />);
     expect(screen.getByText("01:00")).toBeInTheDocument();
-    vi.advanceTimersByTime(1000);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
     expect(screen.getByText("00:59")).toBeInTheDocument();
   });
 });
