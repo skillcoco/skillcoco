@@ -1,4 +1,4 @@
-//! Migration v019 — exam_attempts table (Wave 0 RED scaffold)
+//! Migration v019 — exam_attempts table
 //!
 //! Phase 19 (EXAM-01..04): timed/scored exam-run persistence. Every exam
 //! attempt (start, submit, timeout) is a history row — never upserted — so
@@ -6,14 +6,7 @@
 //! Phase 18 report evidence ledger can read the BEST attempt (D-06)
 //! alongside a full history.
 //!
-//! Wave 0 (19-01) intentionally ships a NO-OP `up()`. The real
-//! `CREATE TABLE` body — and the accompanying migration-count assertion
-//! bump (18 -> 19) in `db/migrations/mod.rs` — land together in 19-02's
-//! commit (Phase 18 lesson: bumping the assertion in a different commit
-//! than the table creation breaks the atomic invariant, hit twice).
-//!
-//! Expected schema (19-02 implements):
-//! `exam_attempts(id, learner_id, module_id, block_id, started_at,
+//! Schema: `exam_attempts(id, learner_id, module_id, block_id, started_at,
 //! deadline_at, finished_at, status, score_percent, passed,
 //! step_verdicts_json, total_steps)` plus
 //! `idx_exam_attempts_learner_module` on (learner_id, module_id).
@@ -23,12 +16,32 @@ use rusqlite::{Connection, Result};
 pub const VERSION: i32 = 19;
 pub const NAME: &str = "exam_attempts";
 
-/// Wave 0 NO-OP. 19-02 replaces this body with the real `CREATE TABLE IF
-/// NOT EXISTS exam_attempts (...)` + index, in the SAME commit that bumps
-/// the `registered_migrations()` registration and the 18->19 assertion
-/// literals in `db/migrations/mod.rs`.
-pub fn up(_conn: &Connection) -> Result<()> {
-    Ok(())
+/// Apply the v019 migration.
+///
+/// CREATE TABLE IF NOT EXISTS exam_attempts mirroring v016 quiz_attempts,
+/// extended with exam-specific columns (deadline_at, finished_at, status,
+/// step_verdicts_json, total_steps). Idempotent via IF NOT EXISTS.
+pub fn up(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS exam_attempts (
+            id                 TEXT PRIMARY KEY,
+            learner_id         TEXT NOT NULL REFERENCES learner_profiles(id),
+            module_id          TEXT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+            block_id           TEXT NOT NULL,
+            started_at         TEXT NOT NULL DEFAULT (datetime('now')),
+            deadline_at        TEXT NOT NULL,
+            finished_at        TEXT,
+            status             TEXT NOT NULL DEFAULT 'in_progress',
+            score_percent      REAL,
+            passed             INTEGER,
+            step_verdicts_json TEXT NOT NULL DEFAULT '[]',
+            total_steps        INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_exam_attempts_learner_module
+            ON exam_attempts(learner_id, module_id);
+        "#,
+    )
 }
 
 #[cfg(test)]

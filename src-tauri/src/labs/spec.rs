@@ -26,18 +26,22 @@ pub struct LabSpec {
     pub dockerfile: Option<String>,
     pub requires_docker: bool,
     pub creates: Vec<String>,
-    /// Phase 19 (EXAM-01/D-01/D-02) — Wave 0 scaffold field. `parse_lab_md`
-    /// does NOT yet read the `exam:` frontmatter block into this field
-    /// (always `None` today); 19-02 wires the real parsing + defaults
-    /// (D-03 30min / D-08 70%) + range validation (T-19-02). Only authored
-    /// exam specs populate this — a regular lab must stay `None` (D-02).
+    /// Phase 19 (EXAM-01/D-01/D-02) — pack-authored exam calibration.
+    /// Populated from the `exam:` frontmatter block when present; a regular
+    /// lab has no `exam:` block and stays `None` (D-02). Defaults for
+    /// absent sub-fields (D-03 30min / D-08 70%) are resolved at scoring
+    /// time (19-03), not baked in here — see `ExamMeta` doc comment.
     #[serde(default)]
     pub exam: Option<ExamMeta>,
     pub steps: Vec<LabStep>,
 }
 
-/// Phase 19 (EXAM-01) — pack-authored exam calibration. Wave 0 scaffold
-/// type only; 19-02 wires parsing/defaults/validation.
+/// Phase 19 (EXAM-01) — pack-authored exam calibration.
+///
+/// Both fields stay `Option` on the parsed struct (never defaulted here) so
+/// "the pack author didn't specify a value" stays distinguishable from "the
+/// pack author explicitly wants the default" — 19-03's scoring path resolves
+/// `None` -> 30 min (D-03) / 70.0% (D-08).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamMeta {
@@ -58,15 +62,14 @@ pub struct LabStep {
     pub prompt: String,
     pub check: StepCheck,
     pub hints: Vec<String>,
-    /// Phase 19 (D-07) — Wave 0 scaffold field. `parse_lab_md` does NOT yet
-    /// read the per-step `weight:` frontmatter value into this field
-    /// (always hardcoded to `1.0` today, never the authored value); 19-02
-    /// wires the real serde default (1.0) + frontmatter round-trip.
-    #[serde(default = "default_step_weight")]
+    /// Phase 19 (D-07) — per-step scoring weight, authored via the
+    /// `weight:` frontmatter value on the step. Defaults to 1.0 (equal
+    /// weighting) when absent — `default_weight`.
+    #[serde(default = "default_weight")]
     pub weight: f64,
 }
 
-fn default_step_weight() -> f64 {
+fn default_weight() -> f64 {
     1.0
 }
 
@@ -111,6 +114,8 @@ struct LabSpecRaw {
     requires_docker: bool,
     #[serde(default)]
     creates: Vec<String>,
+    #[serde(default)]
+    exam: Option<ExamMeta>,
     steps: Vec<LabStepRaw>,
 }
 
@@ -123,6 +128,8 @@ struct LabStepRaw {
     check: StepCheck,
     #[serde(default)]
     hints: Vec<String>,
+    #[serde(default = "default_weight")]
+    weight: f64,
 }
 
 /// Parse a LAB.md document. Returns the typed spec alongside the original
@@ -156,6 +163,9 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
         }
     }
     validate_creates(&raw.creates)?;
+    if let Some(exam) = &raw.exam {
+        validate_exam_meta(exam)?;
+    }
 
     let spec = LabSpec {
         slug: raw.slug,
@@ -164,9 +174,7 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
         dockerfile: raw.dockerfile,
         requires_docker: raw.requires_docker,
         creates: raw.creates,
-        // Wave 0 scaffold — always None until 19-02 reads the `exam:`
-        // frontmatter block (see LabSpec.exam doc comment).
-        exam: None,
+        exam: raw.exam,
         steps: raw
             .steps
             .into_iter()
@@ -176,10 +184,7 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
                 prompt: s.prompt,
                 check: s.check,
                 hints: s.hints,
-                // Wave 0 scaffold — always 1.0 until 19-02 reads the
-                // per-step `weight:` frontmatter value (see LabStep.weight
-                // doc comment).
-                weight: 1.0,
+                weight: s.weight,
             })
             .collect(),
     };
@@ -207,7 +212,35 @@ pub fn validate_spec(spec: &LabSpec) -> Result<(), LabError> {
             )));
         }
     }
-    validate_creates(&spec.creates)
+    validate_creates(&spec.creates)?;
+    if let Some(exam) = &spec.exam {
+        validate_exam_meta(exam)?;
+    }
+    Ok(())
+}
+
+/// Phase 19 (T-19-02) — range-bound exam calibration fields at the same
+/// trust boundary as `validate_slug`/`validate_image_xor` (pack-author ->
+/// LAB.md parser). Regular labs (`exam: None`) skip this entirely — D-13
+/// behavior for non-exam specs is unaffected by construction.
+fn validate_exam_meta(exam: &ExamMeta) -> Result<(), LabError> {
+    if let Some(pct) = exam.pass_threshold_pct {
+        if !(0.0..=100.0).contains(&pct) {
+            return Err(LabError::Spec(format!(
+                "exam.passThresholdPct must be within 0..=100, got {}",
+                pct
+            )));
+        }
+    }
+    if let Some(minutes) = exam.time_limit_minutes {
+        if !(1..=480).contains(&minutes) {
+            return Err(LabError::Spec(format!(
+                "exam.timeLimitMinutes must be within 1..=480, got {}",
+                minutes
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_image_xor(image: &Option<String>, dockerfile: &Option<String>) -> Result<(), LabError> {
