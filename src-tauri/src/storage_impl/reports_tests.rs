@@ -299,6 +299,76 @@ fn evidence_ledger_includes_quiz_lab_and_cert_items_with_track_attribution() {
     }
 }
 
+/// Phase 19 (EXAM-03/D-06) Wave 0 RED scaffold — `evidence_ledger` must
+/// emit exactly one `EvidenceItem { class: EvidenceClass::Exam }` for the
+/// BEST attempt (highest score_percent) when `exam_attempts` has >=1 row,
+/// with `detail` matching "{score}% (best of {count} attempts, {date})".
+///
+/// RED until 19-04: `v019::up()` is still a Wave 0 no-op (19-02's job) so
+/// the `CREATE TABLE exam_attempts` step below fails, AND
+/// `evidence_ledger` doesn't query `exam_attempts` at all yet (19-04's
+/// job) — either gap alone is sufficient to keep this test failing.
+#[test]
+fn evidence_ledger_emits_best_attempt_exam_evidence_with_attempt_count_and_date() {
+    let conn = fresh_conn();
+    seed_track(&conn, "trk1", "Kubernetes");
+    seed_module(&conn, "mod1", "trk1", "Pods");
+    seed_capability_tag(&conn, "ct1", "trk1", "mod1", "can-x", "Can X", "module");
+    seed_block(&conn, "blk-exam1", "mod1", "lab");
+
+    // 19-02 must create exam_attempts before these inserts can succeed.
+    // Three attempts for the same learner/module/block — history, not
+    // upsert (D-05) — so evidence_ledger must pick the BEST one (90.0%)
+    // and annotate the ledger detail with the total attempt count (3).
+    for (id, score, passed, date) in [
+        ("ea1", 60.0, 0, "2026-06-01T00:00:00Z"),
+        ("ea2", 90.0, 1, "2026-06-15T00:00:00Z"),
+        ("ea3", 75.0, 1, "2026-07-01T00:00:00Z"),
+    ] {
+        let insert = conn.execute(
+            "INSERT INTO exam_attempts
+                (id, learner_id, module_id, block_id, started_at, deadline_at,
+                 finished_at, status, score_percent, passed, step_verdicts_json, total_steps)
+             VALUES (?1, 'lp1', 'mod1', 'blk-exam1', ?4, ?4,
+                ?4, 'submitted', ?2, ?3, '[]', 2)",
+            rusqlite::params![id, score, passed, date],
+        );
+        assert!(
+            insert.is_ok(),
+            "19-02 must create exam_attempts before evidence_ledger can be exercised: {:?}",
+            insert.err()
+        );
+    }
+
+    let store = SqliteReportStore(&conn);
+    let items = store.evidence_ledger("trk1", "can-x", "lp1").expect("ledger");
+
+    let exam_items: Vec<&EvidenceItem> =
+        items.iter().filter(|i| i.class == EvidenceClass::Exam).collect();
+    assert_eq!(
+        exam_items.len(),
+        1,
+        "19-04: evidence_ledger must emit exactly ONE exam EvidenceItem (best-attempt, D-06), got {}",
+        exam_items.len()
+    );
+    let exam_item = exam_items[0];
+    assert!(
+        exam_item.detail.contains("90"),
+        "19-04: detail must report the BEST score (90%), got: {:?}",
+        exam_item.detail
+    );
+    assert!(
+        exam_item.detail.contains('3'),
+        "19-04: detail must annotate total attempt count (3), got: {:?}",
+        exam_item.detail
+    );
+    assert!(
+        exam_item.detail.contains("2026-06-15"),
+        "19-04: detail must include the BEST attempt's date, got: {:?}",
+        exam_item.detail
+    );
+}
+
 // ── evidence_class validation (Warning 3) ───────────────────────────────
 
 /// An unknown evidence_class string read from the DB must map to

@@ -44,6 +44,11 @@ pub mod v015_learning_path_verified;
 pub mod v016_quiz_attempts;
 pub mod v017_skill_reports;
 pub mod v018_backfill_capability_tags;
+// Wave 0 (19-01): module declared but NOT registered in
+// `registered_migrations()` yet — 19-02 registers it in the same commit
+// that bumps the 18->19 assertion literals below (atomic pairing per the
+// Phase 18 lesson, hit twice).
+pub mod v019_exam_attempts;
 
 /// A single schema migration.
 pub struct Migration {
