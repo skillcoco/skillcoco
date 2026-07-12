@@ -96,6 +96,86 @@ pub fn apply_topic_pack_override(
     }
 }
 
+/// Phase 19.1 (PACKLAB-01/T-19.1-02) — resolve the on-disk pack root for a
+/// `generated_by_model` provenance string of the form `topic-pack:<pack_id>`
+/// (the format locked in Phase 5, see `commands/course_io.rs`). Returns
+/// `None` for any non-`topic-pack:` provenance (AI-generated / imported
+/// tracks have no pack root) and for an empty pack_id after the prefix.
+///
+/// Reuses `topic_packs::loader::skills_dir()` rather than reimplementing the
+/// skills-dir/home-dir/env-override logic, so `LEARNFORGE_SKILLS_DIR_OVERRIDE`
+/// is honored identically to the pack loader (this is what makes it
+/// testable without touching the real home directory).
+///
+/// T-19.1-02 hardening: rejects any pack_id containing a path separator or
+/// `..` before joining, so a malicious/malformed provenance string cannot
+/// escape `skills_dir()` via the path join.
+pub(crate) fn pack_root_for_provenance(generated_by_model: &str) -> Option<std::path::PathBuf> {
+    let pack_id = generated_by_model.strip_prefix("topic-pack:")?;
+    if pack_id.is_empty() {
+        return None;
+    }
+    if pack_id.contains('/') || pack_id.contains('\\') || pack_id.contains("..") {
+        log::warn!(
+            "pack_root_for_provenance: rejecting pack_id with unsafe path characters: {:?}",
+            pack_id
+        );
+        return None;
+    }
+    crate::topic_packs::loader::skills_dir().map(|d| d.join(pack_id))
+}
+
+/// Phase 19.1 (PACKLAB-01/T-19.1-01/T-19.1-03) — read + validate a
+/// pack-supplied LAB.md from `<pack_root>/labs/<lab_slug>/LAB.md`.
+///
+/// - File absent (`path.is_file()` false) → `None`, NO log output. Absent
+///   LAB.md is the normal backward-compatible case (packs without a lab
+///   body still fall through to LLM generation), not an error.
+/// - Io read error → `log::warn!` + `None`.
+/// - `parse_lab_md` failure (untrusted-content boundary guard) →
+///   `log::warn!` + `None`. This mirrors `read_lab_spec_conn`'s
+///   log-and-fall-through shape exactly (orchestrator decision 2) — a
+///   malformed pack LAB.md NEVER produces a hard `LabError` here and NEVER
+///   silently corrupts content; the caller falls back to LLM generation.
+///
+/// T-19.1-02 hardening: rejects any lab_slug containing a path separator or
+/// `..` before joining (defense in depth alongside `pack_root_for_provenance`'s
+/// pack_id guard and `parse_lab_md`'s own `validate_slug` on the parsed spec).
+pub(crate) fn resolve_pack_lab_md(
+    pack_root: &std::path::Path,
+    lab_slug: &str,
+) -> Option<(LabSpec, String)> {
+    if lab_slug.contains('/') || lab_slug.contains('\\') || lab_slug.contains("..") {
+        log::warn!(
+            "resolve_pack_lab_md: rejecting lab_slug with unsafe path characters: {:?}",
+            lab_slug
+        );
+        return None;
+    }
+    let path = pack_root.join("labs").join(lab_slug).join("LAB.md");
+    if !path.is_file() {
+        return None;
+    }
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("resolve_pack_lab_md: failed to read {}: {}", path.display(), e);
+            return None;
+        }
+    };
+    match parse_lab_md(&contents) {
+        Ok((spec, body)) => Some((spec, body)),
+        Err(e) => {
+            log::warn!(
+                "pack LAB.md at {} failed validation: {} — falling back to LLM generation",
+                path.display(),
+                e
+            );
+            None
+        }
+    }
+}
+
 fn slug_to_title(slug: &str) -> String {
     slug.split('-')
         .map(|w| {
@@ -386,12 +466,20 @@ where
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     const KUBERNETES_MANIFEST: &str =
         include_str!("../../tests/fixtures/labs/manifests/kubernetes-manifest.yaml");
     const VALID_LAB_MD: &str =
         include_str!("../../tests/fixtures/labs/specs/valid-pod-create.lab.md");
+    const COURSESMITH_PACK_LAB_MD: &str = include_str!(
+        "../../tests/fixtures/labs/topic-packs/coursesmith-demo/labs/m1-container-native-lab/LAB.md"
+    );
+
+    /// Serializes tests that mutate the process-wide
+    /// `LEARNFORGE_SKILLS_DIR_OVERRIDE` env var (mirrors
+    /// `topic_packs::loader::ENV_LOCK`).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     /// Closure-backed `LabContentRunner` for tests.
     struct MockRunner<F: Fn(&str) -> Result<String, String> + Send + Sync>(F);
@@ -559,5 +647,80 @@ mod tests {
         }
         let round: LabOutlineItem = serde_json::from_str(&json).unwrap();
         assert_eq!(round, item);
+    }
+
+    // ── pack_root_for_provenance / resolve_pack_lab_md (19.1-01) ──────────
+
+    #[test]
+    fn pack_root_for_provenance_resolves_topic_pack_prefix() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::env::set_var(
+            crate::topic_packs::loader::SKILLS_DIR_OVERRIDE_ENV,
+            tmp.path(),
+        );
+
+        let root = pack_root_for_provenance("topic-pack:coursesmith-demo");
+        assert_eq!(root, Some(tmp.path().join("coursesmith-demo")));
+
+        std::env::remove_var(crate::topic_packs::loader::SKILLS_DIR_OVERRIDE_ENV);
+    }
+
+    #[test]
+    fn pack_root_for_provenance_none_for_non_pack_provenance() {
+        assert_eq!(pack_root_for_provenance("gpt-4o"), None);
+    }
+
+    #[test]
+    fn pack_root_for_provenance_none_for_imported_provenance() {
+        assert_eq!(pack_root_for_provenance("imported:foo"), None);
+    }
+
+    #[test]
+    fn pack_root_for_provenance_none_for_empty_pack_id() {
+        assert_eq!(pack_root_for_provenance("topic-pack:"), None);
+    }
+
+    fn write_pack_lab_md(pack_root: &std::path::Path, slug: &str, contents: &str) {
+        let dir = pack_root.join("labs").join(slug);
+        std::fs::create_dir_all(&dir).expect("create lab dir");
+        std::fs::write(dir.join("LAB.md"), contents).expect("write LAB.md");
+    }
+
+    #[test]
+    fn resolve_pack_lab_md_reads_and_parses_fixture() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let pack_root = tmp.path().join("coursesmith-demo");
+        write_pack_lab_md(&pack_root, "m1-container-native-lab", COURSESMITH_PACK_LAB_MD);
+
+        let result = resolve_pack_lab_md(&pack_root, "m1-container-native-lab");
+        let (spec, _body) = result.expect("fixture LAB.md must resolve");
+        assert_eq!(spec.slug, "m1-container-native-lab");
+        assert_eq!(spec.steps.len(), 5);
+    }
+
+    #[test]
+    fn resolve_pack_lab_md_none_when_file_absent() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let pack_root = tmp.path().join("coursesmith-demo");
+        std::fs::create_dir_all(&pack_root).unwrap();
+
+        let result = resolve_pack_lab_md(&pack_root, "does-not-exist");
+        assert!(result.is_none(), "absent LAB.md must resolve to None with no error");
+    }
+
+    #[test]
+    fn resolve_pack_lab_md_none_and_warns_on_malformed_content() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let pack_root = tmp.path().join("coursesmith-demo");
+        // slug fails validate_slug (^[a-z0-9-]+$) — trips parse_lab_md validation.
+        let malformed = "---\nslug: \"Bad_Slug\"\ntitle: \"Bad\"\nimage: \"alpine:3.20\"\nsteps:\n  - id: \"s1\"\n    title: \"Step\"\n    prompt: \"do it\"\n    check:\n      kind: \"exit_code\"\n      expected: 0\n---\n\nBody.\n";
+        write_pack_lab_md(&pack_root, "bad-lab", malformed);
+
+        let result = resolve_pack_lab_md(&pack_root, "bad-lab");
+        assert!(
+            result.is_none(),
+            "malformed pack LAB.md must fall back to None, never propagate a hard error"
+        );
     }
 }
