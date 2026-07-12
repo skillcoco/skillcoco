@@ -447,6 +447,86 @@ fn wr04_ipc_request_debug_output_redacts_license_key() {
     assert!(debug_str.contains("<redacted>"), "got: {debug_str}");
 }
 
+// ── WR-01 — atomic entitlement-record + attribution-stamp transaction ──
+
+fn wr01_sample_row(pack_id: &str) -> EntitlementRow {
+    EntitlementRow {
+        pack_id: pack_id.to_string(),
+        issuer_id: "issuer-1".to_string(),
+        issuer_name: "Test Issuer".to_string(),
+        buyer_name: "Jane Buyer".to_string(),
+        order_id: "ORD-ATOMIC".to_string(),
+        redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+        key_fingerprint: "deadbeef".to_string(),
+    }
+}
+
+/// WR-01 — the entitlement insert and the `learning_paths.pack_id` stamp
+/// commit together: after a successful call, BOTH the entitlements row and
+/// the attribution stamp are visible.
+#[test]
+fn wr01_entitlement_insert_and_stamp_commit_together() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let conn_guard = db.lock().unwrap();
+    insert_learning_path(&conn_guard.conn, "trk-atomic-ok", "path-atomic-ok", None);
+
+    record_entitlement_and_stamp(
+        &conn_guard.conn,
+        &wr01_sample_row("pack-atomic-ok"),
+        "trk-atomic-ok",
+    )
+    .expect("both writes must succeed");
+
+    let store = SqliteEntitlementStore(&conn_guard.conn);
+    assert!(store.find_by_pack_id("pack-atomic-ok").unwrap().is_some());
+    let stamped: Option<String> = conn_guard
+        .conn
+        .query_row(
+            "SELECT pack_id FROM learning_paths WHERE track_id = 'trk-atomic-ok'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped.as_deref(), Some("pack-atomic-ok"));
+}
+
+/// WR-01 — if the `learning_paths.pack_id` stamp fails AFTER the
+/// entitlement insert executed, the insert ROLLS BACK: no entitlement row
+/// may survive without its attribution stamp (previously two
+/// separately-committed writes could leave an imported track with a
+/// dangling entitlements row, or vice versa).
+#[test]
+fn wr01_failed_stamp_rolls_back_entitlement_insert() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let conn_guard = db.lock().unwrap();
+    insert_learning_path(&conn_guard.conn, "trk-atomic-fail", "path-atomic-fail", None);
+
+    // Force the stamp UPDATE to fail after the entitlement INSERT has
+    // already executed inside the same transaction.
+    conn_guard
+        .conn
+        .execute_batch(
+            "CREATE TRIGGER wr01_fail_stamp BEFORE UPDATE OF pack_id ON learning_paths
+             BEGIN SELECT RAISE(ABORT, 'stamp forced to fail'); END;",
+        )
+        .unwrap();
+
+    let result = record_entitlement_and_stamp(
+        &conn_guard.conn,
+        &wr01_sample_row("pack-atomic-fail"),
+        "trk-atomic-fail",
+    );
+    assert!(result.is_err(), "forced stamp failure must surface as Err");
+
+    let store = SqliteEntitlementStore(&conn_guard.conn);
+    assert!(
+        store.find_by_pack_id("pack-atomic-fail").unwrap().is_none(),
+        "WR-01: a failed pack_id stamp must roll back the entitlement insert (one transaction)"
+    );
+}
+
 // ── Task 1 (15-06) — get_entitlement_for_track (local join, no network) ──
 
 fn insert_learning_path(conn: &Connection, track_id: &str, path_id: &str, pack_id: Option<&str>) {

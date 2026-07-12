@@ -164,6 +164,47 @@ pub async fn redeem_license(
 
 // ── download_and_import_pack ────────────────────────────────────────────
 
+/// WR-01 — record the entitlement row and stamp `learning_paths.pack_id`
+/// in ONE `BEGIN IMMEDIATE` transaction. Previously these were two
+/// separately-committed writes: a crash (or constraint failure) between
+/// them left an imported track with no attribution stamp — or an
+/// entitlements row `get_entitlement_for_track` could never resolve. On
+/// any failure the whole pair rolls back.
+///
+/// `SqliteEntitlementStore::insert` upserts on `pack_id` conflict, so a
+/// re-redeem of the same pack refreshes attribution instead of erroring
+/// after the import already committed.
+fn record_entitlement_and_stamp(
+    conn: &rusqlite::Connection,
+    row: &EntitlementRow,
+    track_id: &str,
+) -> Result<(), String> {
+    conn.execute_batch("BEGIN IMMEDIATE")
+        .map_err(|e| e.to_string())?;
+    let writes = (|| -> Result<(), String> {
+        SqliteEntitlementStore(conn).insert(row)?;
+        // D-08 attribution join — follow-up UPDATE so import_course_impl
+        // stays byte-identical; import_course_impl does not know about
+        // pack_id.
+        conn.execute(
+            "UPDATE learning_paths SET pack_id = ?1 WHERE track_id = ?2",
+            rusqlite::params![row.pack_id, track_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+    match writes {
+        Ok(()) => conn
+            .execute_batch("COMMIT")
+            .map_err(|e| e.to_string()),
+        Err(e) => {
+            // Best-effort rollback — the original error is what matters.
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
+}
+
 /// Fetch the buyer-stamped pack via `download_and_store` (OUTSIDE any DB
 /// lock), then import it through the UNCHANGED `import_course_impl` Step
 /// 3.5 gate, insert an `EntitlementRow`, and stamp
@@ -198,18 +239,9 @@ async fn download_and_import_pack_impl(
         // dropped — never persisted, logged, or error-embedded (D-06).
         key_fingerprint: sha256_fingerprint(&request.license_key),
     };
-    let store = SqliteEntitlementStore(&conn_guard.conn);
-    store.insert(&entitlement_row)?;
-
-    // D-08 attribution join — follow-up UPDATE so import_course_impl stays
-    // byte-identical; import_course_impl does not know about pack_id.
-    conn_guard
-        .conn
-        .execute(
-            "UPDATE learning_paths SET pack_id = ?1 WHERE track_id = ?2",
-            rusqlite::params![request.pack_id, import_result.track_id],
-        )
-        .map_err(|e| e.to_string())?;
+    // WR-01 — entitlement record + attribution stamp are ONE transaction
+    // (rolls back together; upserts on a same-pack re-redeem).
+    record_entitlement_and_stamp(&conn_guard.conn, &entitlement_row, &import_result.track_id)?;
 
     Ok(import_result)
 }

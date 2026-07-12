@@ -33,14 +33,28 @@ pub struct EntitlementRow {
 pub struct SqliteEntitlementStore<'a>(pub &'a Connection);
 
 impl<'a> SqliteEntitlementStore<'a> {
-    /// Insert a new entitlement row after a successful redeem+import
-    /// (D-05).
+    /// Insert (or refresh) the entitlement row after a successful
+    /// redeem+import (D-05).
+    ///
+    /// WR-01 — `pack_id` is the table's PRIMARY KEY, and a second redeem of
+    /// the SAME pack is a legitimate flow (second purchase, updated pack
+    /// version, or a retry after a partial failure). A plain INSERT would
+    /// surface a raw `UNIQUE constraint failed` error AFTER the import
+    /// already committed, so conflicts upsert in place, refreshing every
+    /// attribution column to the newest redeem.
     pub fn insert(&self, row: &EntitlementRow) -> Result<(), String> {
         self.0
             .execute(
                 "INSERT INTO entitlements
                     (pack_id, issuer_id, issuer_name, buyer_name, order_id, redeemed_at, key_fingerprint)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(pack_id) DO UPDATE SET
+                    issuer_id = excluded.issuer_id,
+                    issuer_name = excluded.issuer_name,
+                    buyer_name = excluded.buyer_name,
+                    order_id = excluded.order_id,
+                    redeemed_at = excluded.redeemed_at,
+                    key_fingerprint = excluded.key_fingerprint",
                 rusqlite::params![
                     row.pack_id,
                     row.issuer_id,
@@ -143,6 +157,32 @@ mod tests {
             .find_by_pack_id("does-not-exist")
             .expect("15-02: a missing pack_id must be Ok(None), never an Err");
         assert_eq!(found, None);
+    }
+
+    /// WR-01 — inserting a second row for the same pack_id (second
+    /// purchase, updated pack version, or a retry after a partial failure)
+    /// refreshes the attribution in place instead of failing with a raw
+    /// `UNIQUE constraint failed` error after the import already committed.
+    #[test]
+    fn wr01_insert_upserts_on_pack_id_conflict() {
+        let conn = setup_test_db();
+        let store = SqliteEntitlementStore(&conn);
+        store.insert(&sample_row()).expect("first insert succeeds");
+
+        let mut refreshed = sample_row();
+        refreshed.order_id = "ORD-2".to_string();
+        refreshed.buyer_name = "New Buyer".to_string();
+        refreshed.redeemed_at = "2026-07-13T00:00:00Z".to_string();
+        refreshed.key_fingerprint = "cafebabe".to_string();
+        store
+            .insert(&refreshed)
+            .expect("WR-01: re-redeem of the same pack must upsert, not UNIQUE-fail");
+
+        let found = store
+            .find_by_pack_id("pack-1")
+            .unwrap()
+            .expect("row must still exist");
+        assert_eq!(found, refreshed, "conflict must refresh all attribution fields");
     }
 
     /// D-05 — the entitlements table has no FK CASCADE to learning_paths, so
