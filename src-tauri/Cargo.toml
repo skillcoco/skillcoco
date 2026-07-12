@@ -28,9 +28,6 @@ chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1"
-# Phase 13 (OSS Consolidation, Plan 13-02) — backs LicenseError::JwtError
-# only (D-06). Dormant until Phase 15 wires real JWT validation.
-jsonwebtoken = "9"
 async-trait = "0.1"
 log = "0.4"
 env_logger = "0.11"
@@ -81,6 +78,10 @@ printpdf = { version = "0.9", features = ["images", "png"] }
 base64 = "0.22"
 hex = "0.4"
 rand = "0.8"
+# Phase 15 (Entitlement & Redeem, 15-02) — SHA-256 license-key fingerprint
+# (D-06). Previously only a transitive dep via learnforge-core; promoted to
+# direct so src-tauri/src/entitlements/fingerprint.rs can `use sha2::...`.
+sha2 = "0.10"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 

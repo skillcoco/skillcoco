@@ -34,18 +34,51 @@ pub struct SqliteEntitlementStore<'a>(pub &'a Connection);
 
 impl<'a> SqliteEntitlementStore<'a> {
     /// Insert a new entitlement row after a successful redeem+import
-    /// (D-05). 15-02 implements the real `INSERT INTO entitlements ...`.
-    pub fn insert(&self, _row: &EntitlementRow) -> Result<(), String> {
-        unimplemented!("15-02")
+    /// (D-05).
+    pub fn insert(&self, row: &EntitlementRow) -> Result<(), String> {
+        self.0
+            .execute(
+                "INSERT INTO entitlements
+                    (pack_id, issuer_id, issuer_name, buyer_name, order_id, redeemed_at, key_fingerprint)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    row.pack_id,
+                    row.issuer_id,
+                    row.issuer_name,
+                    row.buyer_name,
+                    row.order_id,
+                    row.redeemed_at,
+                    row.key_fingerprint,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     /// Look up the entitlement row for `pack_id`, if any. Returns `Ok(None)`
     /// (not an error) when no row exists — most tracks are unlicensed, so a
-    /// miss is the expected case (D-08). 15-02 implements the real
-    /// `SELECT ... WHERE pack_id = ?1` + `QueryReturnedNoRows` -> `Ok(None)`
-    /// mapping.
-    pub fn find_by_pack_id(&self, _pack_id: &str) -> Result<Option<EntitlementRow>, String> {
-        unimplemented!("15-02")
+    /// miss is the expected case (D-08).
+    pub fn find_by_pack_id(&self, pack_id: &str) -> Result<Option<EntitlementRow>, String> {
+        match self.0.query_row(
+            "SELECT pack_id, issuer_id, issuer_name, buyer_name, order_id, redeemed_at, key_fingerprint
+             FROM entitlements WHERE pack_id = ?1",
+            rusqlite::params![pack_id],
+            |r| {
+                Ok(EntitlementRow {
+                    pack_id: r.get(0)?,
+                    issuer_id: r.get(1)?,
+                    issuer_name: r.get(2)?,
+                    buyer_name: r.get(3)?,
+                    order_id: r.get(4)?,
+                    redeemed_at: r.get(5)?,
+                    key_fingerprint: r.get(6)?,
+                })
+            },
+        ) {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
     }
 }
 
@@ -110,5 +143,42 @@ mod tests {
             .find_by_pack_id("does-not-exist")
             .expect("15-02: a missing pack_id must be Ok(None), never an Err");
         assert_eq!(found, None);
+    }
+
+    /// D-05 — the entitlements table has no FK CASCADE to learning_paths, so
+    /// deleting the corresponding track/modules must leave the entitlement
+    /// row intact (durability of proof-of-purchase across content churn).
+    #[test]
+    fn entitlement_row_survives_pack_deletion() {
+        let conn = setup_test_db();
+        // Minimal learning_paths table mirroring the real schema shape
+        // (only what's needed to prove deletion doesn't cascade).
+        conn.execute_batch(
+            "CREATE TABLE learning_paths (
+                 id TEXT PRIMARY KEY,
+                 pack_id TEXT
+             );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO learning_paths (id, pack_id) VALUES ('path-1', 'pack-1')",
+            [],
+        )
+        .unwrap();
+
+        let store = SqliteEntitlementStore(&conn);
+        let row = sample_row();
+        store.insert(&row).expect("insert must succeed");
+
+        // Delete the corresponding track/path row — no FK relationship
+        // exists from entitlements to learning_paths.
+        conn.execute("DELETE FROM learning_paths WHERE id = 'path-1'", [])
+            .unwrap();
+
+        let found = store
+            .find_by_pack_id("pack-1")
+            .expect("find_by_pack_id must succeed")
+            .expect("entitlement row must survive pack/track deletion (D-05)");
+        assert_eq!(found, row);
     }
 }
