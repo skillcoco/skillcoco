@@ -397,15 +397,39 @@ Return ONLY valid JSON with exactly 8-10 lessons."#,
 
 /// Insert skeleton block rows in a single transaction.
 /// Returns the list of skeleton blocks.
+///
+/// Phase 19.1 (PACKLAB-03/04) — `track_id` is used to look up the track's
+/// provenance (`learning_paths.generated_by_model`) once, before the lab
+/// loop. When provenance is `topic-pack:<pack_id>` AND the pack ships a
+/// `labs/<slug>/LAB.md` for a given lab, that lab block is written READY
+/// with the pack content (zero LLM calls). Any other provenance, or a lab
+/// slug with no on-disk LAB.md, falls through to the pre-existing pending
+/// skeleton + LLM-generation path byte-for-byte unchanged.
 pub(crate) fn insert_skeleton_blocks(
     conn: &rusqlite::Connection,
     module_id: &str,
     outline: &PagePlannerOutline,
+    track_id: &str,
 ) -> Result<Vec<ModuleBlock>, String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let now = chrono::Utc::now().to_rfc3339();
     let mut blocks = Vec::new();
     let n = outline.lessons.len();
+
+    // Resolve pack root ONCE before the lab loop. `None` (AI/imported track,
+    // or no learning_paths row for this track_id) means the lab loop below
+    // behaves exactly as today.
+    let provenance: Option<String> = tx
+        .query_row(
+            "SELECT generated_by_model FROM learning_paths WHERE track_id = ?1",
+            [track_id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten();
+    let pack_root = provenance
+        .as_deref()
+        .and_then(crate::labs::pageplanner_labs::pack_root_for_provenance);
 
     for (i, lesson) in outline.lessons.iter().enumerate() {
         let params = serde_json::json!({
@@ -486,28 +510,72 @@ pub(crate) fn insert_skeleton_blocks(
     }
 
     // LAB-05 — lab skeletons (one per outline.labs entry). Source markdown
-    // and parsed payload are filled by the parallel generator's `lab` arm.
+    // and parsed payload are filled by the parallel generator's `lab` arm —
+    // UNLESS (Phase 19.1 PACKLAB-03/04) the pack ships a LAB.md for this
+    // slug, in which case the block is written READY here and the `lab`
+    // generator arm is skipped entirely (ZERO LLM calls for that block).
     let lab_base_ordering = blocks.len() as i32;
     for (i, lab) in outline.labs.iter().enumerate() {
-        let params = serde_json::json!({
-            "outline": lab,
-            "generationPrompt": "",
-            "source": ""
-        })
-        .to_string();
-        let block = ModuleBlock {
-            id: uuid::Uuid::new_v4().to_string(),
-            module_id: module_id.to_string(),
-            ordering: lab_base_ordering + i as i32,
-            block_type: "lab".to_string(),
-            status: "pending".to_string(),
-            params_json: params,
-            payload_json: "{}".to_string(),
-            source_anchors_json: "[]".to_string(),
-            metadata_json: r#"{"concept_id": null}"#.to_string(),
-            retry_count: 0,
-            created_at: now.clone(),
-            updated_at: now.clone(),
+        let pack_hit = pack_root
+            .as_ref()
+            .and_then(|root| crate::labs::pageplanner_labs::resolve_pack_lab_md(root, &lab.slug));
+
+        let block = if let Some((spec, source)) = pack_hit {
+            // Upgrade placeholder outline fields from real pack frontmatter
+            // (CONTEXT.md placeholder-field problem fix) before persisting
+            // the ready payload's `outline` value.
+            let mut lab_with_spec = lab.clone();
+            lab_with_spec.image = spec.image.clone();
+            lab_with_spec.dockerfile = spec.dockerfile.clone();
+            lab_with_spec.requires_docker = spec.requires_docker;
+
+            let params = serde_json::json!({
+                "labMd": source,
+                "generationSource": "topic_pack",
+                "generationPrompt": serde_json::Value::Null
+            })
+            .to_string();
+            let payload = serde_json::json!({
+                "spec": spec,
+                "source": source,
+                "outline": lab_with_spec
+            })
+            .to_string();
+            ModuleBlock {
+                id: uuid::Uuid::new_v4().to_string(),
+                module_id: module_id.to_string(),
+                ordering: lab_base_ordering + i as i32,
+                block_type: "lab".to_string(),
+                status: "ready".to_string(),
+                params_json: params,
+                payload_json: payload,
+                source_anchors_json: "[]".to_string(),
+                metadata_json: r#"{"concept_id": null}"#.to_string(),
+                retry_count: 0,
+                created_at: now.clone(),
+                updated_at: now.clone(),
+            }
+        } else {
+            let params = serde_json::json!({
+                "outline": lab,
+                "generationPrompt": "",
+                "source": ""
+            })
+            .to_string();
+            ModuleBlock {
+                id: uuid::Uuid::new_v4().to_string(),
+                module_id: module_id.to_string(),
+                ordering: lab_base_ordering + i as i32,
+                block_type: "lab".to_string(),
+                status: "pending".to_string(),
+                params_json: params,
+                payload_json: "{}".to_string(),
+                source_anchors_json: "[]".to_string(),
+                metadata_json: r#"{"concept_id": null}"#.to_string(),
+                retry_count: 0,
+                created_at: now.clone(),
+                updated_at: now.clone(),
+            }
         };
         insert_block(&tx, &block).map_err(|e| e.to_string())?;
         blocks.push(block);
@@ -1012,7 +1080,7 @@ pub async fn generate_module_blocks_inner(
     // Insert skeleton blocks (brief lock, dropped before parallel generation)
     let skeleton = {
         let db = db_lock.lock().map_err(|e| e.to_string())?;
-        insert_skeleton_blocks(&db.conn, &req.module_id, &outline)?
+        insert_skeleton_blocks(&db.conn, &req.module_id, &outline, &req.track_id)?
     };
 
     // Build Arc wrappers for parallel generation
@@ -1137,7 +1205,7 @@ async fn generate_module_blocks_fresh(
             // Insert skeleton in a small lock scope.
             let skeleton = {
                 let db = db_arc.lock().map_err(|e| e.to_string())?;
-                insert_skeleton_blocks(&db.conn, &req.module_id, &outline)?
+                insert_skeleton_blocks(&db.conn, &req.module_id, &outline, &req.track_id)?
             };
 
             spawn_block_generation(
@@ -1373,7 +1441,7 @@ pub async fn regenerate_module(
     let skeleton = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         delete_blocks_by_module(&db.conn, &req.module_id).map_err(|e| e.to_string())?;
-        insert_skeleton_blocks(&db.conn, &req.module_id, &outline)?
+        insert_skeleton_blocks(&db.conn, &req.module_id, &outline, &req.track_id)?
     };
 
     // Generate in parallel using real auth (best-effort; individual failures tolerated)
@@ -2184,7 +2252,7 @@ pub(crate) mod tests {
         let outline_val: PagePlannerOutline = serde_json::from_str(&outline).unwrap();
         {
             let db = db_arc.lock().unwrap();
-            insert_skeleton_blocks(&db.conn, "mod-cache-int", &outline_val).unwrap();
+            insert_skeleton_blocks(&db.conn, "mod-cache-int", &outline_val, "trk-test").unwrap();
         }
 
         // Get pending blocks and generate
@@ -2487,7 +2555,7 @@ pub(crate) mod tests {
         let skeleton = {
             let db = db_arc.lock().unwrap();
             delete_blocks_by_module(&db.conn, "mod-regen-full").unwrap();
-            insert_skeleton_blocks(&db.conn, "mod-regen-full", &outline).unwrap()
+            insert_skeleton_blocks(&db.conn, "mod-regen-full", &outline, "trk-test").unwrap()
         };
         // 3. Generate in parallel
         let _ = generate_blocks_in_parallel_with_client(
