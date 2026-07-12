@@ -579,6 +579,21 @@ export interface ExamAttemptResult {
   stepVerdicts: StepVerdict[];
 }
 
+// D-06 best-attempt history (19-07 gap closure) — field-for-field
+// identical to ExamResultsPanel's AttemptHistorySummary so the IPC result
+// is structurally assignable to the panel's `history` prop.
+
+export interface ExamAttemptHistoryRequest {
+  attemptId: string;
+}
+
+export interface ExamAttemptHistoryResult {
+  attemptNumber: number;
+  totalAttempts: number;
+  bestScorePercent: number;
+  bestAttemptDate: string;
+}
+
 // ── Phase 19: exam entry-point IPC types (19-04) ──
 //
 // exam_blocks_for_track(trackId) — per-module exam-flag + block id data so

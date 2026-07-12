@@ -366,6 +366,14 @@ export async function examAttemptGet(
   return invoke("exam_attempt_get", { request });
 }
 
+// D-06 best-attempt history (19-07 gap closure) — read-only display data;
+// same class of IPC as examBlocksForTrack/getModuleBlocks, no store action.
+export async function examAttemptHistory(
+  request: import("@/types/learning").ExamAttemptHistoryRequest,
+): Promise<import("@/types/learning").ExamAttemptHistoryResult> {
+  return invoke("exam_attempt_history", { request });
+}
+
 // Phase 19 (19-04) — per-track exam-flag entry-point data for TrackView's
 // Start Exam button (19-06).
 export async function examBlocksForTrack(
