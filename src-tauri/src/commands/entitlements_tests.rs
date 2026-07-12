@@ -157,10 +157,12 @@ async fn download_and_import_pack_impl_imports_via_unchanged_gate() {
         result.is_err(),
         "expected UntrustedPublisher via the unchanged gate, got {result:?}"
     );
-    let err_msg = result.unwrap_err();
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, "generic", "import rejections map to the generic kind (WR-06)");
     assert!(
-        err_msg.contains("publisher") || err_msg.contains("recognized"),
-        "expected the UntrustedPublisher message, got: {err_msg}"
+        err.message.contains("publisher") || err.message.contains("recognized"),
+        "expected the UntrustedPublisher message, got: {}",
+        err.message
     );
 
     // No entitlement row or pack_id stamp should exist since import failed
@@ -255,10 +257,11 @@ async fn ent03_unlicensed_licensed_pack_still_rejected() {
         result.is_err(),
         "an unsigned licensed: pack must be rejected (SignatureRequired), got {result:?}"
     );
-    let err_msg = result.unwrap_err();
+    let err = result.unwrap_err();
     assert!(
-        err_msg.contains("signature") || err_msg.contains("publisher"),
-        "expected a signature-required-style message, got: {err_msg}"
+        err.message.contains("signature") || err.message.contains("publisher"),
+        "expected a signature-required-style message, got: {}",
+        err.message
     );
 }
 
@@ -445,6 +448,76 @@ fn wr04_ipc_request_debug_output_redacts_license_key() {
         "DownloadAndImportPackRequest Debug must never leak the raw key: {debug_str}"
     );
     assert!(debug_str.contains("<redacted>"), "got: {debug_str}");
+}
+
+// ── WR-06 — machine-readable error kinds across the IPC boundary ──
+
+/// WR-06 — every RedeemLicenseError variant maps to a stable machine
+/// `kind` the frontend can classify on (never substring-matching the human
+/// copy), and the payload serializes as `{ "kind": ..., "message": ... }`.
+#[test]
+fn wr06_redeem_ipc_error_carries_machine_kind() {
+    let cases: [(crate::entitlements::RedeemLicenseError, &str); 6] = [
+        (crate::entitlements::RedeemLicenseError::InvalidKey, "invalid_key"),
+        (
+            crate::entitlements::RedeemLicenseError::AlreadyRedeemed,
+            "already_redeemed",
+        ),
+        (crate::entitlements::RedeemLicenseError::Revoked, "revoked"),
+        (
+            crate::entitlements::RedeemLicenseError::IssuerUnreachable,
+            "issuer_unreachable",
+        ),
+        (
+            crate::entitlements::RedeemLicenseError::MalformedResponse("x".to_string()),
+            "malformed_response",
+        ),
+        (crate::entitlements::RedeemLicenseError::PackTooLarge, "pack_too_large"),
+    ];
+    for (err, expected_kind) in cases {
+        let human_copy = err.to_string();
+        let ipc_err = RedeemIpcError::from(err);
+        assert_eq!(ipc_err.kind, expected_kind);
+        assert_eq!(
+            ipc_err.message, human_copy,
+            "message must carry the Display copy for {expected_kind}"
+        );
+
+        let json = serde_json::to_value(&ipc_err).unwrap();
+        assert_eq!(json["kind"].as_str(), Some(expected_kind));
+        assert!(json["message"].as_str().is_some());
+    }
+}
+
+/// WR-06 — a transport-level redeem failure surfaces across the IPC
+/// boundary as a structured `{ kind: "issuer_unreachable" }`, not a bare
+/// display string the frontend would have to regex.
+#[tokio::test]
+async fn wr06_redeem_impl_returns_structured_kind_on_unreachable_hub() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+
+    // Point the hub at a nowhere-listening loopback port.
+    {
+        let conn_guard = db.lock().unwrap();
+        let prefs = serde_json::json!({ "hubUrl": "http://127.0.0.1:1" });
+        conn_guard
+            .conn
+            .execute(
+                "UPDATE learner_profiles SET preferences_json = ?1 WHERE id = 'lp-ent-1'",
+                rusqlite::params![prefs.to_string()],
+            )
+            .unwrap();
+    }
+
+    let request = RedeemLicenseIpcRequest {
+        license_key: "KEY-WR06".to_string(),
+        device_fingerprint: "fp-1".to_string(),
+    };
+    let err = redeem_license_impl(&db, &request)
+        .await
+        .expect_err("unreachable hub must fail");
+    assert_eq!(err.kind, "issuer_unreachable");
 }
 
 // ── WR-01 — atomic entitlement-record + attribution-stamp transaction ──

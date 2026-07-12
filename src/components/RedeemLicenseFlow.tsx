@@ -85,6 +85,14 @@ function getOrCreateDeviceFingerprint(): string {
   }
 }
 
+// WR-06 — classification happens EXCLUSIVELY on the structured `kind`
+// field the backend's RedeemIpcError serializes ({ kind, message }). No
+// substring matching on human-readable copy: a copy edit can never reroute
+// classification, and a free-text message mentioning e.g. "connection"
+// falls through to "generic" instead of masquerading as
+// issuer_unreachable. Unrecognized kinds (e.g. malformed_response,
+// pack_too_large) also render the generic copy — `message` is diagnostic
+// only and is never rendered (T-15-16).
 function classifyError(err: unknown): ErrorKind {
   const kind =
     err && typeof err === "object" && "kind" in err
@@ -97,14 +105,6 @@ function classifyError(err: unknown): ErrorKind {
     kind === "issuer_unreachable"
   ) {
     return kind;
-  }
-
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  if (/isn't valid|invalid/i.test(message)) return "invalid_key";
-  if (/already been redeemed/i.test(message)) return "already_redeemed";
-  if (/revoked/i.test(message)) return "revoked";
-  if (/couldn't reach|unreachable|connection/i.test(message)) {
-    return "issuer_unreachable";
   }
   return "generic";
 }

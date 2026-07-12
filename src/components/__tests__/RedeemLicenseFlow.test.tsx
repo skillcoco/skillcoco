@@ -120,6 +120,61 @@ describe("RedeemLicenseFlow — typed error rendering (Wave 0 RED)", () => {
     });
   });
 
+  // WR-06 — classification happens EXCLUSIVELY on the structured `kind`
+  // field the backend's RedeemIpcError serializes ({ kind, message });
+  // the old Display-copy regex fallback is deleted. All four contract
+  // taxonomy variants must route through `kind`.
+  it.each([
+    ["invalid_key", /this license key isn't valid\. check for typos/i],
+    ["already_redeemed", /this license key has already been redeemed\./i],
+    ["revoked", /this license key has been revoked\./i],
+    ["issuer_unreachable", /couldn't reach the license server\./i],
+  ])(
+    "WR-06: classifies { kind: %s } via the structured field and renders its locked copy",
+    async (kind, expectedCopy) => {
+      redeemLicenseMock.mockRejectedValue({
+        kind,
+        message: "diagnostic detail — never rendered",
+      });
+
+      render(<RedeemLicenseFlow />);
+
+      await userEvent.type(screen.getByLabelText(/license key/i), "SOME-KEY");
+      await userEvent.click(
+        screen.getByRole("button", { name: /^redeem$/i }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(expectedCopy)).toBeInTheDocument();
+      });
+      // The raw diagnostic message is NEVER rendered (T-15-16).
+      expect(
+        screen.queryByText(/diagnostic detail/i),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("WR-06: a free-text error mentioning 'connection' renders the GENERIC copy — no substring matching on human copy", async () => {
+    redeemLicenseMock.mockRejectedValue(
+      new Error("Redeem request failed: connection closed before message completed"),
+    );
+
+    render(<RedeemLicenseFlow />);
+
+    await userEvent.type(screen.getByLabelText(/license key/i), "SOME-KEY");
+    await userEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/something went wrong redeeming this key\./i),
+      ).toBeInTheDocument();
+    });
+    // Must NOT be misclassified as issuer_unreachable (no Retry button).
+    expect(
+      screen.queryByRole("button", { name: /^retry$/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the issuer_unreachable copy plus a Retry button", async () => {
     redeemLicenseMock.mockRejectedValue({ kind: "issuer_unreachable" });
 

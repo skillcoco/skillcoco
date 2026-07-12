@@ -41,6 +41,56 @@ use crate::commands::course_io;
 
 // ── Request/response types ──────────────────────────────────────────────
 
+/// WR-06 — machine-readable error payload for the redeem-flow IPC boundary.
+///
+/// Previously both commands mapped every failure to `e.to_string()`, so the
+/// frontend's `classifyError` had to substring-match the human Display copy
+/// — the exact string-matching anti-pattern T-15-09 removed from the
+/// backend. This struct serializes as `{ "kind": ..., "message": ... }`:
+/// the frontend classifies EXCLUSIVELY on `kind` (stable machine code) and
+/// renders its own locked UI-SPEC copy — `message` is diagnostic context,
+/// never rendered into the DOM (T-15-16).
+#[derive(Debug, Clone, Serialize)]
+pub struct RedeemIpcError {
+    /// Stable machine code: `invalid_key` | `already_redeemed` | `revoked`
+    /// | `issuer_unreachable` | `malformed_response` | `pack_too_large`
+    /// | `generic`.
+    pub kind: String,
+    /// Human-readable detail (the typed error's Display copy, or the raw
+    /// underlying error text for `generic`). Diagnostic only — the UI never
+    /// renders this (T-15-16).
+    pub message: String,
+}
+
+impl RedeemIpcError {
+    /// Local (non-Hub) failures: lock poisoning, storage errors, import
+    /// rejections. The frontend renders its generic fallback copy.
+    fn generic(message: impl std::fmt::Display) -> Self {
+        Self {
+            kind: "generic".to_string(),
+            message: message.to_string(),
+        }
+    }
+}
+
+impl From<crate::entitlements::RedeemLicenseError> for RedeemIpcError {
+    fn from(err: crate::entitlements::RedeemLicenseError) -> Self {
+        use crate::entitlements::RedeemLicenseError as E;
+        let kind = match &err {
+            E::InvalidKey => "invalid_key",
+            E::AlreadyRedeemed => "already_redeemed",
+            E::Revoked => "revoked",
+            E::IssuerUnreachable => "issuer_unreachable",
+            E::MalformedResponse(_) => "malformed_response",
+            E::PackTooLarge => "pack_too_large",
+        };
+        Self {
+            kind: kind.to_string(),
+            message: err.to_string(),
+        }
+    }
+}
+
 /// `redeem_license` IPC request. Wire shape matches
 /// `entitlements::redeem::RedeemLicenseRequest` (camelCase over IPC).
 #[derive(Clone, Deserialize)]
@@ -135,9 +185,9 @@ fn read_hub_url_config(conn: &rusqlite::Connection) -> String {
 async fn redeem_license_impl(
     db: &std::sync::Mutex<Database>,
     request: &RedeemLicenseIpcRequest,
-) -> Result<RedeemLicenseResult, String> {
+) -> Result<RedeemLicenseResult, RedeemIpcError> {
     let hub_base_url = {
-        let conn_guard = db.lock().map_err(|e| e.to_string())?;
+        let conn_guard = db.lock().map_err(RedeemIpcError::generic)?;
         read_hub_url_config(&conn_guard.conn)
     };
 
@@ -148,7 +198,7 @@ async fn redeem_license_impl(
 
     call_redeem_endpoint(&hub_base_url, &redeem_request)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(RedeemIpcError::from)
 }
 
 /// Thin shim over `redeem_license_impl`. Validates a license key and
@@ -158,7 +208,7 @@ async fn redeem_license_impl(
 pub async fn redeem_license(
     request: RedeemLicenseIpcRequest,
     state: State<'_, crate::AppState>,
-) -> Result<RedeemLicenseResult, String> {
+) -> Result<RedeemLicenseResult, RedeemIpcError> {
     redeem_license_impl(state.db.as_ref(), &request).await
 }
 
@@ -215,18 +265,18 @@ async fn download_and_import_pack_impl(
     db: &std::sync::Mutex<Database>,
     app_data_dir: &std::path::Path,
     request: &DownloadAndImportPackRequest,
-) -> Result<ImportCourseResult, String> {
+) -> Result<ImportCourseResult, RedeemIpcError> {
     // Network I/O first — no DB lock held across this `.await` (T-15-15).
     let retained_path = download_and_store(&request.download_url, &request.pack_id, app_data_dir)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(RedeemIpcError::from)?;
 
     // Re-lock the DB ONLY for the synchronous import + entitlement-record +
     // attribution-stamp work below — no further `.await` inside this scope.
-    let conn_guard = db.lock().map_err(|e| e.to_string())?;
+    let conn_guard = db.lock().map_err(RedeemIpcError::generic)?;
 
     let import_result =
-        import_course_impl(&conn_guard.conn, &retained_path).map_err(|e| e.to_string())?;
+        import_course_impl(&conn_guard.conn, &retained_path).map_err(RedeemIpcError::generic)?;
 
     let entitlement_row = EntitlementRow {
         pack_id: request.pack_id.clone(),
@@ -241,7 +291,8 @@ async fn download_and_import_pack_impl(
     };
     // WR-01 — entitlement record + attribution stamp are ONE transaction
     // (rolls back together; upserts on a same-pack re-redeem).
-    record_entitlement_and_stamp(&conn_guard.conn, &entitlement_row, &import_result.track_id)?;
+    record_entitlement_and_stamp(&conn_guard.conn, &entitlement_row, &import_result.track_id)
+        .map_err(RedeemIpcError::generic)?;
 
     Ok(import_result)
 }
@@ -254,11 +305,11 @@ pub async fn download_and_import_pack(
     request: DownloadAndImportPackRequest,
     state: State<'_, crate::AppState>,
     app_handle: tauri::AppHandle,
-) -> Result<ImportCourseResult, String> {
+) -> Result<ImportCourseResult, RedeemIpcError> {
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|e| e.to_string())?;
+        .map_err(RedeemIpcError::generic)?;
     download_and_import_pack_impl(state.db.as_ref(), &app_data_dir, &request).await
 }
 
