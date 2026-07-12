@@ -201,6 +201,51 @@ describe("RedeemLicenseFlow — typed error rendering (Wave 0 RED)", () => {
   });
 });
 
+describe("RedeemLicenseFlow — WR-07 truthful progress copy", () => {
+  it("shows a single honest 'Downloading and importing course…' label while the one-round-trip confirm IPC is pending", async () => {
+    redeemLicenseMock.mockResolvedValue(successfulRedeemResult());
+    let resolveImport!: (value: { trackId: string }) => void;
+    downloadAndImportPackMock.mockImplementation(
+      () =>
+        new Promise<{ trackId: string }>((resolve) => {
+          resolveImport = resolve;
+        }),
+    );
+
+    render(<RedeemLicenseFlow />);
+
+    await userEvent.type(screen.getByLabelText(/license key/i), "ABCD-1234");
+    await userEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /confirm & download/i }),
+      ).toBeInTheDocument();
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: /confirm & download/i }),
+    );
+
+    // WR-07 — the download+import IPC is ONE round trip with no
+    // download-complete signal, so the UI renders one truthful combined
+    // label instead of a "Downloading…" phase that was dead code and an
+    // "Importing…" label shown during the download too.
+    await waitFor(() => {
+      expect(
+        screen.getByText(/downloading and importing course/i),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^importing course/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^downloading course/i)).not.toBeInTheDocument();
+
+    resolveImport({ trackId: "trk-wr07" });
+    await waitFor(() => {
+      expect(
+        screen.getByText(/course imported\. it's now available/i),
+      ).toBeInTheDocument();
+    });
+  });
+});
+
 describe("RedeemLicenseFlow — CR-01 stranded-purchase recovery", () => {
   it("retries a failed confirm-stage download with the HELD downloadUrl — redeemLicense is never re-called (the key is already burned)", async () => {
     redeemLicenseMock.mockResolvedValue(successfulRedeemResult());

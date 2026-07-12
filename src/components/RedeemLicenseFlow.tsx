@@ -42,7 +42,9 @@ type Stage =
   | { kind: "entry" }
   | { kind: "validating" }
   | { kind: "confirm"; result: RedeemLicenseResult }
-  | { kind: "downloading"; result: RedeemLicenseResult; phase: "download" | "import" }
+  // WR-07 — no phase discriminant: download+import is ONE IPC round trip
+  // with no download-complete signal, so a two-phase label would lie.
+  | { kind: "downloading"; result: RedeemLicenseResult }
   | { kind: "success"; message?: string }
   // CR-01 — `heldResult` keeps the redeem payload (incl. the single-use
   // downloadUrl) in scope after a confirm-stage failure, so Retry can
@@ -177,12 +179,12 @@ export function RedeemLicenseFlow({ onImported }: RedeemLicenseFlowProps) {
   }
 
   async function runDownloadAndImport(result: RedeemLicenseResult) {
-    setStage({ kind: "downloading", result, phase: "download" });
+    setStage({ kind: "downloading", result });
     try {
-      // Single network+import round trip — the "Importing course…" copy
-      // is shown immediately after the download call resolves-and-hands-
-      // off to the backend's import step, per the UI-SPEC two-phase copy.
-      const importPromise = downloadAndImportPack({
+      // WR-07 — single network+import round trip with no intermediate
+      // download-complete signal, so one honest combined progress label
+      // covers the whole await (no fake phase transition).
+      const imported = await downloadAndImportPack({
         downloadUrl: result.downloadUrl,
         packId: result.packId,
         issuerId: result.issuerId,
@@ -192,8 +194,6 @@ export function RedeemLicenseFlow({ onImported }: RedeemLicenseFlowProps) {
         redeemedAt: result.redeemedAt,
         licenseKey: licenseKey.trim(),
       });
-      setStage({ kind: "downloading", result, phase: "import" });
-      const imported = await importPromise;
       setStage({ kind: "success" });
       onImported?.(imported.trackId);
     } catch (err) {
@@ -325,9 +325,7 @@ export function RedeemLicenseFlow({ onImported }: RedeemLicenseFlowProps) {
             {stage.kind === "downloading" && (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Loader2 size={12} className="animate-spin" />
-                {stage.phase === "download"
-                  ? "Downloading course…"
-                  : "Importing course…"}
+                Downloading and importing course…
               </div>
             )}
 
