@@ -324,6 +324,9 @@ pub fn run() {
             commands::reports::export_report_pdf,
             // Org evidence submission (Phase 18 — Plan 06 / D-13)
             commands::reports::submit_evidence_report,
+            // Entitlement redeem + buyer-stamped pack download (Phase 15 — Plan 04)
+            commands::entitlements::redeem_license,
+            commands::entitlements::download_and_import_pack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
