@@ -102,10 +102,11 @@ pub async fn call_redeem_endpoint(
     hub_base_url: &str,
     request: &RedeemLicenseRequest,
 ) -> Result<RedeemLicenseResult, RedeemLicenseError> {
-    // T-18-19-style SSRF hygiene — reject non-http(s) schemes BEFORE any
-    // request is attempted.
-    let is_http_scheme = hub_base_url.starts_with("http://") || hub_base_url.starts_with("https://");
-    if !is_http_scheme {
+    // T-18-19-style SSRF hygiene + WR-03 cleartext-key guard — the redeem
+    // POST body carries the raw license key, so plaintext http:// is only
+    // permitted for loopback hosts (dev/mock Hub); anything else must be
+    // https. Rejected BEFORE any request is attempted.
+    if !super::is_permitted_endpoint_url(hub_base_url) {
         return Err(RedeemLicenseError::IssuerUnreachable);
     }
 

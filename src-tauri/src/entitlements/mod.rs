@@ -125,6 +125,39 @@ pub mod test_support {
     }
 }
 
+/// WR-03 — endpoint-URL policy shared by the redeem POST (whose body
+/// carries the raw license key) and the buyer-stamped pack download GET.
+///
+/// `https://` is always permitted; plaintext `http://` is permitted ONLY
+/// when the host is exactly a loopback address (`127.0.0.1`, `localhost`,
+/// or `[::1]`) so local dev/mock Hubs keep working without admitting
+/// cleartext key exfiltration to arbitrary hosts. Everything else (other
+/// schemes, non-loopback http hosts, prefix/userinfo spoofs like
+/// `127.0.0.1.evil.com` or `127.0.0.1@evil.com`) is rejected fail-closed.
+pub(crate) fn is_permitted_endpoint_url(url: &str) -> bool {
+    if url.starts_with("https://") {
+        return true;
+    }
+    let Some(rest) = url.strip_prefix("http://") else {
+        return false;
+    };
+    // Authority = everything up to the first path/query/fragment delimiter.
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    // Strip any `userinfo@` prefix — only the HOST decides loopback-ness
+    // (`http://127.0.0.1@evil.com` has host `evil.com`, not 127.0.0.1).
+    let host_port = authority
+        .rsplit_once('@')
+        .map(|(_, host)| host)
+        .unwrap_or(authority);
+    // Bracketed IPv6 loopback, with or without a port.
+    if host_port == "[::1]" || host_port.starts_with("[::1]:") {
+        return true;
+    }
+    // Strip a `:port` suffix; the remaining host must match EXACTLY.
+    let host = host_port.split(':').next().unwrap_or("");
+    host == "127.0.0.1" || host.eq_ignore_ascii_case("localhost")
+}
+
 /// Typed errors for the redeem-license flow (D-04). Every variant's
 /// `#[error(...)]` string is the exact plain-language copy rendered inline
 /// under the license-key field in `RedeemLicenseFlow` (15-UI-SPEC.md
@@ -157,6 +190,41 @@ pub enum RedeemLicenseError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WR-03 — plaintext `http://` is permitted ONLY for loopback hosts
+    /// (dev/mock Hub); every other http:// URL is rejected so the raw
+    /// license key can never be POSTed in cleartext to an arbitrary host.
+    /// `https://` is always permitted. Host matching must be exact — a
+    /// hostname that merely STARTS with "127.0.0.1"/"localhost" (e.g.
+    /// `127.0.0.1.evil.com`) or hides the real host behind a userinfo `@`
+    /// must be rejected.
+    #[test]
+    fn wr03_http_scheme_permitted_only_for_loopback_hosts() {
+        // https is always fine.
+        assert!(is_permitted_endpoint_url("https://hub.learnforge.dev"));
+        assert!(is_permitted_endpoint_url("https://example.com/x"));
+
+        // Loopback http is fine (local dev/mock Hub, used by the tests).
+        assert!(is_permitted_endpoint_url("http://127.0.0.1:8080"));
+        assert!(is_permitted_endpoint_url("http://127.0.0.1:8080/v1/x"));
+        assert!(is_permitted_endpoint_url("http://localhost"));
+        assert!(is_permitted_endpoint_url("http://localhost:3000/x"));
+        assert!(is_permitted_endpoint_url("http://[::1]:3000/x"));
+
+        // Non-loopback http carries the raw key in cleartext — rejected.
+        assert!(!is_permitted_endpoint_url("http://example.com"));
+        assert!(!is_permitted_endpoint_url("http://hub.learnforge.dev/v1/x"));
+
+        // Prefix/userinfo spoofs of a loopback host — rejected.
+        assert!(!is_permitted_endpoint_url("http://127.0.0.1.evil.com/"));
+        assert!(!is_permitted_endpoint_url("http://localhost.evil.com"));
+        assert!(!is_permitted_endpoint_url("http://127.0.0.1@evil.com/x"));
+
+        // Non-http(s) schemes stay rejected (existing SSRF guard).
+        assert!(!is_permitted_endpoint_url("ftp://x"));
+        assert!(!is_permitted_endpoint_url("file:///etc/passwd"));
+        assert!(!is_permitted_endpoint_url("not a url"));
+    }
 
     /// D-04 — every RedeemLicenseError variant renders its exact plain-language
     /// copy from the 15-UI-SPEC.md Copywriting Contract. This is the acceptance

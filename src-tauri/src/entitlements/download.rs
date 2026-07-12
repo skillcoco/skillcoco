@@ -83,10 +83,10 @@ pub async fn download_and_store(
     // bytes are fetched (T-15-08).
     sanitize_pack_id(pack_id)?;
 
-    // Step 2 — SSRF/local-file-read hygiene: only http(s) schemes proceed
-    // (T-15-07, same guard as call_redeem_endpoint).
-    let is_http_scheme = download_url.starts_with("http://") || download_url.starts_with("https://");
-    if !is_http_scheme {
+    // Step 2 — SSRF/local-file-read hygiene + WR-03 cleartext guard: https
+    // always; plaintext http only for loopback hosts (same shared policy as
+    // call_redeem_endpoint).
+    if !super::is_permitted_endpoint_url(download_url) {
         return Err(RedeemLicenseError::IssuerUnreachable);
     }
 
@@ -180,6 +180,30 @@ mod tests {
 
         // No entitlements dir must have been created for a rejected scheme.
         assert!(!tmp.path().join("entitlements").exists());
+    }
+
+    /// WR-03 — a plaintext http:// downloadUrl pointing at a NON-loopback
+    /// host is rejected with IssuerUnreachable BEFORE any GET or file write;
+    /// loopback http (dev/mock Hub) stays permitted at the policy level.
+    #[tokio::test]
+    async fn wr03_download_rejects_plaintext_http_for_non_loopback() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        let result =
+            download_and_store("http://example.com/pack.json", "clean-id", tmp.path()).await;
+        assert!(
+            matches!(result, Err(RedeemLicenseError::IssuerUnreachable)),
+            "non-loopback plaintext http must be rejected, got {result:?}"
+        );
+        assert!(
+            !tmp.path().join("entitlements").exists(),
+            "guard must fire before any file write"
+        );
+
+        // Loopback http remains permitted by the shared policy helper.
+        assert!(crate::entitlements::is_permitted_endpoint_url(
+            "http://127.0.0.1:8080/pack.json"
+        ));
     }
 
     /// download_writes_retained_artifact_at_stable_path — given a base dir
