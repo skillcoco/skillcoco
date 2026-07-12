@@ -1,0 +1,92 @@
+{
+  "id": "kubernetes-fundamentals-starter",
+  "title": "Kubernetes Fundamentals (Starter)",
+  "description": "A free starter introduction to Kubernetes: container basics, cluster architecture, pods, and deployments. Get comfortable with the core building blocks before diving into the full course.",
+  "domain_module": "devops",
+  "modules": [
+    {
+      "id": "k8s-containers-recap",
+      "title": "Container Basics Recap",
+      "description": "Review container fundamentals: images, registries, Dockerfiles, and container runtimes.",
+      "objectives": [
+        "Explain the difference between containers and virtual machines",
+        "Build and run a container from a Dockerfile",
+        "Push and pull images from a container registry"
+      ],
+      "difficulty": 1,
+      "estimated_minutes": 25,
+      "exercise_types": [
+        "conceptual_qa",
+        "fill_in_blank"
+      ]
+    },
+    {
+      "id": "k8s-architecture",
+      "title": "Kubernetes Architecture",
+      "description": "Understand the control plane and worker node components: API server, etcd, scheduler, controller manager, kubelet, and kube-proxy.",
+      "objectives": [
+        "Identify the role of each control plane component",
+        "Describe how worker nodes communicate with the control plane",
+        "Explain the declarative model and reconciliation loop"
+      ],
+      "difficulty": 1,
+      "estimated_minutes": 35,
+      "exercise_types": [
+        "conceptual_qa",
+        "fill_in_blank"
+      ]
+    },
+    {
+      "id": "k8s-pods",
+      "title": "Pods - The Smallest Deployable Unit",
+      "description": "Deep dive into pods: single-container and multi-container patterns, pod lifecycle, resource requests and limits.",
+      "objectives": [
+        "Define what a Pod is and why it exists",
+        "Write a Pod YAML manifest from scratch",
+        "Configure resource requests and limits"
+      ],
+      "difficulty": 2,
+      "estimated_minutes": 40,
+      "exercise_types": [
+        "conceptual_qa",
+        "code_challenge"
+      ]
+    },
+    {
+      "id": "k8s-deployments",
+      "title": "Deployments and ReplicaSets",
+      "description": "Learn how Deployments manage ReplicaSets to provide declarative updates, rolling rollouts, and rollbacks.",
+      "objectives": [
+        "Create a Deployment and understand its relationship to ReplicaSets",
+        "Perform rolling updates and rollbacks",
+        "Scale a Deployment horizontally"
+      ],
+      "difficulty": 2,
+      "estimated_minutes": 40,
+      "exercise_types": [
+        "conceptual_qa",
+        "code_challenge"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "k8s-containers-recap",
+      "to": "k8s-architecture"
+    },
+    {
+      "from": "k8s-architecture",
+      "to": "k8s-pods"
+    },
+    {
+      "from": "k8s-pods",
+      "to": "k8s-deployments"
+    }
+  ],
+  "exportVersion": "1.0.0",
+  "exportedAt": "2026-07-12T00:00:00Z",
+  "exportedFrom": "topic-pack:kubernetes-fundamentals-starter",
+  "blocks": {},
+  "labs": {},
+  "videos": {}
+}

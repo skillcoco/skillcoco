@@ -1,0 +1,72 @@
+{
+  "id": "python-for-devops-starter",
+  "title": "Python for DevOps (Starter)",
+  "description": "A free starter introduction to using Python for DevOps automation: a Python refresher, file/system operations, and basic process automation.",
+  "domain_module": "devops",
+  "modules": [
+    {
+      "id": "py-basics-refresher",
+      "title": "Python Basics Refresher",
+      "description": "A fast-paced review of Python fundamentals: data types, control flow, functions, list comprehensions, and virtual environments.",
+      "objectives": [
+        "Review core Python data types and control flow",
+        "Write functions with default and keyword arguments",
+        "Set up and use a virtual environment"
+      ],
+      "difficulty": 1,
+      "estimated_minutes": 25,
+      "exercise_types": [
+        "conceptual_qa",
+        "fill_in_blank"
+      ]
+    },
+    {
+      "id": "py-file-system-ops",
+      "title": "File and System Operations",
+      "description": "Automate file and system tasks using Python's os, pathlib, and subprocess modules.",
+      "objectives": [
+        "Read, write, and manipulate files with pathlib",
+        "Run and capture output from shell commands via subprocess",
+        "Handle errors from system-level operations"
+      ],
+      "difficulty": 1,
+      "estimated_minutes": 30,
+      "exercise_types": [
+        "conceptual_qa",
+        "code_challenge"
+      ]
+    },
+    {
+      "id": "py-process-automation",
+      "title": "Process Automation Basics",
+      "description": "Build simple automation scripts that orchestrate multi-step tasks and handle failures gracefully.",
+      "objectives": [
+        "Design a multi-step automation script",
+        "Add retry and error-handling logic",
+        "Log automation script output for troubleshooting"
+      ],
+      "difficulty": 2,
+      "estimated_minutes": 35,
+      "exercise_types": [
+        "conceptual_qa",
+        "code_challenge"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "py-basics-refresher",
+      "to": "py-file-system-ops"
+    },
+    {
+      "from": "py-file-system-ops",
+      "to": "py-process-automation"
+    }
+  ],
+  "exportVersion": "1.0.0",
+  "exportedAt": "2026-07-12T00:00:00Z",
+  "exportedFrom": "topic-pack:python-for-devops-starter",
+  "blocks": {},
+  "labs": {},
+  "videos": {}
+}
