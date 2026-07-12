@@ -81,6 +81,14 @@ impl std::fmt::Debug for RedeemLicenseRequest {
 #[serde(rename_all = "camelCase")]
 pub struct RedeemLicenseResult {
     pub pack_id: String,
+    /// Human-readable pack title for the confirm-dialog heading (WR-05).
+    /// Optional tolerant passthrough: the authoritative contract
+    /// (`entitlement-api-contract.md`) does not pin this field, so an
+    /// absent `packTitle` deserializes to `None` and the UI falls back to
+    /// `pack_id`. Skipped on serialize when `None` so the IPC payload stays
+    /// clean (TS side sees `undefined`, not `null`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pack_title: Option<String>,
     pub issuer_id: String,
     pub issuer_name: String,
     pub buyer_name: String,
@@ -166,6 +174,7 @@ mod tests {
     fn redeem_license_result_serializes_camel_case() {
         let result = RedeemLicenseResult {
             pack_id: "pack-1".to_string(),
+            pack_title: None,
             issuer_id: "issuer-1".to_string(),
             issuer_name: "Test Issuer".to_string(),
             buyer_name: "Jane Buyer".to_string(),
@@ -205,6 +214,41 @@ mod tests {
         assert_eq!(result.order_id, "ORD-1");
         assert_eq!(result.download_url, "https://hub.example.org/download/1");
         assert_eq!(result.redeemed_at, "2026-07-12T00:00:00Z");
+        // packTitle absent (the contract doc doesn't pin it) — tolerant None.
+        assert_eq!(result.pack_title, None);
+    }
+
+    /// WR-05 — a Hub response that DOES carry `packTitle` round-trips it
+    /// through RedeemLicenseResult (previously the field was silently
+    /// dropped, so the confirm dialog could never show a human title), and
+    /// serialization re-emits it camelCase for the IPC payload.
+    #[test]
+    fn wr05_pack_title_passes_through_when_present() {
+        let body = serde_json::json!({
+            "packId": "pack-1",
+            "packTitle": "Kubernetes Fundamentals",
+            "issuerId": "issuer-1",
+            "issuerName": "Test Issuer",
+            "buyerName": "Jane Buyer",
+            "orderId": "ORD-1",
+            "downloadUrl": "https://hub.example.org/download/1",
+            "redeemedAt": "2026-07-12T00:00:00Z",
+        })
+        .to_string();
+
+        let result: RedeemLicenseResult = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            result.pack_title.as_deref(),
+            Some("Kubernetes Fundamentals")
+        );
+
+        let json = serde_json::to_string(&result).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            value["packTitle"].as_str(),
+            Some("Kubernetes Fundamentals"),
+            "got: {json}"
+        );
     }
 
     /// redeem_invalid_key_maps_typed — error-code "invalid_key" maps to
