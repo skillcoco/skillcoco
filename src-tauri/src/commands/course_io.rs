@@ -1058,6 +1058,7 @@ mod tests {
         );
     }
 
+    // ENT-03 fail-closed baseline (Phase 15) — MUST stay byte-identical; do not modify.
     #[test]
     fn not_exportable_licensed_provenance() {
         assert!(
