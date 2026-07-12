@@ -472,6 +472,61 @@ export async function importCourse(
   return invoke("import_course", { request });
 }
 
+// ── Phase 15 (Entitlement & Redeem) — Plan 04 IPC wrappers ──
+//
+// Both wrappers follow the `{ request: T }` envelope per CONVENTIONS.md Q9.
+// redeemLicense validates a key and returns confirm-dialog data with NO
+// download (D-03 staged-confirm split). downloadAndImportPack fetches the
+// buyer-stamped pack and imports it through the same import_course backend
+// gate — it returns the existing ImportCourseResult shape verbatim.
+
+export interface RedeemLicenseRequest {
+  licenseKey: string;
+  deviceFingerprint: string;
+}
+
+export interface RedeemLicenseResult {
+  packId: string;
+  packTitle?: string;
+  issuerId: string;
+  issuerName: string;
+  buyerName: string;
+  orderId: string;
+  downloadUrl: string;
+  redeemedAt: string;
+}
+
+export interface DownloadAndImportPackRequest {
+  downloadUrl: string;
+  packId: string;
+  issuerId: string;
+  issuerName: string;
+  buyerName: string;
+  orderId: string;
+  redeemedAt: string;
+  licenseKey: string;
+}
+
+/// Validate a license key against the Hub and return the confirm-dialog
+/// data (packId/issuerName/buyerName/orderId/downloadUrl/redeemedAt).
+/// Performs NO download — the caller must show a confirm step before
+/// calling downloadAndImportPack (D-03).
+export async function redeemLicense(
+  request: RedeemLicenseRequest,
+): Promise<RedeemLicenseResult> {
+  return invoke("redeem_license", { request });
+}
+
+/// Fetch the buyer-stamped signed pack and import it through the unchanged
+/// import_course backend gate. Returns the same ImportCourseResult shape
+/// import_course does (trackId/moduleCount/blockCount/warnings/verified/
+/// issuerName).
+export async function downloadAndImportPack(
+  request: DownloadAndImportPackRequest,
+): Promise<ImportCourseResult> {
+  return invoke("download_and_import_pack", { request });
+}
+
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile, readTextFile } from "@tauri-apps/plugin-fs";
 import type {
