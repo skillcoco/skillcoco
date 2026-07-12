@@ -7,7 +7,6 @@ pub mod db;
 // download, and local entitlement caching. See entitlements/mod.rs.
 pub mod entitlements;
 pub mod labs;
-pub mod licensing;
 // Phase 18 Plan 4 — shared PDF text-rendering helper (`push_line`) used by
 // BOTH the certificate renderer (achievements::artifacts) and the report
 // renderer (reports::artifacts). Extracted so the printpdf Td-relative fix

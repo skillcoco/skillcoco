@@ -80,7 +80,7 @@ mod tests {
         apply_migrations(&conn).expect("migrations must succeed");
 
         let version = current_version(&conn).unwrap();
-        assert_eq!(version, 19, "current_version must be 19 after v015..v019 are applied");
+        assert_eq!(version, 20, "current_version must be 20 after v015..v020 are applied");
 
         seed_track(&conn, "t1");
 
@@ -137,6 +137,6 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 19, "exactly 19 rows in schema_migrations after idempotent double-apply (v015..v019 added)");
+        assert_eq!(count, 20, "exactly 20 rows in schema_migrations after idempotent double-apply (v015..v020 added)");
     }
 }
