@@ -22,6 +22,7 @@ import { Loader2, CheckCircle2 } from "lucide-react";
 import {
   redeemLicense,
   downloadAndImportPack,
+  recoverRedeemedPack,
   type RedeemLicenseResult,
 } from "@/lib/tauri-commands";
 
@@ -42,15 +43,22 @@ type Stage =
   | { kind: "validating" }
   | { kind: "confirm"; result: RedeemLicenseResult }
   | { kind: "downloading"; result: RedeemLicenseResult; phase: "download" | "import" }
-  | { kind: "success" }
-  | { kind: "error"; errorKind: ErrorKind };
+  | { kind: "success"; message?: string }
+  // CR-01 — `heldResult` keeps the redeem payload (incl. the single-use
+  // downloadUrl) in scope after a confirm-stage failure, so Retry can
+  // re-attempt the DOWNLOAD without re-redeeming the already-burned key.
+  | { kind: "error"; errorKind: ErrorKind; heldResult?: RedeemLicenseResult };
 
 // UI-SPEC Copywriting Contract — locked verbatim, the single source of
 // truth rendered into the DOM for any thrown redeem error. Mirrors the
 // RedeemLicenseError Display strings 1:1 (never a raw `.toString()`).
 const ERROR_COPY: Record<ErrorKind, string> = {
   invalid_key: "This license key isn't valid. Check for typos and try again.",
-  already_redeemed: "This license key has already been redeemed.",
+  // CR-01 — rendered only after the local recovery probe found nothing:
+  // directs the buyer to the issuer with an order reference instead of a
+  // silent dead end for a paid purchase.
+  already_redeemed:
+    "This license key has already been redeemed. If the course isn't in your library on this device, contact your course provider with your order reference.",
   revoked: "This license key has been revoked.",
   issuer_unreachable:
     "Couldn't reach the license server. Check your connection and try again.",
@@ -60,6 +68,11 @@ const ERROR_COPY: Record<ErrorKind, string> = {
 
 const SUCCESS_COPY =
   "Course imported. It's now available in your track list.";
+
+// CR-01 — success copy for the already-recovered case: the key was
+// redeemed on THIS device before and the course is already imported.
+const ALREADY_IN_LIBRARY_COPY =
+  "This license key was already redeemed on this device — the course is in your library.";
 
 const DEVICE_FINGERPRINT_STORAGE_KEY = "learnforge.deviceFingerprint";
 
@@ -132,7 +145,28 @@ export function RedeemLicenseFlow({ onImported }: RedeemLicenseFlowProps) {
       });
       setStage({ kind: "confirm", result });
     } catch (err) {
-      setStage({ kind: "error", errorKind: classifyError(err) });
+      const errorKind = classifyError(err);
+      if (errorKind === "already_redeemed") {
+        // CR-01 — before dead-ending a paid purchase, probe the LOCAL
+        // entitlement cache + retained artifact (zero network): the key
+        // may have been redeemed on this very device.
+        try {
+          const recovered = await recoverRedeemedPack(licenseKey.trim());
+          if (recovered) {
+            setStage({
+              kind: "success",
+              message: recovered.alreadyImported
+                ? ALREADY_IN_LIBRARY_COPY
+                : SUCCESS_COPY,
+            });
+            onImported?.(recovered.trackId);
+            return;
+          }
+        } catch {
+          // Recovery probe failed — fall through to the guidance copy.
+        }
+      }
+      setStage({ kind: "error", errorKind });
     }
   }
 
@@ -142,9 +176,7 @@ export function RedeemLicenseFlow({ onImported }: RedeemLicenseFlowProps) {
     setStage({ kind: "entry" });
   }
 
-  async function handleConfirm() {
-    if (stage.kind !== "confirm") return;
-    const { result } = stage;
+  async function runDownloadAndImport(result: RedeemLicenseResult) {
     setStage({ kind: "downloading", result, phase: "download" });
     try {
       // Single network+import round trip — the "Importing course…" copy
@@ -165,15 +197,36 @@ export function RedeemLicenseFlow({ onImported }: RedeemLicenseFlowProps) {
       setStage({ kind: "success" });
       onImported?.(imported.trackId);
     } catch (err) {
-      setStage({ kind: "error", errorKind: classifyError(err) });
+      // CR-01 — hold the redeem result so Retry re-attempts the DOWNLOAD
+      // (the key is already burned; re-redeeming would dead-end on
+      // already_redeemed).
+      setStage({
+        kind: "error",
+        errorKind: classifyError(err),
+        heldResult: result,
+      });
     }
   }
 
+  async function handleConfirm() {
+    if (stage.kind !== "confirm") return;
+    await runDownloadAndImport(stage.result);
+  }
+
   async function handleRetry() {
+    // CR-01 — a confirm-stage failure retries the download with the held
+    // (still-valid, in-memory) downloadUrl; only an entry-stage failure
+    // re-runs the redeem itself.
+    if (stage.kind === "error" && stage.heldResult) {
+      await runDownloadAndImport(stage.heldResult);
+      return;
+    }
     await handleRedeem();
   }
 
   const errorKind = stage.kind === "error" ? stage.errorKind : null;
+  // CR-01 — a held redeem result marks a retryable confirm-stage failure.
+  const heldResult = stage.kind === "error" ? stage.heldResult : undefined;
 
   return (
     <div className="space-y-4">
@@ -206,7 +259,7 @@ export function RedeemLicenseFlow({ onImported }: RedeemLicenseFlowProps) {
             >
               {ERROR_COPY[errorKind]}
             </p>
-            {errorKind === "issuer_unreachable" && (
+            {(errorKind === "issuer_unreachable" || heldResult) && (
               <button
                 type="button"
                 onClick={handleRetry}
@@ -233,7 +286,7 @@ export function RedeemLicenseFlow({ onImported }: RedeemLicenseFlowProps) {
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
           <CheckCircle2 size={16} className="shrink-0 text-emerald-500" />
           <p className="text-xs font-medium text-emerald-500">
-            {SUCCESS_COPY}
+            {stage.message ?? SUCCESS_COPY}
           </p>
         </div>
       )}

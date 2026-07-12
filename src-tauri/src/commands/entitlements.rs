@@ -313,6 +313,127 @@ pub async fn download_and_import_pack(
     download_and_import_pack_impl(state.db.as_ref(), &app_data_dir, &request).await
 }
 
+// ── recover_redeemed_pack (CR-01 stranded-purchase local recovery) ────────
+
+/// `recover_redeemed_pack` IPC request.
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoverRedeemedPackRequest {
+    /// Used ONLY to compute the fingerprint for the local cache lookup —
+    /// never sent over the network, persisted, or logged (D-06).
+    pub license_key: String,
+}
+
+/// WR-04 (D-06) — manual Debug impl so `{:?}` can never leak the raw
+/// license key.
+impl std::fmt::Debug for RecoverRedeemedPackRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecoverRedeemedPackRequest")
+            .field("license_key", &"<redacted>")
+            .finish()
+    }
+}
+
+/// CR-01 — outcome of a successful local recovery: the track the pack
+/// resolves to, and whether it was already in the library (vs re-imported
+/// from the retained artifact just now).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveredPack {
+    pub track_id: String,
+    pub already_imported: bool,
+}
+
+/// CR-01 — stranded-purchase local recovery probe, called when the Hub
+/// rejects a key as `already_redeemed`. Entirely offline (zero network —
+/// re-redeeming would just burn another Hub round trip on the same
+/// rejection):
+///
+/// 1. Resolve the local entitlements row by the key's SHA-256 fingerprint
+///    (the only key-derived value ever persisted, D-06). No row → `None`:
+///    the key was redeemed elsewhere/never completed here — the UI renders
+///    contact-the-issuer guidance.
+/// 2. Row + a `learning_paths.pack_id` stamp → the course is ALREADY in
+///    the library; return the existing track.
+/// 3. Row but no track (deleted, or a prior partial failure) → re-import
+///    the retained artifact (D-07) through the UNCHANGED
+///    `import_course_impl` Step 3.5 gate. A gate rejection or missing
+///    artifact is a clean `None`, never a partial state.
+///
+/// Residual limitation (documented in 15-REVIEW.md): a download that
+/// failed BEFORE any artifact/entitlement row landed can only be recovered
+/// server-side (idempotent re-redeem is a Hub contract concern).
+fn recover_redeemed_pack_impl(
+    db: &std::sync::Mutex<Database>,
+    app_data_dir: &std::path::Path,
+    license_key: &str,
+) -> Result<Option<RecoveredPack>, RedeemIpcError> {
+    let fingerprint = sha256_fingerprint(license_key);
+    let conn_guard = db.lock().map_err(RedeemIpcError::generic)?;
+
+    let store = SqliteEntitlementStore(&conn_guard.conn);
+    let Some(row) = store
+        .find_by_key_fingerprint(&fingerprint)
+        .map_err(RedeemIpcError::generic)?
+    else {
+        return Ok(None);
+    };
+
+    // Step 2 — already imported on this device?
+    let track_id: Option<String> = conn_guard
+        .conn
+        .query_row(
+            "SELECT track_id FROM learning_paths WHERE pack_id = ?1",
+            rusqlite::params![row.pack_id],
+            |r| r.get(0),
+        )
+        .ok();
+    if let Some(track_id) = track_id {
+        return Ok(Some(RecoveredPack {
+            track_id,
+            already_imported: true,
+        }));
+    }
+
+    // Step 3 — retained artifact re-import through the UNCHANGED gate.
+    let Ok(artifact) =
+        crate::entitlements::download::retained_artifact_path(app_data_dir, &row.pack_id)
+    else {
+        // An unclean pack_id can never map to a retained artifact.
+        return Ok(None);
+    };
+    if !artifact.exists() {
+        return Ok(None);
+    }
+    let Ok(import_result) = import_course_impl(&conn_guard.conn, &artifact.to_string_lossy())
+    else {
+        // Tampered/untrusted artifact — the gate rejected it; nothing to
+        // recover locally, and no partial state was written.
+        return Ok(None);
+    };
+    // WR-01 — refresh the entitlement row + stamp atomically.
+    record_entitlement_and_stamp(&conn_guard.conn, &row, &import_result.track_id)
+        .map_err(RedeemIpcError::generic)?;
+    Ok(Some(RecoveredPack {
+        track_id: import_result.track_id,
+        already_imported: false,
+    }))
+}
+
+/// Thin shim over `recover_redeemed_pack_impl`. Local-only (zero network).
+#[tauri::command]
+pub fn recover_redeemed_pack(
+    request: RecoverRedeemedPackRequest,
+    state: State<'_, crate::AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<Option<RecoveredPack>, RedeemIpcError> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(RedeemIpcError::generic)?;
+    recover_redeemed_pack_impl(state.db.as_ref(), &app_data_dir, &request.license_key)
+}
+
 // ── get_entitlement_for_track (15-06, D-08 buyer attribution) ─────────────
 
 /// `get_entitlement_for_track` IPC request.

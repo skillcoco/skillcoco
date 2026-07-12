@@ -527,6 +527,24 @@ export async function downloadAndImportPack(
   return invoke("download_and_import_pack", { request });
 }
 
+// ── Phase 15 (Entitlement & Redeem) — CR-01 stranded-purchase recovery ──
+
+export interface RecoveredPack {
+  trackId: string;
+  alreadyImported: boolean;
+}
+
+/// CR-01 — when the Hub rejects a key as already_redeemed, probe the LOCAL
+/// entitlement cache + retained artifact (zero network) before dead-ending:
+/// returns the track the pack resolves to (already in the library, or just
+/// re-imported from the retained artifact), or null when nothing is
+/// recoverable on this device.
+export async function recoverRedeemedPack(
+  licenseKey: string,
+): Promise<RecoveredPack | null> {
+  return invoke("recover_redeemed_pack", { request: { licenseKey } });
+}
+
 // ── Phase 15 (Entitlement & Redeem) — Plan 06 IPC wrapper ──
 //
 // Local-only read (zero network — ENT-04 offline attribution). Excludes

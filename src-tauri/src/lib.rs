@@ -329,6 +329,8 @@ pub fn run() {
             commands::entitlements::download_and_import_pack,
             // Buyer attribution, local-only read (Phase 15 — Plan 06 / D-08)
             commands::entitlements::get_entitlement_for_track,
+            // Stranded-purchase local recovery (Phase 15 — code review CR-01)
+            commands::entitlements::recover_redeemed_pack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

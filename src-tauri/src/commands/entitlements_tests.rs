@@ -450,6 +450,144 @@ fn wr04_ipc_request_debug_output_redacts_license_key() {
     assert!(debug_str.contains("<redacted>"), "got: {debug_str}");
 }
 
+// ── CR-01 — stranded-purchase local recovery (already_redeemed path) ──
+
+/// CR-01 — with NO local entitlement row for the key's fingerprint, there
+/// is nothing to recover: Ok(None), so the UI can render the
+/// contact-the-issuer guidance instead of a silent dead end.
+#[test]
+fn cr01_recover_returns_none_without_local_entitlement() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let tmp = tempfile::tempdir().unwrap();
+
+    let recovered = recover_redeemed_pack_impl(&db, tmp.path(), "KEY-NEVER-SEEN")
+        .expect("recovery probe must not error");
+    assert!(recovered.is_none());
+}
+
+/// CR-01 — an `already_redeemed` rejection where THIS device already
+/// imported the pack (entitlement row + stamped learning_paths.pack_id)
+/// resolves to the existing track instead of a dead end. Zero network.
+#[test]
+fn cr01_recover_reports_already_imported_track() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let tmp = tempfile::tempdir().unwrap();
+    let key = "KEY-RECOVER-1";
+
+    {
+        let conn_guard = db.lock().unwrap();
+        insert_learning_path(&conn_guard.conn, "trk-recover", "path-recover", Some("pack-recover"));
+        let store = SqliteEntitlementStore(&conn_guard.conn);
+        store
+            .insert(&EntitlementRow {
+                pack_id: "pack-recover".to_string(),
+                issuer_id: "issuer-1".to_string(),
+                issuer_name: "Test Issuer".to_string(),
+                buyer_name: "Jane Buyer".to_string(),
+                order_id: "ORD-RECOVER".to_string(),
+                redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+                key_fingerprint: sha256_fingerprint(key),
+            })
+            .unwrap();
+    }
+
+    let recovered = recover_redeemed_pack_impl(&db, tmp.path(), key)
+        .expect("recovery probe must not error")
+        .expect("an already-imported pack must resolve");
+    assert_eq!(recovered.track_id, "trk-recover");
+    assert!(recovered.already_imported);
+}
+
+/// CR-01 — entitlement row exists but the track is gone and no retained
+/// artifact is on disk: nothing recoverable locally → Ok(None).
+#[test]
+fn cr01_recover_returns_none_when_artifact_missing() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let tmp = tempfile::tempdir().unwrap();
+    let key = "KEY-RECOVER-2";
+
+    {
+        let conn_guard = db.lock().unwrap();
+        let store = SqliteEntitlementStore(&conn_guard.conn);
+        store
+            .insert(&EntitlementRow {
+                pack_id: "pack-gone".to_string(),
+                issuer_id: "issuer-1".to_string(),
+                issuer_name: "Test Issuer".to_string(),
+                buyer_name: "Jane Buyer".to_string(),
+                order_id: "ORD-GONE".to_string(),
+                redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+                key_fingerprint: sha256_fingerprint(key),
+            })
+            .unwrap();
+    }
+
+    let recovered = recover_redeemed_pack_impl(&db, tmp.path(), key)
+        .expect("recovery probe must not error");
+    assert!(recovered.is_none());
+}
+
+/// CR-01 — a retained artifact that fails the UNCHANGED import gate
+/// (test-root-signed fixture ≠ bundled production root) does NOT recover
+/// and leaves NO partial state: Ok(None), no learning_paths stamp. Proves
+/// the recovery re-import routes through import_course_impl rather than
+/// bypassing the trust gate.
+#[test]
+fn cr01_recover_reimport_still_routes_through_unchanged_gate() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let tmp = tempfile::tempdir().unwrap();
+    let key = "KEY-RECOVER-3";
+
+    let (_root_pem, pack) =
+        signed_licensed_pack_fixture("pack-reimport-cr01", "Jane Buyer", "ORD-R3");
+    let artifact_dir = tmp.path().join("entitlements");
+    std::fs::create_dir_all(&artifact_dir).unwrap();
+    std::fs::write(
+        artifact_dir.join("pack-reimport-cr01.json"),
+        serde_json::to_vec(&pack).unwrap(),
+    )
+    .unwrap();
+
+    {
+        let conn_guard = db.lock().unwrap();
+        let store = SqliteEntitlementStore(&conn_guard.conn);
+        store
+            .insert(&EntitlementRow {
+                pack_id: "pack-reimport-cr01".to_string(),
+                issuer_id: "issuer-1".to_string(),
+                issuer_name: "Test Issuer".to_string(),
+                buyer_name: "Jane Buyer".to_string(),
+                order_id: "ORD-R3".to_string(),
+                redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+                key_fingerprint: sha256_fingerprint(key),
+            })
+            .unwrap();
+    }
+
+    let recovered = recover_redeemed_pack_impl(&db, tmp.path(), key)
+        .expect("a gate rejection is a clean no-recovery, not an error");
+    assert!(
+        recovered.is_none(),
+        "an untrusted retained artifact must NOT recover (gate unchanged)"
+    );
+
+    // No partial attribution state may exist after the failed re-import.
+    let conn_guard = db.lock().unwrap();
+    let stamped: i64 = conn_guard
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM learning_paths WHERE pack_id = 'pack-reimport-cr01'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped, 0, "no learning_paths stamp after a rejected re-import");
+}
+
 // ── WR-06 — machine-readable error kinds across the IPC boundary ──
 
 /// WR-06 — every RedeemLicenseError variant maps to a stable machine

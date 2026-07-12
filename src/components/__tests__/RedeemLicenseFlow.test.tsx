@@ -14,14 +14,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { redeemLicenseMock, downloadAndImportPackMock } = vi.hoisted(() => ({
-  redeemLicenseMock: vi.fn(),
-  downloadAndImportPackMock: vi.fn(),
-}));
+const { redeemLicenseMock, downloadAndImportPackMock, recoverRedeemedPackMock } =
+  vi.hoisted(() => ({
+    redeemLicenseMock: vi.fn(),
+    downloadAndImportPackMock: vi.fn(),
+    recoverRedeemedPackMock: vi.fn(),
+  }));
 
 vi.mock("@/lib/tauri-commands", () => ({
   redeemLicense: redeemLicenseMock,
   downloadAndImportPack: downloadAndImportPackMock,
+  recoverRedeemedPack: recoverRedeemedPackMock,
 }));
 
 // 15-04 GREEN target — does not exist yet at Wave 0 (RED: unresolved import).
@@ -42,6 +45,8 @@ function successfulRedeemResult(overrides = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // CR-01 default: no local recovery available unless a test says so.
+  recoverRedeemedPackMock.mockResolvedValue(null);
 });
 
 describe("RedeemLicenseFlow — entry stage (Wave 0 RED)", () => {
@@ -193,5 +198,101 @@ describe("RedeemLicenseFlow — typed error rendering (Wave 0 RED)", () => {
     expect(
       screen.getByRole("button", { name: /^retry$/i }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("RedeemLicenseFlow — CR-01 stranded-purchase recovery", () => {
+  it("retries a failed confirm-stage download with the HELD downloadUrl — redeemLicense is never re-called (the key is already burned)", async () => {
+    redeemLicenseMock.mockResolvedValue(successfulRedeemResult());
+    downloadAndImportPackMock
+      .mockRejectedValueOnce({
+        kind: "issuer_unreachable",
+        message: "connect timeout",
+      })
+      .mockResolvedValueOnce({ trackId: "trk-recovered" });
+
+    render(<RedeemLicenseFlow />);
+
+    await userEvent.type(screen.getByLabelText(/license key/i), "ABCD-1234");
+    await userEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /confirm & download/i }),
+      ).toBeInTheDocument();
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: /confirm & download/i }),
+    );
+
+    // Download failed — a Retry affordance must exist.
+    const retryButton = await screen.findByRole("button", {
+      name: /^retry$/i,
+    });
+    await userEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/course imported\. it's now available/i),
+      ).toBeInTheDocument();
+    });
+
+    // The single-use key was redeemed exactly ONCE; the retry re-used the
+    // in-memory download URL instead of re-calling redeemLicense (which
+    // would dead-end on already_redeemed).
+    expect(redeemLicenseMock).toHaveBeenCalledTimes(1);
+    expect(downloadAndImportPackMock).toHaveBeenCalledTimes(2);
+    expect(downloadAndImportPackMock.mock.calls[1][0].downloadUrl).toBe(
+      downloadAndImportPackMock.mock.calls[0][0].downloadUrl,
+    );
+  });
+
+  it("on already_redeemed, recovers locally when this device already holds the pack (no dead end)", async () => {
+    const onImported = vi.fn();
+    redeemLicenseMock.mockRejectedValue({
+      kind: "already_redeemed",
+      message: "key consumed",
+    });
+    recoverRedeemedPackMock.mockResolvedValue({
+      trackId: "trk-local",
+      alreadyImported: true,
+    });
+
+    render(<RedeemLicenseFlow onImported={onImported} />);
+
+    await userEvent.type(screen.getByLabelText(/license key/i), "USED-KEY-1");
+    await userEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/already redeemed on this device.*in your library/i),
+      ).toBeInTheDocument();
+    });
+    expect(recoverRedeemedPackMock).toHaveBeenCalledWith("USED-KEY-1");
+    expect(onImported).toHaveBeenCalledWith("trk-local");
+    // NOT rendered as an error dead end.
+    expect(
+      screen.queryByText(/contact your course provider/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("on already_redeemed with NO local recovery, renders issuer-contact guidance with an order reference pointer", async () => {
+    redeemLicenseMock.mockRejectedValue({
+      kind: "already_redeemed",
+      message: "key consumed",
+    });
+    recoverRedeemedPackMock.mockResolvedValue(null);
+
+    render(<RedeemLicenseFlow />);
+
+    await userEvent.type(screen.getByLabelText(/license key/i), "USED-KEY-2");
+    await userEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /already been redeemed.*contact your course provider.*order reference/i,
+        ),
+      ).toBeInTheDocument();
+    });
   });
 });

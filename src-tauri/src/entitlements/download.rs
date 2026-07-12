@@ -44,25 +44,41 @@ fn sanitize_pack_id(pack_id: &str) -> Result<&str, RedeemLicenseError> {
     }
 }
 
+/// Resolve the stable retained-artifact path
+/// `<base>/entitlements/<pack_id>.json` (D-07), running the same
+/// `sanitize_pack_id` traversal guard at the point of the literal path
+/// join (T-15-08). Shared by the download write path and the CR-01
+/// stranded-purchase recovery probe so both agree on one location and one
+/// guard.
+pub(crate) fn retained_artifact_path(
+    base: &std::path::Path,
+    pack_id: &str,
+) -> Result<std::path::PathBuf, RedeemLicenseError> {
+    let clean_id = sanitize_pack_id(pack_id)?;
+    Ok(base.join("entitlements").join(format!("{clean_id}.json")))
+}
+
 /// Write `bytes` to the stable retained-artifact path
 /// `<base>/entitlements/<pack_id>.json` (D-07 — NOT a temp file), creating
 /// the `entitlements` directory if needed. `pack_id` MUST already be
 /// sanitized by the caller — this fn re-runs `sanitize_pack_id` internally
-/// so it cannot be used to bypass the traversal guard even if called
-/// directly. Purely filesystem I/O — no `reqwest` involvement — so tests
-/// can drive it with in-memory bytes and a tempdir.
+/// (via `retained_artifact_path`) so it cannot be used to bypass the
+/// traversal guard even if called directly. Purely filesystem I/O — no
+/// `reqwest` involvement — so tests can drive it with in-memory bytes and
+/// a tempdir.
 fn write_retained_artifact(
     base: &std::path::Path,
     pack_id: &str,
     bytes: &[u8],
 ) -> Result<String, RedeemLicenseError> {
-    let clean_id = sanitize_pack_id(pack_id)?;
+    let path = retained_artifact_path(base, pack_id)?;
 
-    let dir = base.join("entitlements");
-    std::fs::create_dir_all(&dir)
+    let dir = path
+        .parent()
+        .expect("retained artifact path always has the entitlements dir parent");
+    std::fs::create_dir_all(dir)
         .map_err(|e| RedeemLicenseError::MalformedResponse(format!("could not create entitlements dir: {e}")))?;
 
-    let path = dir.join(format!("{clean_id}.json"));
     std::fs::write(&path, bytes)
         .map_err(|e| RedeemLicenseError::MalformedResponse(format!("could not write retained artifact: {e}")))?;
 

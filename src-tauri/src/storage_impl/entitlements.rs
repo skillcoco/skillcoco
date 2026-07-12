@@ -94,6 +94,37 @@ impl<'a> SqliteEntitlementStore<'a> {
             Err(e) => Err(e.to_string()),
         }
     }
+
+    /// CR-01 — look up the entitlement row by the license key's SHA-256
+    /// fingerprint (the only key-derived value ever persisted, D-06). Lets
+    /// the stranded-purchase recovery path resolve "this key was already
+    /// redeemed on THIS device" from the local cache, entirely offline.
+    /// A miss is a clean `Ok(None)`.
+    pub fn find_by_key_fingerprint(
+        &self,
+        key_fingerprint: &str,
+    ) -> Result<Option<EntitlementRow>, String> {
+        match self.0.query_row(
+            "SELECT pack_id, issuer_id, issuer_name, buyer_name, order_id, redeemed_at, key_fingerprint
+             FROM entitlements WHERE key_fingerprint = ?1",
+            rusqlite::params![key_fingerprint],
+            |r| {
+                Ok(EntitlementRow {
+                    pack_id: r.get(0)?,
+                    issuer_id: r.get(1)?,
+                    issuer_name: r.get(2)?,
+                    buyer_name: r.get(3)?,
+                    order_id: r.get(4)?,
+                    redeemed_at: r.get(5)?,
+                    key_fingerprint: r.get(6)?,
+                })
+            },
+        ) {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -183,6 +214,29 @@ mod tests {
             .unwrap()
             .expect("row must still exist");
         assert_eq!(found, refreshed, "conflict must refresh all attribution fields");
+    }
+
+    /// CR-01 — the stranded-purchase recovery path resolves an entitlement
+    /// row from the license key's SHA-256 fingerprint (the only key-derived
+    /// value ever persisted, D-06), so an `already_redeemed` rejection can
+    /// be checked against the local cache.
+    #[test]
+    fn cr01_find_by_key_fingerprint_round_trips() {
+        let conn = setup_test_db();
+        let store = SqliteEntitlementStore(&conn);
+        let row = sample_row();
+        store.insert(&row).unwrap();
+
+        let found = store
+            .find_by_key_fingerprint("deadbeef")
+            .expect("lookup must succeed")
+            .expect("row must resolve by its key fingerprint");
+        assert_eq!(found, row);
+
+        let missing = store
+            .find_by_key_fingerprint("no-such-fingerprint")
+            .expect("a miss must be Ok(None), never an Err");
+        assert_eq!(missing, None);
     }
 
     /// D-05 — the entitlements table has no FK CASCADE to learning_paths, so
