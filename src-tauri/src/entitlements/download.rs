@@ -17,6 +17,12 @@
 
 use super::RedeemLicenseError;
 
+/// WR-02 — the same 5MB cap the import path enforces when reading the file
+/// back (T-12-07, `ImportedFilePackSource`), applied at DOWNLOAD time so an
+/// oversized (malicious/compromised-hub) response is rejected before it is
+/// buffered in memory or written to disk.
+const MAX_PACK_BYTES: usize = 5 * 1024 * 1024;
+
 /// Reject a server-supplied `pack_id` that contains a path separator (`/`
 /// or `\`), a `..` traversal segment, a leading separator, or otherwise
 /// isn't a clean single-segment identifier (alphanumerics plus `-`/`_`).
@@ -97,11 +103,8 @@ pub async fn download_and_store(
 
     let send_result = client.get(download_url).send().await;
 
-    let bytes = match send_result {
-        Ok(resp) if resp.status().is_success() => resp
-            .bytes()
-            .await
-            .map_err(|e| RedeemLicenseError::MalformedResponse(e.to_string()))?,
+    let mut resp = match send_result {
+        Ok(resp) if resp.status().is_success() => resp,
         Ok(resp) => {
             return Err(RedeemLicenseError::MalformedResponse(format!(
                 "download failed with status {}",
@@ -110,6 +113,32 @@ pub async fn download_and_store(
         }
         Err(_) => return Err(RedeemLicenseError::IssuerUnreachable),
     };
+
+    // WR-02 — reject on the advertised size first, when present, before a
+    // single body byte is read.
+    if let Some(len) = resp.content_length() {
+        if len > MAX_PACK_BYTES as u64 {
+            return Err(RedeemLicenseError::PackTooLarge);
+        }
+    }
+
+    // WR-02 — stream chunks with a running-total guard instead of an
+    // unbounded `resp.bytes()` buffer; abort as soon as the cap is
+    // exceeded, BEFORE write_retained_artifact is called. Covers servers
+    // that omit/lie about Content-Length.
+    let mut bytes: Vec<u8> = Vec::new();
+    loop {
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                if bytes.len() + chunk.len() > MAX_PACK_BYTES {
+                    return Err(RedeemLicenseError::PackTooLarge);
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            Err(e) => return Err(RedeemLicenseError::MalformedResponse(e.to_string())),
+        }
+    }
 
     write_retained_artifact(app_data_dir, pack_id, &bytes)
 }
@@ -204,6 +233,74 @@ mod tests {
         assert!(crate::entitlements::is_permitted_endpoint_url(
             "http://127.0.0.1:8080/pack.json"
         ));
+    }
+
+    /// Spawn a tiny one-shot HTTP server on 127.0.0.1 that writes the raw
+    /// `response` bytes to the first connection, then closes. Returns the
+    /// bound "http://127.0.0.1:PORT" base URL. Pure `tokio::net` — no new
+    /// crate (T-15-SC), mirrors `commands::entitlements_tests`.
+    async fn spawn_raw_http_server(response: Vec<u8>) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let _ = socket.write_all(&response).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// WR-02 — a response advertising Content-Length above the 5MB cap
+    /// (T-12-07 parity) is rejected with PackTooLarge BEFORE the body is
+    /// read or anything lands on disk.
+    #[tokio::test]
+    async fn wr02_download_rejects_oversized_content_length_before_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n",
+            10 * 1024 * 1024
+        )
+        .into_bytes();
+        let base = spawn_raw_http_server(response).await;
+
+        let result =
+            download_and_store(&format!("{base}/pack.json"), "clean-id", tmp.path()).await;
+        assert!(
+            matches!(result, Err(RedeemLicenseError::PackTooLarge)),
+            "oversized Content-Length must be rejected as PackTooLarge, got {result:?}"
+        );
+        assert!(
+            !tmp.path().join("entitlements").exists(),
+            "no artifact may be written for an oversized download"
+        );
+    }
+
+    /// WR-02 — a response WITHOUT Content-Length (read-until-close body)
+    /// that streams past the 5MB cap is aborted mid-read with PackTooLarge
+    /// — the running-total chunk guard, not the header check.
+    #[tokio::test]
+    async fn wr02_download_rejects_oversized_body_without_content_length() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut response =
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n"
+                .to_vec();
+        response.extend(std::iter::repeat(b'a').take(6 * 1024 * 1024));
+        let base = spawn_raw_http_server(response).await;
+
+        let result =
+            download_and_store(&format!("{base}/pack.json"), "clean-id", tmp.path()).await;
+        assert!(
+            matches!(result, Err(RedeemLicenseError::PackTooLarge)),
+            "an unbounded body must be aborted at the cap, got {result:?}"
+        );
+        assert!(
+            !tmp.path().join("entitlements").exists(),
+            "no artifact may be written for an oversized download"
+        );
     }
 
     /// download_writes_retained_artifact_at_stable_path — given a base dir

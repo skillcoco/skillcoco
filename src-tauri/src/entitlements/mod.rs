@@ -185,6 +185,11 @@ pub enum RedeemLicenseError {
     /// logs, not the primary message.
     #[error("Redeem request failed: {0}")]
     MalformedResponse(String),
+    /// The downloaded pack exceeded the 5MB import cap (T-12-07 parity) —
+    /// rejected at download time, before unbounded buffering or any disk
+    /// write (WR-02).
+    #[error("The downloaded course file is larger than the 5MB limit and can't be imported.")]
+    PackTooLarge,
 }
 
 #[cfg(test)]
@@ -251,6 +256,10 @@ mod tests {
         assert_eq!(
             RedeemLicenseError::MalformedResponse("boom".to_string()).to_string(),
             "Redeem request failed: boom"
+        );
+        assert_eq!(
+            RedeemLicenseError::PackTooLarge.to_string(),
+            "The downloaded course file is larger than the 5MB limit and can't be imported."
         );
     }
 
