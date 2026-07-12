@@ -928,3 +928,57 @@ fn exam_attempt_history_ties_break_to_earliest_finished_at() {
         "tied best score must break to the EARLIER finished_at (deterministic)"
     );
 }
+
+/// CR-01 — two attempts started with the IDENTICAL `FakeClock` value (the
+/// exact pattern already used by
+/// `exam_attempt_start_twice_creates_distinct_history_rows`) must still
+/// report DISTINCT, correctly-ordered `attempt_number`s once both are
+/// finalized. Before the fix, `attempt_number` was computed via
+/// `started_at <= ?3` with no tie-break on insertion order, so both
+/// attempts (sharing the same `started_at`) counted each other as "at or
+/// before" themselves and BOTH reported `attempt_number = 2` — the first
+/// (earlier, lower-rowid) attempt should report `1`.
+#[test]
+fn exam_attempt_history_attempt_number_breaks_ties_on_identical_started_at() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+
+    // Both attempts share the exact same started_at (identical FakeClock).
+    let attempt_a = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+    seed_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+    let result_a = finalize_attempt_conn(&conn, &attempt_a.attempt_id, &clock).unwrap();
+    assert_eq!(result_a.status, "completed");
+
+    let attempt_b = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+    update_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+    let result_b = finalize_attempt_conn(&conn, &attempt_b.attempt_id, &clock).unwrap();
+    assert_eq!(result_b.status, "completed");
+
+    assert_eq!(
+        attempt_a.started_at, attempt_b.started_at,
+        "test setup: both attempts must share the identical started_at"
+    );
+
+    let history_a = exam_attempt_history_conn(&conn, &attempt_a.attempt_id)
+        .expect("exam_attempt_history_conn for attempt A");
+    let history_b = exam_attempt_history_conn(&conn, &attempt_b.attempt_id)
+        .expect("exam_attempt_history_conn for attempt B");
+
+    assert_eq!(
+        history_a.attempt_number, 1,
+        "the first (earlier-inserted) attempt must report attempt_number 1, got {}",
+        history_a.attempt_number
+    );
+    assert_eq!(
+        history_b.attempt_number, 2,
+        "the second attempt must report attempt_number 2, got {}",
+        history_b.attempt_number
+    );
+}

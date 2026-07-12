@@ -560,13 +560,29 @@ pub(crate) fn exam_attempt_history_conn(
     // finalized) started at or before this attempt's started_at — RFC-3339
     // TEXT lexicographic order (same precedent as the deadline comparison
     // at line 323).
+    //
+    // CR-01 — `started_at` alone is not a reliable tie-break: two attempts
+    // can share the exact same RFC-3339 string (rapid successive starts
+    // within the same clock tick, coarser OS clock resolution, or two
+    // `exam_attempt_start` calls sharing an injected/synthetic clock — the
+    // shipped test `exam_attempt_start_twice_creates_distinct_history_rows`
+    // already proves this is reachable). Without a deterministic tie-break,
+    // every attempt sharing that timestamp would count every other
+    // same-timestamp attempt as "at or before" itself, inflating
+    // `attempt_number` for all of them to the same wrong value. SQLite's
+    // implicit `rowid` reflects insertion order for this table (no
+    // `WITHOUT ROWID` clause on `exam_attempts`), so it's a safe,
+    // deterministic tie-break on top of the `started_at` ordering.
     let attempt_number: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM exam_attempts
              WHERE learner_id = ?1 AND block_id = ?2
                AND status IN ('completed', 'timed_out_partial')
-               AND started_at <= ?3",
-            rusqlite::params![row.learner_id, row.block_id, row.started_at],
+               AND (started_at < ?3
+                    OR (started_at = ?3 AND rowid <= (
+                        SELECT rowid FROM exam_attempts WHERE id = ?4
+                    )))",
+            rusqlite::params![row.learner_id, row.block_id, row.started_at, attempt_id],
             |r| r.get(0),
         )
         .map_err(|e| format!("exam_attempt_history attempt_number: {}", e))?;
