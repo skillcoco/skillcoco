@@ -413,3 +413,160 @@ fn entitlement_fingerprint_recorded_not_raw_key() {
     let debug_str = format!("{:?}", row);
     assert!(!debug_str.contains(key));
 }
+
+// ── Task 1 (15-06) — get_entitlement_for_track (local join, no network) ──
+
+fn insert_learning_path(conn: &Connection, track_id: &str, path_id: &str, pack_id: Option<&str>) {
+    conn.execute(
+        "INSERT INTO learning_tracks (id, learner_id, topic, domain_module) \
+         VALUES (?1, 'lp-ent-1', 'Test Topic', 'devops')",
+        rusqlite::params![track_id],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO learning_paths (id, track_id, pack_id) VALUES (?1, ?2, ?3)",
+        rusqlite::params![path_id, track_id, pack_id],
+    )
+    .unwrap();
+}
+
+/// get_entitlement_for_track_returns_row_when_present — a learning_paths row
+/// with pack_id X and a matching entitlements row for X resolves to
+/// Some(attribution) with buyerName/orderId/issuerName populated.
+#[test]
+fn get_entitlement_for_track_returns_row_when_present() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+
+    {
+        let conn_guard = db.lock().unwrap();
+        insert_learning_path(&conn_guard.conn, "trk-1", "path-1", Some("pack-1"));
+        let store = SqliteEntitlementStore(&conn_guard.conn);
+        store
+            .insert(&EntitlementRow {
+                pack_id: "pack-1".to_string(),
+                issuer_id: "issuer-1".to_string(),
+                issuer_name: "Test Issuer".to_string(),
+                buyer_name: "Jane Buyer".to_string(),
+                order_id: "ORD-1".to_string(),
+                redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+                key_fingerprint: "deadbeef".to_string(),
+            })
+            .unwrap();
+    }
+
+    let result = get_entitlement_for_track_impl(&db, "trk-1")
+        .expect("lookup must succeed")
+        .expect("attribution row must be present");
+
+    assert_eq!(result.issuer_name, "Test Issuer");
+    assert_eq!(result.buyer_name, "Jane Buyer");
+    assert_eq!(result.order_id, "ORD-1");
+}
+
+/// get_entitlement_for_track_returns_none_when_absent — a track with no
+/// pack_id, or a pack_id with no entitlements row, returns None (not an
+/// error).
+#[test]
+fn get_entitlement_for_track_returns_none_when_absent() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+
+    {
+        let conn_guard = db.lock().unwrap();
+        // Track with NO pack_id at all.
+        insert_learning_path(&conn_guard.conn, "trk-no-pack", "path-no-pack", None);
+        // Track with a pack_id that has no entitlements row.
+        insert_learning_path(
+            &conn_guard.conn,
+            "trk-orphan-pack",
+            "path-orphan-pack",
+            Some("pack-orphan"),
+        );
+    }
+
+    let no_pack_result = get_entitlement_for_track_impl(&db, "trk-no-pack")
+        .expect("lookup must succeed for a track with no pack_id");
+    assert!(no_pack_result.is_none());
+
+    let orphan_result = get_entitlement_for_track_impl(&db, "trk-orphan-pack")
+        .expect("lookup must succeed for a pack_id with no entitlements row");
+    assert!(orphan_result.is_none());
+
+    // Also: a track_id that doesn't exist in learning_paths at all.
+    let missing_track_result = get_entitlement_for_track_impl(&db, "trk-does-not-exist")
+        .expect("lookup must succeed for an unknown track_id");
+    assert!(missing_track_result.is_none());
+}
+
+/// get_entitlement_for_track_makes_no_network_call — structural proof:
+/// resolution is pure SQLite. The function signature takes no HTTP client
+/// and this test drives it entirely against an in-memory DB with no server
+/// listening anywhere; a successful (or cleanly-None) resolution with zero
+/// network setup proves no reqwest call occurs (ENT-04 offline attribution).
+#[test]
+fn get_entitlement_for_track_makes_no_network_call() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+
+    {
+        let conn_guard = db.lock().unwrap();
+        insert_learning_path(&conn_guard.conn, "trk-offline", "path-offline", Some("pack-offline"));
+        let store = SqliteEntitlementStore(&conn_guard.conn);
+        store
+            .insert(&EntitlementRow {
+                pack_id: "pack-offline".to_string(),
+                issuer_id: "issuer-1".to_string(),
+                issuer_name: "Offline Issuer".to_string(),
+                buyer_name: "Jane Buyer".to_string(),
+                order_id: "ORD-OFFLINE".to_string(),
+                redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+                key_fingerprint: "deadbeef".to_string(),
+            })
+            .unwrap();
+    }
+
+    // No HTTP server spawned anywhere in this test — if get_entitlement_for_track_impl
+    // required network I/O, this would hang or error. It resolves synchronously.
+    let result = get_entitlement_for_track_impl(&db, "trk-offline")
+        .expect("lookup must succeed with zero network setup");
+    assert_eq!(result.unwrap().buyer_name, "Jane Buyer");
+}
+
+/// get_entitlement_survives_pack_deletion — even after the track's modules
+/// are deleted, if the entitlements row persists and learning_paths still
+/// carries pack_id, the lookup returns the row (D-05).
+#[test]
+fn get_entitlement_survives_pack_deletion() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+
+    {
+        let conn_guard = db.lock().unwrap();
+        insert_learning_path(&conn_guard.conn, "trk-del", "path-del", Some("pack-del"));
+        let store = SqliteEntitlementStore(&conn_guard.conn);
+        store
+            .insert(&EntitlementRow {
+                pack_id: "pack-del".to_string(),
+                issuer_id: "issuer-1".to_string(),
+                issuer_name: "Test Issuer".to_string(),
+                buyer_name: "Jane Buyer".to_string(),
+                order_id: "ORD-DEL".to_string(),
+                redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+                key_fingerprint: "deadbeef".to_string(),
+            })
+            .unwrap();
+
+        // Delete the modules under this path (simulating content churn) —
+        // learning_paths.pack_id and the entitlements row are untouched.
+        conn_guard
+            .conn
+            .execute("DELETE FROM modules WHERE path_id = 'path-del'", [])
+            .unwrap();
+    }
+
+    let result = get_entitlement_for_track_impl(&db, "trk-del")
+        .expect("lookup must succeed")
+        .expect("attribution row must survive module deletion (D-05)");
+    assert_eq!(result.order_id, "ORD-DEL");
+}

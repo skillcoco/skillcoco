@@ -33,6 +33,8 @@ import {
   exportCourse,
   getOrCreateProfile,
   examBlocksForTrack,
+  getEntitlementForTrack,
+  type EntitlementAttribution,
 } from "@/lib/tauri-commands";
 import { useExamStore } from "@/stores/useExamStore";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -557,6 +559,30 @@ export function TrackView() {
     if (trackId) selectTrack(trackId);
   }, [trackId]);
 
+  // Phase 15 Plan 06 (D-08) — buyer-attribution second line. Local-only IPC
+  // read (zero network — ENT-04 offline attribution); resolves the
+  // learning_paths.pack_id -> entitlements join independently of the
+  // generated_by_model packId parse (that parse only covers topic-pack:
+  // tracks, not redeemed/imported provenance). Omitted silently when null.
+  const [entitlement, setEntitlement] = useState<EntitlementAttribution | null>(null);
+  useEffect(() => {
+    if (!trackId) {
+      setEntitlement(null);
+      return;
+    }
+    let cancelled = false;
+    getEntitlementForTrack(trackId)
+      .then((result) => {
+        if (!cancelled) setEntitlement(result);
+      })
+      .catch(() => {
+        if (!cancelled) setEntitlement(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trackId]);
+
   // Phase 19 (19-06) — load the per-module exam-flag map once per track.
   // Fail-closed: empty Map while in flight or on error ⇒ no Start Exam
   // button renders anywhere (D-02). The blockId always comes from this
@@ -776,6 +802,20 @@ export function TrackView() {
                 <ShieldCheck size={13} />
                 Verified{currentPath?.issuerName ? ` · ${currentPath.issuerName}` : ""}
               </span>
+            )}
+            {/* Phase 15 Plan 06 (D-08) — buyer-attribution second line.
+                Renders ONLY when a local entitlement row exists for this
+                track (get_entitlement_for_track, zero network — ENT-04).
+                Plain muted text, NOT a badge (UI-SPEC: "extend, don't
+                duplicate"). buyerName/orderId render as escaped React text
+                children (T-g73-01 discipline). */}
+            {entitlement && (
+              <p
+                data-testid="buyer-attribution"
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                Licensed to {entitlement.buyerName} · order #{entitlement.orderId}
+              </p>
             )}
           </div>
           <div className="flex items-center gap-3">

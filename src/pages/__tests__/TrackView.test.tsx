@@ -42,6 +42,10 @@ vi.mock("@/lib/tauri-commands", () => ({
     id: "lp-1",
     displayName: "Ada Lovelace",
   }),
+  // Phase 15 Plan 06 (D-08) — buyer-attribution second line. Default: no
+  // entitlement (most tracks are unlicensed) so existing suites don't need
+  // to know about this IPC.
+  getEntitlementForTrack: vi.fn().mockResolvedValue(null),
 }));
 
 // Phase 18 Plan 05 (Wave 3) — ExportReportDialog is mounted by TrackView but
@@ -68,8 +72,9 @@ vi.mock("@/stores/useAchievementsStore", () => ({
   },
 }));
 
-import { listTopicPacksAdmin } from "@/lib/tauri-commands";
+import { listTopicPacksAdmin, getEntitlementForTrack } from "@/lib/tauri-commands";
 const listTopicPacksAdminMock = vi.mocked(listTopicPacksAdmin);
+const getEntitlementForTrackMock = vi.mocked(getEntitlementForTrack);
 
 // Hoisted store factory so we can mutate state per test.
 const mockSetTrackBrowseMode = vi.fn();
@@ -389,6 +394,65 @@ describe("TrackView premium licensed badge (g73)", () => {
     // Escaped as text — no actual <img> element gets mounted into the DOM.
     expect(verifiedBadge.querySelector("img")).toBeNull();
     expect(verifiedBadge.textContent).toContain("<img src=x onerror=alert(1)>");
+  });
+});
+
+describe("TrackView buyer attribution (15-06, D-08)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStoreState.currentTrack = makeTrack();
+    mockStoreState.currentPath = makePath("");
+    mockStoreState.isLoading = false;
+    mockStoreState.selectTrack = vi.fn().mockResolvedValue(undefined);
+    listTopicPacksAdminMock.mockResolvedValue([]);
+    getEntitlementForTrackMock.mockResolvedValue(null);
+  });
+
+  it("renders 'Licensed to {buyer} · order #{id}' when an entitlement exists", async () => {
+    getEntitlementForTrackMock.mockResolvedValue({
+      issuerName: "Test Issuer",
+      buyerName: "Jane Buyer",
+      orderId: "ORD-77",
+    });
+
+    renderTrackView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("buyer-attribution")).toBeInTheDocument();
+    });
+
+    const line = screen.getByTestId("buyer-attribution");
+    expect(line.textContent).toBe("Licensed to Jane Buyer · order #ORD-77");
+  });
+
+  it("omits the attribution line entirely when no entitlement exists", async () => {
+    getEntitlementForTrackMock.mockResolvedValue(null);
+
+    renderTrackView();
+
+    await waitFor(() => {
+      expect(getEntitlementForTrackMock).toHaveBeenCalledWith("trk-attr");
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByTestId("buyer-attribution")).not.toBeInTheDocument();
+  });
+
+  it("renders buyer/order as escaped text children (no dangerouslySetInnerHTML)", async () => {
+    getEntitlementForTrackMock.mockResolvedValue({
+      issuerName: "Test Issuer",
+      buyerName: "<img src=x onerror=alert(1)>",
+      orderId: "ORD-XSS",
+    });
+
+    renderTrackView();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("buyer-attribution")).toBeInTheDocument();
+    });
+
+    const line = screen.getByTestId("buyer-attribution");
+    expect(line.querySelector("img")).toBeNull();
+    expect(line.textContent).toContain("<img src=x onerror=alert(1)>");
   });
 });
 
