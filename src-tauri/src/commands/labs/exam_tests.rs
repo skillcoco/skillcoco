@@ -128,6 +128,28 @@ fn seed_lab_progress(
     .unwrap();
 }
 
+/// Sets `lab_progress` for an attempt that already reset the row (i.e. a
+/// SECOND-or-later `exam_attempt_start_conn` call, which UPDATEs the
+/// existing `(learner_id, module_id, block_id)` row rather than inserting a
+/// new one — `seed_lab_progress`'s INSERT would violate the PK on a retake).
+fn update_lab_progress(
+    conn: &rusqlite::Connection,
+    learner: &str,
+    module: &str,
+    block: &str,
+    completed_step_ids: &str,
+    metadata_json: &str,
+) {
+    conn.execute(
+        "UPDATE lab_progress
+         SET completed_step_ids = ?4, metadata_json = ?5, current_step = 1,
+             last_updated = datetime('now')
+         WHERE learner_id = ?1 AND module_id = ?2 AND block_id = ?3",
+        rusqlite::params![learner, module, block, completed_step_ids, metadata_json],
+    )
+    .unwrap();
+}
+
 /// `exam_attempt_start` must persist an `exam_attempts` row with
 /// status='in_progress' and `deadline_at = started_at + timeLimitMinutes`.
 #[test]
@@ -749,5 +771,160 @@ fn exam_ipc_handlers_are_implemented() {
         "exam.rs still has {} unimplemented!() stub(s) — 19-03 must fully implement \
          exam_attempt_start/submit/get",
         stub_count
+    );
+}
+
+// ── 19-07 gap closure: exam_attempt_history (D-06 learner-facing
+// best-attempt history note — the counterpart of evidence_ledger's
+// best-of-N aggregation in storage_impl/reports.rs) ──
+
+/// Attempt A (50%) then attempt B (100%) for the same learner/block.
+/// History for attempt B: attempt_number 2, total_attempts 2, best 100%
+/// (attempt B's own finished_at). History for attempt A: attempt_number 1,
+/// total_attempts 2, best 100% (the BEST across attempts, not attempt A's
+/// own score).
+#[test]
+fn exam_attempt_history_reports_best_score_and_attempt_count() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+
+    // Attempt A: t0, one completed step -> 50%.
+    let t0 = chrono::Utc::now() - chrono::Duration::hours(2);
+    let clock_a = FakeClock { now: t0 };
+    let attempt_a = exam_attempt_start_conn(&conn, &start_req, &clock_a).unwrap();
+    seed_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+    let result_a = finalize_attempt_conn(&conn, &attempt_a.attempt_id, &clock_a).unwrap();
+    assert!((result_a.score_percent - 50.0).abs() < 1e-9);
+
+    // Attempt B: t1 (safely past attempt A's deadline), both steps -> 100%.
+    let t1 = t0 + chrono::Duration::hours(1);
+    let clock_b = FakeClock { now: t1 };
+    let attempt_b = exam_attempt_start_conn(&conn, &start_req, &clock_b).unwrap();
+    update_lab_progress(
+        &conn,
+        &learner,
+        &module,
+        &block,
+        "[\"write-manifest\",\"explain-scheduling\"]",
+        "{}",
+    );
+    let result_b = finalize_attempt_conn(&conn, &attempt_b.attempt_id, &clock_b).unwrap();
+    assert!((result_b.score_percent - 100.0).abs() < 1e-9);
+
+    // History for attempt B.
+    let history_b = exam_attempt_history_conn(&conn, &attempt_b.attempt_id)
+        .expect("exam_attempt_history_conn for attempt B");
+    assert_eq!(history_b.attempt_number, 2);
+    assert_eq!(history_b.total_attempts, 2);
+    assert!((history_b.best_score_percent - 100.0).abs() < 1e-9);
+    assert_eq!(history_b.best_attempt_date, result_b.finished_at.unwrap());
+
+    // History for attempt A — best score is 100% (across attempts), not A's own 50%.
+    let history_a = exam_attempt_history_conn(&conn, &attempt_a.attempt_id)
+        .expect("exam_attempt_history_conn for attempt A");
+    assert_eq!(history_a.attempt_number, 1);
+    assert_eq!(history_a.total_attempts, 2);
+    assert!(
+        (history_a.best_score_percent - 100.0).abs() < 1e-9,
+        "best score must be the BEST across all attempts, got {}",
+        history_a.best_score_percent
+    );
+}
+
+/// An `in_progress` (never-finalized) second attempt must never count
+/// toward total_attempts or attempt_number — mirrors the evidence_ledger
+/// status filter (`completed`/`timed_out_partial` only).
+#[test]
+fn exam_attempt_history_excludes_in_progress_attempts() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    let clock = FakeClock { now: chrono::Utc::now() };
+
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+
+    // Finalize the first attempt.
+    let first = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+    seed_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+    finalize_attempt_conn(&conn, &first.attempt_id, &clock).unwrap();
+
+    // Start a second attempt but never finalize it.
+    let _second = exam_attempt_start_conn(&conn, &start_req, &clock).unwrap();
+
+    let history = exam_attempt_history_conn(&conn, &first.attempt_id)
+        .expect("exam_attempt_history_conn");
+    assert_eq!(
+        history.total_attempts, 1,
+        "in_progress attempts must never count toward total_attempts"
+    );
+    assert_eq!(history.attempt_number, 1);
+}
+
+/// `exam_attempt_history_conn` with a nonexistent attempt id returns Err —
+/// `read_attempt_row` already produces this.
+#[test]
+fn exam_attempt_history_errors_on_unknown_attempt_id() {
+    let conn = fresh_conn();
+    let (_learner, _module, _block) = seed_exam_module(&conn);
+
+    let result = exam_attempt_history_conn(&conn, "exam-does-not-exist");
+    assert!(
+        result.is_err(),
+        "an unknown attempt_id must error, not silently default"
+    );
+}
+
+/// Two finalized attempts with EQUAL best score_percent must break the tie
+/// deterministically toward the EARLIER finished_at (closes the IN-06-style
+/// nondeterminism for this IPC).
+#[test]
+fn exam_attempt_history_ties_break_to_earliest_finished_at() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+
+    let start_req = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+
+    // Attempt A: t0, identical progress -> 50%.
+    let t0 = chrono::Utc::now() - chrono::Duration::hours(2);
+    let clock_a = FakeClock { now: t0 };
+    let attempt_a = exam_attempt_start_conn(&conn, &start_req, &clock_a).unwrap();
+    seed_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+    let result_a = finalize_attempt_conn(&conn, &attempt_a.attempt_id, &clock_a).unwrap();
+
+    // Attempt B: t1 (later), identical progress -> 50% (tie).
+    let t1 = t0 + chrono::Duration::hours(1);
+    let clock_b = FakeClock { now: t1 };
+    let attempt_b = exam_attempt_start_conn(&conn, &start_req, &clock_b).unwrap();
+    update_lab_progress(&conn, &learner, &module, &block, "[\"write-manifest\"]", "{}");
+    let result_b = finalize_attempt_conn(&conn, &attempt_b.attempt_id, &clock_b).unwrap();
+
+    assert!((result_a.score_percent - result_b.score_percent).abs() < 1e-9, "tie setup");
+    assert_ne!(
+        result_a.finished_at, result_b.finished_at,
+        "test setup: finished_at must differ between the two attempts"
+    );
+
+    let history = exam_attempt_history_conn(&conn, &attempt_b.attempt_id)
+        .expect("exam_attempt_history_conn");
+    assert_eq!(
+        history.best_attempt_date,
+        result_a.finished_at.unwrap(),
+        "tied best score must break to the EARLIER finished_at (deterministic)"
     );
 }

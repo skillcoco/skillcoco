@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import {
+  examAttemptHistory,
   examBlocksForTrack,
   getModuleBlocks,
   getOrCreateProfile,
@@ -29,6 +30,7 @@ import { LabBlock } from "@/components/labs/LabBlock";
 import { ExamTimer } from "@/components/labs/exam/ExamTimer";
 import { ExamResultsPanel } from "@/components/labs/exam/ExamResultsPanel";
 import type {
+  ExamAttemptHistoryResult,
   ExamAttemptResult,
   ExamAttemptStartResult,
   LabBlockPayload,
@@ -67,6 +69,9 @@ export function ExamRunView() {
   const [startResult, setStartResult] =
     useState<ExamAttemptStartResult | null>(null);
   const [result, setResult] = useState<ExamAttemptResult | null>(null);
+  const [history, setHistory] = useState<ExamAttemptHistoryResult | null>(
+    null,
+  );
   const [grading, setGrading] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
@@ -174,6 +179,18 @@ export function ExamRunView() {
         setResult(finalResult);
         setTimedOut(auto || finalResult.status === "timed_out_partial");
         setView("results");
+
+        // D-06 — best-attempt history note is supplementary; a fetch
+        // failure must NEVER block or break the results screen (own
+        // try/catch, own state, results screen already committed above).
+        try {
+          const historyResult = await examAttemptHistory({
+            attemptId: startResult.attemptId,
+          });
+          setHistory(historyResult);
+        } catch {
+          setHistory(null);
+        }
       } catch (err) {
         setSubmitError(
           `Couldn't submit your exam. ${err instanceof Error ? err.message : String(err)}. Your progress is saved — try submitting again.`,
@@ -314,9 +331,20 @@ export function ExamRunView() {
         <ExamResultsPanel
           result={result}
           passThresholdPct={passThresholdPct}
+          history={
+            history && history.totalAttempts > 1
+              ? {
+                  ...history,
+                  bestAttemptDate: new Date(
+                    history.bestAttemptDate,
+                  ).toLocaleDateString(),
+                }
+              : undefined
+          }
           onRetake={() => {
             setStartResult(null);
             setResult(null);
+            setHistory(null);
             setView("start");
           }}
           onBackToCourse={() => navigate(`/track/${trackId}`)}
