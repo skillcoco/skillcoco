@@ -72,6 +72,28 @@ pub struct ExamAttemptGetRequest {
     pub attempt_id: String,
 }
 
+/// D-06 gap closure (19-07) — learner-facing best-attempt history summary
+/// for a single finalized exam attempt. This is the in-app counterpart of
+/// `evidence_ledger`'s best-of-N aggregation (`storage_impl/reports.rs`):
+/// evidence_ledger computes the authoritative signed-report record, while
+/// this IPC answers "how does THIS attempt compare to my other attempts"
+/// for the results screen note "This is attempt N of M. Best score: X%
+/// (date)." Read-only; never mutates `exam_attempts` or `lab_progress`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamAttemptHistoryRequest {
+    pub attempt_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamAttemptHistoryResult {
+    pub attempt_number: usize,
+    pub total_attempts: usize,
+    pub best_score_percent: f64,
+    pub best_attempt_date: String,
+}
+
 /// Per-step verdict in the RESULT (server-derived — never accepted as
 /// client input; this struct is a response shape only).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -496,6 +518,67 @@ pub(crate) fn exam_attempt_get_conn(
     attempt_row_to_result(&row, attempt_id)
 }
 
+/// `Connection`-based inner helper for `exam_attempt_history` (test seam).
+/// D-06 gap closure (19-07) — read-only; no `Clock` parameter needed since
+/// this never reconciles timeouts (callers hit it only after finalize).
+///
+/// Scope: all rows in `exam_attempts` sharing the target attempt's
+/// learner_id + block_id, restricted to `status IN ('completed',
+/// 'timed_out_partial')` — same filter as `evidence_ledger`; `in_progress`
+/// rows are excluded from every count.
+pub(crate) fn exam_attempt_history_conn(
+    conn: &Connection,
+    attempt_id: &str,
+) -> Result<ExamAttemptHistoryResult, String> {
+    let row = read_attempt_row(conn, attempt_id)?;
+
+    let total_attempts: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM exam_attempts
+             WHERE learner_id = ?1 AND block_id = ?2
+               AND status IN ('completed', 'timed_out_partial')",
+            rusqlite::params![row.learner_id, row.block_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("exam_attempt_history total_attempts: {}", e))?;
+
+    // Tie-break: `finished_at ASC` makes an equal-score result deterministic
+    // (earliest best attempt wins).
+    let (best_score_percent, best_attempt_date): (f64, String) = conn
+        .query_row(
+            "SELECT score_percent, COALESCE(finished_at, '') FROM exam_attempts
+             WHERE learner_id = ?1 AND block_id = ?2
+               AND status IN ('completed', 'timed_out_partial')
+             ORDER BY score_percent DESC, finished_at ASC
+             LIMIT 1",
+            rusqlite::params![row.learner_id, row.block_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| format!("exam_attempt_history best attempt: {}", e))?;
+
+    // attempt_number: how many finalized attempts (including this one, if
+    // finalized) started at or before this attempt's started_at — RFC-3339
+    // TEXT lexicographic order (same precedent as the deadline comparison
+    // at line 323).
+    let attempt_number: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM exam_attempts
+             WHERE learner_id = ?1 AND block_id = ?2
+               AND status IN ('completed', 'timed_out_partial')
+               AND started_at <= ?3",
+            rusqlite::params![row.learner_id, row.block_id, row.started_at],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("exam_attempt_history attempt_number: {}", e))?;
+
+    Ok(ExamAttemptHistoryResult {
+        attempt_number: attempt_number as usize,
+        total_attempts: total_attempts as usize,
+        best_score_percent,
+        best_attempt_date,
+    })
+}
+
 // ── IPC handlers ──
 
 #[tauri::command]
@@ -526,6 +609,15 @@ pub async fn exam_attempt_get(
 ) -> Result<ExamAttemptResult, String> {
     let db = state.db.lock().map_err(|e| format!("db lock: {}", e))?;
     exam_attempt_get_conn(&db.conn, &request.attempt_id, &RealClock)
+}
+
+#[tauri::command]
+pub async fn exam_attempt_history(
+    request: ExamAttemptHistoryRequest,
+    state: State<'_, AppState>,
+) -> Result<ExamAttemptHistoryResult, String> {
+    let db = state.db.lock().map_err(|e| format!("db lock: {}", e))?;
+    exam_attempt_history_conn(&db.conn, &request.attempt_id)
 }
 
 #[cfg(test)]
