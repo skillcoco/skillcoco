@@ -454,6 +454,7 @@ mod tests {
     /// A pack with no `signature` key at all must be rejected as
     /// `MissingSignature` (D-09 tiering relies on this being distinguishable
     /// from tamper/untrusted-issuer rejections).
+    // ENT-03 fail-closed baseline (Phase 15) — MUST stay byte-identical; do not modify.
     #[test]
     fn missing_signature_returns_missing_signature() {
         let (_root_key, root_pem) = keypair();

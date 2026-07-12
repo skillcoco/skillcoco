@@ -3,6 +3,9 @@ mod ai;
 pub mod auth;
 pub mod commands;
 pub mod db;
+// Phase 15 (Entitlement & Redeem) — license-key redeem, buyer-stamped pack
+// download, and local entitlement caching. See entitlements/mod.rs.
+pub mod entitlements;
 pub mod labs;
 pub mod licensing;
 // Phase 18 Plan 4 — shared PDF text-rendering helper (`push_line`) used by

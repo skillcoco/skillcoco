@@ -45,6 +45,11 @@ pub mod v016_quiz_attempts;
 pub mod v017_skill_reports;
 pub mod v018_backfill_capability_tags;
 pub mod v019_exam_attempts;
+// Phase 15-01 (Wave 0) — module declared so its RED scaffold tests compile
+// and run; NOT YET registered in `registered_migrations()` below (that is
+// explicitly 15-02's job — registration is what flips the schema version
+// count from 19 -> 20, see v020_entitlements.rs module doc).
+pub mod v020_entitlements;
 
 /// A single schema migration.
 pub struct Migration {
