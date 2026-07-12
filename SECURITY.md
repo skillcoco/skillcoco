@@ -137,4 +137,4 @@ Out of scope:
 
 ---
 
-*Last reviewed: 2026-06-17 (Phase 8 Wave 1).*
+*Last reviewed: 2026-07-12 (Phase 19 security audit — policy unchanged; see `.planning/SECURITY-OVERVIEW.md` for the per-phase threat register rollup).*
