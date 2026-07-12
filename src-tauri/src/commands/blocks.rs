@@ -419,14 +419,33 @@ pub(crate) fn insert_skeleton_blocks(
     // Resolve pack root ONCE before the lab loop. `None` (AI/imported track,
     // or no learning_paths row for this track_id) means the lab loop below
     // behaves exactly as today.
-    let provenance: Option<String> = tx
-        .query_row(
-            "SELECT generated_by_model FROM learning_paths WHERE track_id = ?1",
-            [track_id],
-            |r| r.get::<_, Option<String>>(0),
-        )
-        .ok()
-        .flatten();
+    //
+    // Phase 19.1 WR-01 fix: `learning_paths.track_id` has no `UNIQUE`
+    // constraint (multiple `INSERT INTO learning_paths` call sites in
+    // `course_io.rs` insert a fresh-UUID row per regeneration/import cycle
+    // for the same track_id), so more than one row can legitimately exist.
+    // `ORDER BY rowid DESC LIMIT 1` makes that a defined, working case
+    // (most-recently-inserted row wins) instead of relying on `query_row`'s
+    // implicit single-row assumption, which would otherwise surface
+    // `QueryReturnedMoreThanOneRow` and silently disable the pack-lab
+    // optimization. Genuine query errors (schema/data anomalies other than
+    // "no rows") are logged instead of swallowed.
+    let provenance: Option<String> = match tx.query_row(
+        "SELECT generated_by_model FROM learning_paths \
+         WHERE track_id = ?1 ORDER BY rowid DESC LIMIT 1",
+        [track_id],
+        |r| r.get::<_, Option<String>>(0),
+    ) {
+        Ok(v) => v,
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(e) => {
+            log::warn!(
+                "insert_skeleton_blocks: provenance lookup failed for track {}: {}",
+                track_id, e
+            );
+            None
+        }
+    };
     let pack_root = provenance
         .as_deref()
         .and_then(crate::labs::pageplanner_labs::pack_root_for_provenance);
@@ -2878,6 +2897,79 @@ pub(crate) mod tests {
         assert_eq!(
             payload.get("spec").and_then(|s| s.get("slug")).and_then(|v| v.as_str()),
             Some("m1-container-native-lab")
+        );
+    }
+
+    /// Test (WR-01 regression guard): a track with TWO `learning_paths` rows
+    /// (no `UNIQUE` constraint on `track_id` — see `course_io.rs` insert call
+    /// sites, which always use a fresh UUID `id`) where the SECOND row
+    /// (inserted later) carries the pack provenance. Before the WR-01 fix,
+    /// `query_row` on a 2-row result set returns
+    /// `rusqlite::Error::QueryReturnedMoreThanOneRow`, which `.ok().flatten()`
+    /// collapsed identically to "no row" — silently and permanently disabling
+    /// the pack-lab zero-LLM optimization for this track. After the fix, the
+    /// most recently inserted row wins deterministically and the pack-hit
+    /// path still resolves.
+    #[test]
+    fn insert_skeleton_blocks_multi_row_learning_paths_still_resolves_pack_provenance() {
+        let _g = PACKLAB_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let tmp = tempfile::TempDir::new().unwrap();
+        let pack_dir = tmp
+            .path()
+            .join("coursesmith-demo")
+            .join("labs")
+            .join("m1-container-native-lab");
+        std::fs::create_dir_all(&pack_dir).unwrap();
+        std::fs::write(pack_dir.join("LAB.md"), PACKLAB_FIXTURE_LAB_MD).unwrap();
+        std::env::set_var(
+            crate::topic_packs::loader::SKILLS_DIR_OVERRIDE_ENV,
+            tmp.path(),
+        );
+
+        let conn = fresh_conn();
+        // First row: older, non-pack provenance (e.g. an earlier AI-generated
+        // path for the same track that was later regenerated from a pack).
+        packlab_seed_learning_path(&conn, "trk-multipath", "gpt-4o");
+        // Second row: same track_id, no UNIQUE constraint stops this — this
+        // is the row that should win because it's the most recent.
+        conn.execute(
+            "INSERT INTO learning_paths \
+             (id, track_id, version, edges_json, modules_json, generated_by_model) \
+             VALUES ('path-trk-multipath-2', 'trk-multipath', 1, '[]', '[]', ?1)",
+            ["topic-pack:coursesmith-demo"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO modules (id, path_id, title, objectives_json) \
+             VALUES ('mod-multipath', 'path-trk-multipath', 'Test Module', '[]')",
+            [],
+        )
+        .unwrap();
+
+        let outline = packlab_outline_with_lab("m1-container-native-lab");
+
+        let result = insert_skeleton_blocks(&conn, "mod-multipath", &outline, "trk-multipath");
+
+        std::env::remove_var(crate::topic_packs::loader::SKILLS_DIR_OVERRIDE_ENV);
+
+        let blocks = result.expect(
+            "insert_skeleton_blocks must not error on a track with multiple learning_paths rows",
+        );
+
+        let lab_block = blocks
+            .iter()
+            .find(|b| b.block_type == "lab")
+            .expect("lab block must exist");
+        assert_eq!(
+            lab_block.status, "ready",
+            "pack-supplied lab must still resolve READY when the track has \
+             multiple learning_paths rows (most recent provenance wins)"
+        );
+
+        let params: serde_json::Value = serde_json::from_str(&lab_block.params_json).unwrap();
+        assert_eq!(
+            params.get("generationSource").and_then(|v| v.as_str()),
+            Some("topic_pack")
         );
     }
 
