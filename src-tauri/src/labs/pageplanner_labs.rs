@@ -96,6 +96,86 @@ pub fn apply_topic_pack_override(
     }
 }
 
+/// Phase 19.1 (PACKLAB-01/T-19.1-02) — resolve the on-disk pack root for a
+/// `generated_by_model` provenance string of the form `topic-pack:<pack_id>`
+/// (the format locked in Phase 5, see `commands/course_io.rs`). Returns
+/// `None` for any non-`topic-pack:` provenance (AI-generated / imported
+/// tracks have no pack root) and for an empty pack_id after the prefix.
+///
+/// Reuses `topic_packs::loader::skills_dir()` rather than reimplementing the
+/// skills-dir/home-dir/env-override logic, so `LEARNFORGE_SKILLS_DIR_OVERRIDE`
+/// is honored identically to the pack loader (this is what makes it
+/// testable without touching the real home directory).
+///
+/// T-19.1-02 hardening: rejects any pack_id containing a path separator or
+/// `..` before joining, so a malicious/malformed provenance string cannot
+/// escape `skills_dir()` via the path join.
+pub(crate) fn pack_root_for_provenance(generated_by_model: &str) -> Option<std::path::PathBuf> {
+    let pack_id = generated_by_model.strip_prefix("topic-pack:")?;
+    if pack_id.is_empty() {
+        return None;
+    }
+    if pack_id.contains('/') || pack_id.contains('\\') || pack_id.contains("..") {
+        log::warn!(
+            "pack_root_for_provenance: rejecting pack_id with unsafe path characters: {:?}",
+            pack_id
+        );
+        return None;
+    }
+    crate::topic_packs::loader::skills_dir().map(|d| d.join(pack_id))
+}
+
+/// Phase 19.1 (PACKLAB-01/T-19.1-01/T-19.1-03) — read + validate a
+/// pack-supplied LAB.md from `<pack_root>/labs/<lab_slug>/LAB.md`.
+///
+/// - File absent (`path.is_file()` false) → `None`, NO log output. Absent
+///   LAB.md is the normal backward-compatible case (packs without a lab
+///   body still fall through to LLM generation), not an error.
+/// - Io read error → `log::warn!` + `None`.
+/// - `parse_lab_md` failure (untrusted-content boundary guard) →
+///   `log::warn!` + `None`. This mirrors `read_lab_spec_conn`'s
+///   log-and-fall-through shape exactly (orchestrator decision 2) — a
+///   malformed pack LAB.md NEVER produces a hard `LabError` here and NEVER
+///   silently corrupts content; the caller falls back to LLM generation.
+///
+/// T-19.1-02 hardening: rejects any lab_slug containing a path separator or
+/// `..` before joining (defense in depth alongside `pack_root_for_provenance`'s
+/// pack_id guard and `parse_lab_md`'s own `validate_slug` on the parsed spec).
+pub(crate) fn resolve_pack_lab_md(
+    pack_root: &std::path::Path,
+    lab_slug: &str,
+) -> Option<(LabSpec, String)> {
+    if lab_slug.contains('/') || lab_slug.contains('\\') || lab_slug.contains("..") {
+        log::warn!(
+            "resolve_pack_lab_md: rejecting lab_slug with unsafe path characters: {:?}",
+            lab_slug
+        );
+        return None;
+    }
+    let path = pack_root.join("labs").join(lab_slug).join("LAB.md");
+    if !path.is_file() {
+        return None;
+    }
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("resolve_pack_lab_md: failed to read {}: {}", path.display(), e);
+            return None;
+        }
+    };
+    match parse_lab_md(&contents) {
+        Ok((spec, body)) => Some((spec, body)),
+        Err(e) => {
+            log::warn!(
+                "pack LAB.md at {} failed validation: {} — falling back to LLM generation",
+                path.display(),
+                e
+            );
+            None
+        }
+    }
+}
+
 fn slug_to_title(slug: &str) -> String {
     slug.split('-')
         .map(|w| {
