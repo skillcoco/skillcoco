@@ -581,7 +581,12 @@ export interface ExamAttemptResult {
 
 // D-06 best-attempt history (19-07 gap closure) — field-for-field
 // identical to ExamResultsPanel's AttemptHistorySummary so the IPC result
-// is structurally assignable to the panel's `history` prop.
+// is structurally assignable to the panel's `history` prop. WR-03: despite
+// the identical shape, `bestAttemptDate` carries semantically DIFFERENT
+// string contents at each end of the pipeline — this IPC result's field is
+// a raw RFC-3339 datetime, while the panel's own `AttemptHistorySummary`
+// expects an already display-ready (e.g. locale-formatted) string. See the
+// field-level doc comment below and ExamRunView's conversion step.
 
 export interface ExamAttemptHistoryRequest {
   attemptId: string;
@@ -591,6 +596,13 @@ export interface ExamAttemptHistoryResult {
   attemptNumber: number;
   totalAttempts: number;
   bestScorePercent: number;
+  /**
+   * WR-03 — RFC-3339 datetime string (derived from `finished_at` on the
+   * Rust side), NOT display-ready. Callers must format it for display
+   * (see ExamRunView's `new Date(...).toLocaleDateString()` conversion)
+   * before passing it into ExamResultsPanel's `AttemptHistorySummary`,
+   * whose `bestAttemptDate` field is display-ready and renders as-is.
+   */
   bestAttemptDate: string;
 }
 
