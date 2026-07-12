@@ -8,6 +8,7 @@ import { SettingsYouTubeSection } from "@/pages/SettingsYouTubeSection";
 import { SettingsVerifyCertSection } from "@/pages/SettingsVerifyCertSection";
 import { SettingsReportServerSection } from "@/pages/SettingsReportServerSection";
 import { SettingsCourseImportSection } from "@/pages/SettingsCourseImportSection";
+import { SettingsRedeemLicenseSection } from "@/pages/SettingsRedeemLicenseSection";
 import {
   Shield,
   Key,
@@ -948,6 +949,9 @@ export function Settings() {
 
       {/* ── Course Import (Phase 12 Plan 04 — D-05/D-09) ── */}
       <SettingsCourseImportSection />
+
+      {/* ── Redeem License (Phase 15 Plan 05 — D-01/D-02) ── */}
+      <SettingsRedeemLicenseSection />
 
       {/* ── Preferences ── */}
       <section className="space-y-4">
