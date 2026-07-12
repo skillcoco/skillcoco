@@ -27,6 +27,10 @@
 //!   ninth application). Per-track `ReportStore` methods over
 //!   capability_tags/module_progress/quiz_attempts/lab_progress/achievements,
 //!   with D-03.4 title-fallback and Warning-3 evidence_class validation.
+//! - [`entitlements`] — `SqliteEntitlementStore<'a>(&'a Connection)`
+//!   (Phase 15-01/15-02 — tenth application). Plain inherent-impl (no
+//!   `learnforge-core` trait — entitlements is Rust-side only); D-05 CRUD
+//!   over the `entitlements` table.
 //!
 //! All adapters use the local-newtype pattern to satisfy Rust's orphan rule
 //! (E0117) — see each module's "Orphan-rule note" for details.
@@ -37,6 +41,7 @@
 pub mod achievements;
 pub mod bkt;
 pub mod blocks;
+pub mod entitlements;
 pub mod microlearning;
 pub mod packs;
 pub mod reports;
