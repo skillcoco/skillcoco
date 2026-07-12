@@ -327,6 +327,8 @@ pub fn run() {
             // Entitlement redeem + buyer-stamped pack download (Phase 15 — Plan 04)
             commands::entitlements::redeem_license,
             commands::entitlements::download_and_import_pack,
+            // Buyer attribution, local-only read (Phase 15 — Plan 06 / D-08)
+            commands::entitlements::get_entitlement_for_track,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

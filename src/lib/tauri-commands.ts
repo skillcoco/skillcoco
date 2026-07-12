@@ -527,6 +527,26 @@ export async function downloadAndImportPack(
   return invoke("download_and_import_pack", { request });
 }
 
+// ── Phase 15 (Entitlement & Redeem) — Plan 06 IPC wrapper ──
+//
+// Local-only read (zero network — ENT-04 offline attribution). Excludes
+// keyFingerprint — that field never crosses the IPC boundary (T-15-19).
+
+export interface EntitlementAttribution {
+  issuerName: string;
+  buyerName: string;
+  orderId: string;
+}
+
+/// Resolve the buyer-attribution row for a track (or null if the track has
+/// no pack_id, or the pack_id has no entitlements row). Entirely local
+/// SQLite — no network call.
+export async function getEntitlementForTrack(
+  trackId: string,
+): Promise<EntitlementAttribution | null> {
+  return invoke("get_entitlement_for_track", { request: { trackId } });
+}
+
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile, readTextFile } from "@tauri-apps/plugin-fs";
 import type {

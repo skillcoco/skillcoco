@@ -26,7 +26,7 @@
 //! (15-03) at the point of the literal path join (T-15-14); this file only
 //! propagates that layer's rejection.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
 use crate::commands::course_io::import_course_impl;
@@ -200,6 +200,73 @@ pub async fn download_and_import_pack(
         .app_data_dir()
         .map_err(|e| e.to_string())?;
     download_and_import_pack_impl(state.db.as_ref(), &app_data_dir, &request).await
+}
+
+// ── get_entitlement_for_track (15-06, D-08 buyer attribution) ─────────────
+
+/// `get_entitlement_for_track` IPC request.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetEntitlementForTrackRequest {
+    pub track_id: String,
+}
+
+/// Display-only attribution fields surfaced to the renderer. Deliberately
+/// excludes `key_fingerprint` — that field never crosses the IPC boundary
+/// (T-15-19).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntitlementAttribution {
+    pub issuer_name: String,
+    pub buyer_name: String,
+    pub order_id: String,
+}
+
+/// Resolve the buyer-attribution row for `track_id`, entirely from local
+/// SQLite (zero network — ENT-04's offline attribution proof). Joins
+/// `learning_paths.pack_id` (stamped by `download_and_import_pack_impl`,
+/// D-08) to the `entitlements` table via `SqliteEntitlementStore::
+/// find_by_pack_id`. A track with no `pack_id`, or a `pack_id` with no
+/// entitlements row, is a clean `Ok(None)` — most tracks are unlicensed, so
+/// a miss is the expected common case, never an error.
+fn get_entitlement_for_track_impl(
+    db: &std::sync::Mutex<Database>,
+    track_id: &str,
+) -> Result<Option<EntitlementAttribution>, String> {
+    let conn_guard = db.lock().map_err(|e| e.to_string())?;
+
+    let pack_id: Option<String> = conn_guard
+        .conn
+        .query_row(
+            "SELECT pack_id FROM learning_paths WHERE track_id = ?1",
+            rusqlite::params![track_id],
+            |r| r.get(0),
+        )
+        .ok()
+        .flatten();
+
+    let Some(pack_id) = pack_id else {
+        return Ok(None);
+    };
+
+    let store = SqliteEntitlementStore(&conn_guard.conn);
+    let row = store.find_by_pack_id(&pack_id)?;
+
+    Ok(row.map(|r| EntitlementAttribution {
+        issuer_name: r.issuer_name,
+        buyer_name: r.buyer_name,
+        order_id: r.order_id,
+    }))
+}
+
+/// Thin shim over `get_entitlement_for_track_impl`. Local-only read — no
+/// network I/O, no `key_fingerprint` exposure.
+#[tauri::command]
+pub fn get_entitlement_for_track(
+    request: GetEntitlementForTrackRequest,
+    state: State<'_, crate::AppState>,
+) -> Result<Option<EntitlementAttribution>, String> {
+    get_entitlement_for_track_impl(state.db.as_ref(), &request.track_id)
 }
 
 #[cfg(test)]
