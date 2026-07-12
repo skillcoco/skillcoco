@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { FolderOpen, Upload, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
-import { importCourse, openFileDialog } from "@/lib/tauri-commands";
+import {
+  importCourse,
+  openFileDialog,
+  getEntitlementForTrack,
+} from "@/lib/tauri-commands";
 
 // ── Phase 12 Plan 04 — Course Import Section ──
 //
@@ -31,6 +35,15 @@ interface ImportState {
   verified?: boolean;
   /** Publisher name from the verified issuer cert, when `verified` is `true`. */
   issuerName?: string | null;
+  /**
+   * Phase 15 Plan 06 (D-08) — buyer-attribution second line, resolved via a
+   * local-only get_entitlement_for_track lookup keyed by the just-imported
+   * trackId. `undefined` while resolving / when no entitlement exists (the
+   * common case for AI-generated or non-redeemed imports) — the attribution
+   * line renders only when this is populated.
+   */
+  buyerName?: string;
+  orderId?: string;
 }
 
 export function SettingsCourseImportSection() {
@@ -75,6 +88,24 @@ export function SettingsCourseImportSection() {
         verified: result.verified,
         issuerName: result.issuerName,
       });
+
+      // Phase 15 Plan 06 (D-08) — resolve buyer attribution for the
+      // just-imported track (local-only, zero network — ENT-04). Most
+      // imports are unlicensed, so a null result (silent omission) is the
+      // expected common case, not an error.
+      try {
+        const entitlement = await getEntitlementForTrack(result.trackId);
+        if (entitlement) {
+          setState((prev) => ({
+            ...prev,
+            buyerName: entitlement.buyerName,
+            orderId: entitlement.orderId,
+          }));
+        }
+      } catch {
+        // Attribution is a display-only enhancement — a failed lookup must
+        // not affect the already-successful import feedback.
+      }
     } catch (err) {
       setState({
         status: "error",
@@ -136,6 +167,17 @@ export function SettingsCourseImportSection() {
             {state.verified === true && state.issuerName && (
               <p className="text-xs text-muted-foreground">
                 Verified publisher: <span className="font-medium">{state.issuerName}</span>
+              </p>
+            )}
+            {/* Phase 15 Plan 06 (D-08) — buyer-attribution second line.
+                Renders ONLY when a local entitlement row exists for the
+                just-imported track. Plain muted text, matches the existing
+                "Verified publisher" line's styling (UI-SPEC: "extend, don't
+                duplicate"). buyerName/orderId render as escaped React text
+                children. */}
+            {state.buyerName && state.orderId && (
+              <p className="text-xs text-muted-foreground">
+                Licensed to {state.buyerName} · order #{state.orderId}
               </p>
             )}
             <div className="flex items-start gap-1.5 mt-1">

@@ -17,14 +17,18 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ImportCourseResult } from "@/types/course-io";
 
-const { importCourseMock, openFileDialogMock } = vi.hoisted(() => ({
+const { importCourseMock, openFileDialogMock, getEntitlementForTrackMock } = vi.hoisted(() => ({
   importCourseMock: vi.fn(),
   openFileDialogMock: vi.fn(),
+  // Phase 15 Plan 06 (D-08) — default: no entitlement (most imports are
+  // unlicensed, e.g. AI-generated/exported courses re-imported elsewhere).
+  getEntitlementForTrackMock: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/lib/tauri-commands", () => ({
   importCourse: importCourseMock,
   openFileDialog: openFileDialogMock,
+  getEntitlementForTrack: getEntitlementForTrackMock,
 }));
 
 import { SettingsCourseImportSection } from "@/pages/SettingsCourseImportSection";
@@ -46,6 +50,7 @@ function verifiedResult(
 beforeEach(() => {
   vi.clearAllMocks();
   openFileDialogMock.mockResolvedValue("/tmp/course.json");
+  getEntitlementForTrackMock.mockResolvedValue(null);
 });
 
 describe("SettingsCourseImportSection — Phase 14 Plan 06 (14-06 CR-01)", () => {
@@ -85,5 +90,44 @@ describe("SettingsCourseImportSection — Phase 14 Plan 06 (14-06 CR-01)", () =>
     });
 
     expect(screen.queryByText(/test publisher/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("SettingsCourseImportSection buyer attribution (15-06, D-08)", () => {
+  it("renders 'Licensed to {buyer} · order #{id}' when an entitlement exists for the imported track", async () => {
+    importCourseMock.mockResolvedValue(verifiedResult());
+    getEntitlementForTrackMock.mockResolvedValue({
+      issuerName: "Test Publisher",
+      buyerName: "Jane Buyer",
+      orderId: "ORD-77",
+    });
+
+    render(<SettingsCourseImportSection />);
+
+    const button = screen.getByTestId("import-course-button");
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByText("Licensed to Jane Buyer · order #ORD-77")).toBeInTheDocument();
+    });
+    expect(getEntitlementForTrackMock).toHaveBeenCalledWith("trk-abc123");
+  });
+
+  it("omits the attribution line entirely when no entitlement exists for the imported track", async () => {
+    importCourseMock.mockResolvedValue(verifiedResult());
+    getEntitlementForTrackMock.mockResolvedValue(null);
+
+    render(<SettingsCourseImportSection />);
+
+    const button = screen.getByTestId("import-course-button");
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByText(/course imported successfully/i)).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(getEntitlementForTrackMock).toHaveBeenCalledWith("trk-abc123");
+    });
+    expect(screen.queryByText(/Licensed to/)).not.toBeInTheDocument();
   });
 });
