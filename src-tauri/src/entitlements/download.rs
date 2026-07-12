@@ -17,6 +17,12 @@
 
 use super::RedeemLicenseError;
 
+/// WR-02 — the same 5MB cap the import path enforces when reading the file
+/// back (T-12-07, `ImportedFilePackSource`), applied at DOWNLOAD time so an
+/// oversized (malicious/compromised-hub) response is rejected before it is
+/// buffered in memory or written to disk.
+const MAX_PACK_BYTES: usize = 5 * 1024 * 1024;
+
 /// Reject a server-supplied `pack_id` that contains a path separator (`/`
 /// or `\`), a `..` traversal segment, a leading separator, or otherwise
 /// isn't a clean single-segment identifier (alphanumerics plus `-`/`_`).
@@ -38,25 +44,41 @@ fn sanitize_pack_id(pack_id: &str) -> Result<&str, RedeemLicenseError> {
     }
 }
 
+/// Resolve the stable retained-artifact path
+/// `<base>/entitlements/<pack_id>.json` (D-07), running the same
+/// `sanitize_pack_id` traversal guard at the point of the literal path
+/// join (T-15-08). Shared by the download write path and the CR-01
+/// stranded-purchase recovery probe so both agree on one location and one
+/// guard.
+pub(crate) fn retained_artifact_path(
+    base: &std::path::Path,
+    pack_id: &str,
+) -> Result<std::path::PathBuf, RedeemLicenseError> {
+    let clean_id = sanitize_pack_id(pack_id)?;
+    Ok(base.join("entitlements").join(format!("{clean_id}.json")))
+}
+
 /// Write `bytes` to the stable retained-artifact path
 /// `<base>/entitlements/<pack_id>.json` (D-07 — NOT a temp file), creating
 /// the `entitlements` directory if needed. `pack_id` MUST already be
 /// sanitized by the caller — this fn re-runs `sanitize_pack_id` internally
-/// so it cannot be used to bypass the traversal guard even if called
-/// directly. Purely filesystem I/O — no `reqwest` involvement — so tests
-/// can drive it with in-memory bytes and a tempdir.
+/// (via `retained_artifact_path`) so it cannot be used to bypass the
+/// traversal guard even if called directly. Purely filesystem I/O — no
+/// `reqwest` involvement — so tests can drive it with in-memory bytes and
+/// a tempdir.
 fn write_retained_artifact(
     base: &std::path::Path,
     pack_id: &str,
     bytes: &[u8],
 ) -> Result<String, RedeemLicenseError> {
-    let clean_id = sanitize_pack_id(pack_id)?;
+    let path = retained_artifact_path(base, pack_id)?;
 
-    let dir = base.join("entitlements");
-    std::fs::create_dir_all(&dir)
+    let dir = path
+        .parent()
+        .expect("retained artifact path always has the entitlements dir parent");
+    std::fs::create_dir_all(dir)
         .map_err(|e| RedeemLicenseError::MalformedResponse(format!("could not create entitlements dir: {e}")))?;
 
-    let path = dir.join(format!("{clean_id}.json"));
     std::fs::write(&path, bytes)
         .map_err(|e| RedeemLicenseError::MalformedResponse(format!("could not write retained artifact: {e}")))?;
 
@@ -83,10 +105,10 @@ pub async fn download_and_store(
     // bytes are fetched (T-15-08).
     sanitize_pack_id(pack_id)?;
 
-    // Step 2 — SSRF/local-file-read hygiene: only http(s) schemes proceed
-    // (T-15-07, same guard as call_redeem_endpoint).
-    let is_http_scheme = download_url.starts_with("http://") || download_url.starts_with("https://");
-    if !is_http_scheme {
+    // Step 2 — SSRF/local-file-read hygiene + WR-03 cleartext guard: https
+    // always; plaintext http only for loopback hosts (same shared policy as
+    // call_redeem_endpoint).
+    if !super::is_permitted_endpoint_url(download_url) {
         return Err(RedeemLicenseError::IssuerUnreachable);
     }
 
@@ -97,11 +119,8 @@ pub async fn download_and_store(
 
     let send_result = client.get(download_url).send().await;
 
-    let bytes = match send_result {
-        Ok(resp) if resp.status().is_success() => resp
-            .bytes()
-            .await
-            .map_err(|e| RedeemLicenseError::MalformedResponse(e.to_string()))?,
+    let mut resp = match send_result {
+        Ok(resp) if resp.status().is_success() => resp,
         Ok(resp) => {
             return Err(RedeemLicenseError::MalformedResponse(format!(
                 "download failed with status {}",
@@ -110,6 +129,32 @@ pub async fn download_and_store(
         }
         Err(_) => return Err(RedeemLicenseError::IssuerUnreachable),
     };
+
+    // WR-02 — reject on the advertised size first, when present, before a
+    // single body byte is read.
+    if let Some(len) = resp.content_length() {
+        if len > MAX_PACK_BYTES as u64 {
+            return Err(RedeemLicenseError::PackTooLarge);
+        }
+    }
+
+    // WR-02 — stream chunks with a running-total guard instead of an
+    // unbounded `resp.bytes()` buffer; abort as soon as the cap is
+    // exceeded, BEFORE write_retained_artifact is called. Covers servers
+    // that omit/lie about Content-Length.
+    let mut bytes: Vec<u8> = Vec::new();
+    loop {
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                if bytes.len() + chunk.len() > MAX_PACK_BYTES {
+                    return Err(RedeemLicenseError::PackTooLarge);
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            Err(e) => return Err(RedeemLicenseError::MalformedResponse(e.to_string())),
+        }
+    }
 
     write_retained_artifact(app_data_dir, pack_id, &bytes)
 }
@@ -180,6 +225,98 @@ mod tests {
 
         // No entitlements dir must have been created for a rejected scheme.
         assert!(!tmp.path().join("entitlements").exists());
+    }
+
+    /// WR-03 — a plaintext http:// downloadUrl pointing at a NON-loopback
+    /// host is rejected with IssuerUnreachable BEFORE any GET or file write;
+    /// loopback http (dev/mock Hub) stays permitted at the policy level.
+    #[tokio::test]
+    async fn wr03_download_rejects_plaintext_http_for_non_loopback() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        let result =
+            download_and_store("http://example.com/pack.json", "clean-id", tmp.path()).await;
+        assert!(
+            matches!(result, Err(RedeemLicenseError::IssuerUnreachable)),
+            "non-loopback plaintext http must be rejected, got {result:?}"
+        );
+        assert!(
+            !tmp.path().join("entitlements").exists(),
+            "guard must fire before any file write"
+        );
+
+        // Loopback http remains permitted by the shared policy helper.
+        assert!(crate::entitlements::is_permitted_endpoint_url(
+            "http://127.0.0.1:8080/pack.json"
+        ));
+    }
+
+    /// Spawn a tiny one-shot HTTP server on 127.0.0.1 that writes the raw
+    /// `response` bytes to the first connection, then closes. Returns the
+    /// bound "http://127.0.0.1:PORT" base URL. Pure `tokio::net` — no new
+    /// crate (T-15-SC), mirrors `commands::entitlements_tests`.
+    async fn spawn_raw_http_server(response: Vec<u8>) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let _ = socket.write_all(&response).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// WR-02 — a response advertising Content-Length above the 5MB cap
+    /// (T-12-07 parity) is rejected with PackTooLarge BEFORE the body is
+    /// read or anything lands on disk.
+    #[tokio::test]
+    async fn wr02_download_rejects_oversized_content_length_before_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n",
+            10 * 1024 * 1024
+        )
+        .into_bytes();
+        let base = spawn_raw_http_server(response).await;
+
+        let result =
+            download_and_store(&format!("{base}/pack.json"), "clean-id", tmp.path()).await;
+        assert!(
+            matches!(result, Err(RedeemLicenseError::PackTooLarge)),
+            "oversized Content-Length must be rejected as PackTooLarge, got {result:?}"
+        );
+        assert!(
+            !tmp.path().join("entitlements").exists(),
+            "no artifact may be written for an oversized download"
+        );
+    }
+
+    /// WR-02 — a response WITHOUT Content-Length (read-until-close body)
+    /// that streams past the 5MB cap is aborted mid-read with PackTooLarge
+    /// — the running-total chunk guard, not the header check.
+    #[tokio::test]
+    async fn wr02_download_rejects_oversized_body_without_content_length() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut response =
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n"
+                .to_vec();
+        response.extend(std::iter::repeat(b'a').take(6 * 1024 * 1024));
+        let base = spawn_raw_http_server(response).await;
+
+        let result =
+            download_and_store(&format!("{base}/pack.json"), "clean-id", tmp.path()).await;
+        assert!(
+            matches!(result, Err(RedeemLicenseError::PackTooLarge)),
+            "an unbounded body must be aborted at the cap, got {result:?}"
+        );
+        assert!(
+            !tmp.path().join("entitlements").exists(),
+            "no artifact may be written for an oversized download"
+        );
     }
 
     /// download_writes_retained_artifact_at_stable_path — given a base dir

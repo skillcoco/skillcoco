@@ -55,7 +55,7 @@ fn map_redeem_error(body: &str) -> RedeemLicenseError {
 }
 
 /// `POST /v1/entitlements/redeem` request body.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RedeemLicenseRequest {
     /// Buyer-entered key, opaque to the app.
@@ -64,11 +64,31 @@ pub struct RedeemLicenseRequest {
     pub device_fingerprint: String,
 }
 
+/// WR-04 (D-06) — manual Debug impl so `{:?}` can never leak the raw
+/// license key (a derived Debug would print it verbatim into any future
+/// log/error/panic message).
+impl std::fmt::Debug for RedeemLicenseRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RedeemLicenseRequest")
+            .field("license_key", &"<redacted>")
+            .field("device_fingerprint", &self.device_fingerprint)
+            .finish()
+    }
+}
+
 /// `POST /v1/entitlements/redeem` 200 response body.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RedeemLicenseResult {
     pub pack_id: String,
+    /// Human-readable pack title for the confirm-dialog heading (WR-05).
+    /// Optional tolerant passthrough: the authoritative contract
+    /// (`entitlement-api-contract.md`) does not pin this field, so an
+    /// absent `packTitle` deserializes to `None` and the UI falls back to
+    /// `pack_id`. Skipped on serialize when `None` so the IPC payload stays
+    /// clean (TS side sees `undefined`, not `null`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pack_title: Option<String>,
     pub issuer_id: String,
     pub issuer_name: String,
     pub buyer_name: String,
@@ -90,10 +110,11 @@ pub async fn call_redeem_endpoint(
     hub_base_url: &str,
     request: &RedeemLicenseRequest,
 ) -> Result<RedeemLicenseResult, RedeemLicenseError> {
-    // T-18-19-style SSRF hygiene — reject non-http(s) schemes BEFORE any
-    // request is attempted.
-    let is_http_scheme = hub_base_url.starts_with("http://") || hub_base_url.starts_with("https://");
-    if !is_http_scheme {
+    // T-18-19-style SSRF hygiene + WR-03 cleartext-key guard — the redeem
+    // POST body carries the raw license key, so plaintext http:// is only
+    // permitted for loopback hosts (dev/mock Hub); anything else must be
+    // https. Rejected BEFORE any request is attempted.
+    if !super::is_permitted_endpoint_url(hub_base_url) {
         return Err(RedeemLicenseError::IssuerUnreachable);
     }
 
@@ -153,6 +174,7 @@ mod tests {
     fn redeem_license_result_serializes_camel_case() {
         let result = RedeemLicenseResult {
             pack_id: "pack-1".to_string(),
+            pack_title: None,
             issuer_id: "issuer-1".to_string(),
             issuer_name: "Test Issuer".to_string(),
             buyer_name: "Jane Buyer".to_string(),
@@ -192,6 +214,41 @@ mod tests {
         assert_eq!(result.order_id, "ORD-1");
         assert_eq!(result.download_url, "https://hub.example.org/download/1");
         assert_eq!(result.redeemed_at, "2026-07-12T00:00:00Z");
+        // packTitle absent (the contract doc doesn't pin it) — tolerant None.
+        assert_eq!(result.pack_title, None);
+    }
+
+    /// WR-05 — a Hub response that DOES carry `packTitle` round-trips it
+    /// through RedeemLicenseResult (previously the field was silently
+    /// dropped, so the confirm dialog could never show a human title), and
+    /// serialization re-emits it camelCase for the IPC payload.
+    #[test]
+    fn wr05_pack_title_passes_through_when_present() {
+        let body = serde_json::json!({
+            "packId": "pack-1",
+            "packTitle": "Kubernetes Fundamentals",
+            "issuerId": "issuer-1",
+            "issuerName": "Test Issuer",
+            "buyerName": "Jane Buyer",
+            "orderId": "ORD-1",
+            "downloadUrl": "https://hub.example.org/download/1",
+            "redeemedAt": "2026-07-12T00:00:00Z",
+        })
+        .to_string();
+
+        let result: RedeemLicenseResult = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            result.pack_title.as_deref(),
+            Some("Kubernetes Fundamentals")
+        );
+
+        let json = serde_json::to_string(&result).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            value["packTitle"].as_str(),
+            Some("Kubernetes Fundamentals"),
+            "got: {json}"
+        );
     }
 
     /// redeem_invalid_key_maps_typed — error-code "invalid_key" maps to
@@ -235,6 +292,25 @@ mod tests {
             map_redeem_error(&body),
             RedeemLicenseError::MalformedResponse(_)
         ));
+    }
+
+    /// WR-04 (D-06) — `{:?}` on RedeemLicenseRequest must never print the
+    /// raw license key; the field is redacted by the manual Debug impl.
+    #[test]
+    fn wr04_debug_output_redacts_license_key() {
+        let req = RedeemLicenseRequest {
+            license_key: "KEY-SUPER-SECRET-1".to_string(),
+            device_fingerprint: "fp-1".to_string(),
+        };
+        let debug_str = format!("{req:?}");
+        assert!(
+            !debug_str.contains("KEY-SUPER-SECRET-1"),
+            "Debug output must never contain the raw license key (D-06): {debug_str}"
+        );
+        assert!(
+            debug_str.contains("<redacted>"),
+            "Debug output must mark the key field as redacted: {debug_str}"
+        );
     }
 
     /// redeem_never_string_matches_body — the mapping is a structural match

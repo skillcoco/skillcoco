@@ -157,10 +157,12 @@ async fn download_and_import_pack_impl_imports_via_unchanged_gate() {
         result.is_err(),
         "expected UntrustedPublisher via the unchanged gate, got {result:?}"
     );
-    let err_msg = result.unwrap_err();
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, "generic", "import rejections map to the generic kind (WR-06)");
     assert!(
-        err_msg.contains("publisher") || err_msg.contains("recognized"),
-        "expected the UntrustedPublisher message, got: {err_msg}"
+        err.message.contains("publisher") || err.message.contains("recognized"),
+        "expected the UntrustedPublisher message, got: {}",
+        err.message
     );
 
     // No entitlement row or pack_id stamp should exist since import failed
@@ -255,10 +257,11 @@ async fn ent03_unlicensed_licensed_pack_still_rejected() {
         result.is_err(),
         "an unsigned licensed: pack must be rejected (SignatureRequired), got {result:?}"
     );
-    let err_msg = result.unwrap_err();
+    let err = result.unwrap_err();
     assert!(
-        err_msg.contains("signature") || err_msg.contains("publisher"),
-        "expected a signature-required-style message, got: {err_msg}"
+        err.message.contains("signature") || err.message.contains("publisher"),
+        "expected a signature-required-style message, got: {}",
+        err.message
     );
 }
 
@@ -412,6 +415,327 @@ fn entitlement_fingerprint_recorded_not_raw_key() {
     // `license_key`/`key` field, only `key_fingerprint`).
     let debug_str = format!("{:?}", row);
     assert!(!debug_str.contains(key));
+}
+
+/// WR-04 (D-06) — `{:?}` on the key-carrying IPC request structs must never
+/// print the raw license key; both use redacting manual Debug impls.
+#[test]
+fn wr04_ipc_request_debug_output_redacts_license_key() {
+    let redeem_req = RedeemLicenseIpcRequest {
+        license_key: "KEY-SUPER-SECRET-2".to_string(),
+        device_fingerprint: "fp-1".to_string(),
+    };
+    let debug_str = format!("{redeem_req:?}");
+    assert!(
+        !debug_str.contains("KEY-SUPER-SECRET-2"),
+        "RedeemLicenseIpcRequest Debug must never leak the raw key: {debug_str}"
+    );
+    assert!(debug_str.contains("<redacted>"), "got: {debug_str}");
+
+    let dl_req = DownloadAndImportPackRequest {
+        download_url: "https://hub.example.org/download/1".to_string(),
+        pack_id: "pack-1".to_string(),
+        issuer_id: "issuer-1".to_string(),
+        issuer_name: "Test Issuer".to_string(),
+        buyer_name: "Jane Buyer".to_string(),
+        order_id: "ORD-1".to_string(),
+        redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+        license_key: "KEY-SUPER-SECRET-3".to_string(),
+    };
+    let debug_str = format!("{dl_req:?}");
+    assert!(
+        !debug_str.contains("KEY-SUPER-SECRET-3"),
+        "DownloadAndImportPackRequest Debug must never leak the raw key: {debug_str}"
+    );
+    assert!(debug_str.contains("<redacted>"), "got: {debug_str}");
+}
+
+// ── CR-01 — stranded-purchase local recovery (already_redeemed path) ──
+
+/// CR-01 — with NO local entitlement row for the key's fingerprint, there
+/// is nothing to recover: Ok(None), so the UI can render the
+/// contact-the-issuer guidance instead of a silent dead end.
+#[test]
+fn cr01_recover_returns_none_without_local_entitlement() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let tmp = tempfile::tempdir().unwrap();
+
+    let recovered = recover_redeemed_pack_impl(&db, tmp.path(), "KEY-NEVER-SEEN")
+        .expect("recovery probe must not error");
+    assert!(recovered.is_none());
+}
+
+/// CR-01 — an `already_redeemed` rejection where THIS device already
+/// imported the pack (entitlement row + stamped learning_paths.pack_id)
+/// resolves to the existing track instead of a dead end. Zero network.
+#[test]
+fn cr01_recover_reports_already_imported_track() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let tmp = tempfile::tempdir().unwrap();
+    let key = "KEY-RECOVER-1";
+
+    {
+        let conn_guard = db.lock().unwrap();
+        insert_learning_path(&conn_guard.conn, "trk-recover", "path-recover", Some("pack-recover"));
+        let store = SqliteEntitlementStore(&conn_guard.conn);
+        store
+            .insert(&EntitlementRow {
+                pack_id: "pack-recover".to_string(),
+                issuer_id: "issuer-1".to_string(),
+                issuer_name: "Test Issuer".to_string(),
+                buyer_name: "Jane Buyer".to_string(),
+                order_id: "ORD-RECOVER".to_string(),
+                redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+                key_fingerprint: sha256_fingerprint(key),
+            })
+            .unwrap();
+    }
+
+    let recovered = recover_redeemed_pack_impl(&db, tmp.path(), key)
+        .expect("recovery probe must not error")
+        .expect("an already-imported pack must resolve");
+    assert_eq!(recovered.track_id, "trk-recover");
+    assert!(recovered.already_imported);
+}
+
+/// CR-01 — entitlement row exists but the track is gone and no retained
+/// artifact is on disk: nothing recoverable locally → Ok(None).
+#[test]
+fn cr01_recover_returns_none_when_artifact_missing() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let tmp = tempfile::tempdir().unwrap();
+    let key = "KEY-RECOVER-2";
+
+    {
+        let conn_guard = db.lock().unwrap();
+        let store = SqliteEntitlementStore(&conn_guard.conn);
+        store
+            .insert(&EntitlementRow {
+                pack_id: "pack-gone".to_string(),
+                issuer_id: "issuer-1".to_string(),
+                issuer_name: "Test Issuer".to_string(),
+                buyer_name: "Jane Buyer".to_string(),
+                order_id: "ORD-GONE".to_string(),
+                redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+                key_fingerprint: sha256_fingerprint(key),
+            })
+            .unwrap();
+    }
+
+    let recovered = recover_redeemed_pack_impl(&db, tmp.path(), key)
+        .expect("recovery probe must not error");
+    assert!(recovered.is_none());
+}
+
+/// CR-01 — a retained artifact that fails the UNCHANGED import gate
+/// (test-root-signed fixture ≠ bundled production root) does NOT recover
+/// and leaves NO partial state: Ok(None), no learning_paths stamp. Proves
+/// the recovery re-import routes through import_course_impl rather than
+/// bypassing the trust gate.
+#[test]
+fn cr01_recover_reimport_still_routes_through_unchanged_gate() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let tmp = tempfile::tempdir().unwrap();
+    let key = "KEY-RECOVER-3";
+
+    let (_root_pem, pack) =
+        signed_licensed_pack_fixture("pack-reimport-cr01", "Jane Buyer", "ORD-R3");
+    let artifact_dir = tmp.path().join("entitlements");
+    std::fs::create_dir_all(&artifact_dir).unwrap();
+    std::fs::write(
+        artifact_dir.join("pack-reimport-cr01.json"),
+        serde_json::to_vec(&pack).unwrap(),
+    )
+    .unwrap();
+
+    {
+        let conn_guard = db.lock().unwrap();
+        let store = SqliteEntitlementStore(&conn_guard.conn);
+        store
+            .insert(&EntitlementRow {
+                pack_id: "pack-reimport-cr01".to_string(),
+                issuer_id: "issuer-1".to_string(),
+                issuer_name: "Test Issuer".to_string(),
+                buyer_name: "Jane Buyer".to_string(),
+                order_id: "ORD-R3".to_string(),
+                redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+                key_fingerprint: sha256_fingerprint(key),
+            })
+            .unwrap();
+    }
+
+    let recovered = recover_redeemed_pack_impl(&db, tmp.path(), key)
+        .expect("a gate rejection is a clean no-recovery, not an error");
+    assert!(
+        recovered.is_none(),
+        "an untrusted retained artifact must NOT recover (gate unchanged)"
+    );
+
+    // No partial attribution state may exist after the failed re-import.
+    let conn_guard = db.lock().unwrap();
+    let stamped: i64 = conn_guard
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM learning_paths WHERE pack_id = 'pack-reimport-cr01'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped, 0, "no learning_paths stamp after a rejected re-import");
+}
+
+// ── WR-06 — machine-readable error kinds across the IPC boundary ──
+
+/// WR-06 — every RedeemLicenseError variant maps to a stable machine
+/// `kind` the frontend can classify on (never substring-matching the human
+/// copy), and the payload serializes as `{ "kind": ..., "message": ... }`.
+#[test]
+fn wr06_redeem_ipc_error_carries_machine_kind() {
+    let cases: [(crate::entitlements::RedeemLicenseError, &str); 6] = [
+        (crate::entitlements::RedeemLicenseError::InvalidKey, "invalid_key"),
+        (
+            crate::entitlements::RedeemLicenseError::AlreadyRedeemed,
+            "already_redeemed",
+        ),
+        (crate::entitlements::RedeemLicenseError::Revoked, "revoked"),
+        (
+            crate::entitlements::RedeemLicenseError::IssuerUnreachable,
+            "issuer_unreachable",
+        ),
+        (
+            crate::entitlements::RedeemLicenseError::MalformedResponse("x".to_string()),
+            "malformed_response",
+        ),
+        (crate::entitlements::RedeemLicenseError::PackTooLarge, "pack_too_large"),
+    ];
+    for (err, expected_kind) in cases {
+        let human_copy = err.to_string();
+        let ipc_err = RedeemIpcError::from(err);
+        assert_eq!(ipc_err.kind, expected_kind);
+        assert_eq!(
+            ipc_err.message, human_copy,
+            "message must carry the Display copy for {expected_kind}"
+        );
+
+        let json = serde_json::to_value(&ipc_err).unwrap();
+        assert_eq!(json["kind"].as_str(), Some(expected_kind));
+        assert!(json["message"].as_str().is_some());
+    }
+}
+
+/// WR-06 — a transport-level redeem failure surfaces across the IPC
+/// boundary as a structured `{ kind: "issuer_unreachable" }`, not a bare
+/// display string the frontend would have to regex.
+#[tokio::test]
+async fn wr06_redeem_impl_returns_structured_kind_on_unreachable_hub() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+
+    // Point the hub at a nowhere-listening loopback port.
+    {
+        let conn_guard = db.lock().unwrap();
+        let prefs = serde_json::json!({ "hubUrl": "http://127.0.0.1:1" });
+        conn_guard
+            .conn
+            .execute(
+                "UPDATE learner_profiles SET preferences_json = ?1 WHERE id = 'lp-ent-1'",
+                rusqlite::params![prefs.to_string()],
+            )
+            .unwrap();
+    }
+
+    let request = RedeemLicenseIpcRequest {
+        license_key: "KEY-WR06".to_string(),
+        device_fingerprint: "fp-1".to_string(),
+    };
+    let err = redeem_license_impl(&db, &request)
+        .await
+        .expect_err("unreachable hub must fail");
+    assert_eq!(err.kind, "issuer_unreachable");
+}
+
+// ── WR-01 — atomic entitlement-record + attribution-stamp transaction ──
+
+fn wr01_sample_row(pack_id: &str) -> EntitlementRow {
+    EntitlementRow {
+        pack_id: pack_id.to_string(),
+        issuer_id: "issuer-1".to_string(),
+        issuer_name: "Test Issuer".to_string(),
+        buyer_name: "Jane Buyer".to_string(),
+        order_id: "ORD-ATOMIC".to_string(),
+        redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+        key_fingerprint: "deadbeef".to_string(),
+    }
+}
+
+/// WR-01 — the entitlement insert and the `learning_paths.pack_id` stamp
+/// commit together: after a successful call, BOTH the entitlements row and
+/// the attribution stamp are visible.
+#[test]
+fn wr01_entitlement_insert_and_stamp_commit_together() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let conn_guard = db.lock().unwrap();
+    insert_learning_path(&conn_guard.conn, "trk-atomic-ok", "path-atomic-ok", None);
+
+    record_entitlement_and_stamp(
+        &conn_guard.conn,
+        &wr01_sample_row("pack-atomic-ok"),
+        "trk-atomic-ok",
+    )
+    .expect("both writes must succeed");
+
+    let store = SqliteEntitlementStore(&conn_guard.conn);
+    assert!(store.find_by_pack_id("pack-atomic-ok").unwrap().is_some());
+    let stamped: Option<String> = conn_guard
+        .conn
+        .query_row(
+            "SELECT pack_id FROM learning_paths WHERE track_id = 'trk-atomic-ok'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped.as_deref(), Some("pack-atomic-ok"));
+}
+
+/// WR-01 — if the `learning_paths.pack_id` stamp fails AFTER the
+/// entitlement insert executed, the insert ROLLS BACK: no entitlement row
+/// may survive without its attribution stamp (previously two
+/// separately-committed writes could leave an imported track with a
+/// dangling entitlements row, or vice versa).
+#[test]
+fn wr01_failed_stamp_rolls_back_entitlement_insert() {
+    let conn = fresh_conn();
+    let db = std::sync::Mutex::new(crate::db::Database { conn });
+    let conn_guard = db.lock().unwrap();
+    insert_learning_path(&conn_guard.conn, "trk-atomic-fail", "path-atomic-fail", None);
+
+    // Force the stamp UPDATE to fail after the entitlement INSERT has
+    // already executed inside the same transaction.
+    conn_guard
+        .conn
+        .execute_batch(
+            "CREATE TRIGGER wr01_fail_stamp BEFORE UPDATE OF pack_id ON learning_paths
+             BEGIN SELECT RAISE(ABORT, 'stamp forced to fail'); END;",
+        )
+        .unwrap();
+
+    let result = record_entitlement_and_stamp(
+        &conn_guard.conn,
+        &wr01_sample_row("pack-atomic-fail"),
+        "trk-atomic-fail",
+    );
+    assert!(result.is_err(), "forced stamp failure must surface as Err");
+
+    let store = SqliteEntitlementStore(&conn_guard.conn);
+    assert!(
+        store.find_by_pack_id("pack-atomic-fail").unwrap().is_none(),
+        "WR-01: a failed pack_id stamp must roll back the entitlement insert (one transaction)"
+    );
 }
 
 // ── Task 1 (15-06) — get_entitlement_for_track (local join, no network) ──
