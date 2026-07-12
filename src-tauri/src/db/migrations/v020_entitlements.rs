@@ -20,11 +20,30 @@ use rusqlite::{Connection, Result};
 pub const VERSION: i32 = 20;
 pub const NAME: &str = "entitlements";
 
-/// Apply the v020 migration. Wave 0 no-op — 15-02 replaces this body with:
-/// `CREATE TABLE IF NOT EXISTS entitlements (...)` (RESEARCH.md Code
-/// Examples has the exact DDL) plus an ALTER TABLE for
-/// `learning_paths.pack_id` guarded by [`column_exists`] (mirrors v015).
-pub fn up(_conn: &Connection) -> Result<()> {
+/// Apply the v020 migration: create the `entitlements` table (D-05) and add
+/// the nullable `learning_paths.pack_id` column (Open Question 1 / A3).
+pub fn up(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS entitlements (
+            pack_id          TEXT PRIMARY KEY,
+            issuer_id        TEXT NOT NULL,
+            issuer_name      TEXT NOT NULL,
+            buyer_name       TEXT NOT NULL,
+            order_id         TEXT NOT NULL,
+            redeemed_at      TEXT NOT NULL,
+            key_fingerprint  TEXT NOT NULL
+        );
+        "#,
+    )?;
+
+    if !column_exists(conn, "learning_paths", "pack_id")? {
+        conn.execute(
+            "ALTER TABLE learning_paths ADD COLUMN pack_id TEXT",
+            [],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -32,7 +51,6 @@ pub fn up(_conn: &Connection) -> Result<()> {
 /// Copied from `v015_learning_path_verified.rs` — SQLite has no `ALTER
 /// TABLE ... ADD COLUMN IF NOT EXISTS`, so every ALTER-TABLE migration in
 /// this codebase guards with this helper first.
-#[allow(dead_code)]
 fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
     let cols = stmt.query_map([], |row| row.get::<_, String>(1))?;
