@@ -230,8 +230,19 @@ mod tests {
             "15-02: pack body must carry the buyer/order watermark string; got {description}"
         );
 
-        // Explicit RED marker until 15-02 lands the real
-        // redeem -> download -> import_course_impl integration test.
-        panic!("15-02: extend this test to drive the fixture through the real redeem -> download -> import_course_impl pipeline once it exists");
+        // The real redeem -> download -> import_course_impl pipeline is
+        // integration-tested in `commands::entitlements_tests` (gate invoked
+        // via download_and_import_pack_impl, fail-closed no-signature
+        // rejection, and the provenance/export invariant below). A successful
+        // full import of THIS fixture is impossible by design: it is signed
+        // by a fresh test root, and import_course_impl only trusts the
+        // bundled production root (no production private key in this repo).
+        // This test remains the permanent ENT-02 fixture + provenance +
+        // watermark pin; close it with the same fail-closed export assertion
+        // course_io.rs enforces.
+        assert!(
+            !crate::commands::course_io::is_course_exportable(exported_from),
+            "licensed: provenance must remain non-exportable (ENT-02/D-10) — export stays blocked"
+        );
     }
 }
