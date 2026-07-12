@@ -43,18 +43,29 @@ use crate::commands::course_io;
 
 /// `redeem_license` IPC request. Wire shape matches
 /// `entitlements::redeem::RedeemLicenseRequest` (camelCase over IPC).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RedeemLicenseIpcRequest {
     pub license_key: String,
     pub device_fingerprint: String,
 }
 
+/// WR-04 (D-06) — manual Debug impl so `{:?}` can never leak the raw
+/// license key into a future log/error/panic message.
+impl std::fmt::Debug for RedeemLicenseIpcRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RedeemLicenseIpcRequest")
+            .field("license_key", &"<redacted>")
+            .field("device_fingerprint", &self.device_fingerprint)
+            .finish()
+    }
+}
+
 /// `download_and_import_pack` IPC request. Carries forward everything the
 /// confirm-stage (`redeem_license`'s result) already fetched from the Hub,
 /// so this second call can both import AND record the entitlement without a
 /// second Hub round-trip.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadAndImportPackRequest {
     pub download_url: String,
@@ -67,6 +78,23 @@ pub struct DownloadAndImportPackRequest {
     /// Used ONLY to compute the fingerprint, then dropped — never inserted,
     /// logged, or embedded in an error string (D-06).
     pub license_key: String,
+}
+
+/// WR-04 (D-06) — manual Debug impl so `{:?}` can never leak the raw
+/// license key into a future log/error/panic message.
+impl std::fmt::Debug for DownloadAndImportPackRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DownloadAndImportPackRequest")
+            .field("download_url", &self.download_url)
+            .field("pack_id", &self.pack_id)
+            .field("issuer_id", &self.issuer_id)
+            .field("issuer_name", &self.issuer_name)
+            .field("buyer_name", &self.buyer_name)
+            .field("order_id", &self.order_id)
+            .field("redeemed_at", &self.redeemed_at)
+            .field("license_key", &"<redacted>")
+            .finish()
+    }
 }
 
 // ── redeem_license ──────────────────────────────────────────────────────

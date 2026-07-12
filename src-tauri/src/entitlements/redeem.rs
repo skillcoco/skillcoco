@@ -55,13 +55,25 @@ fn map_redeem_error(body: &str) -> RedeemLicenseError {
 }
 
 /// `POST /v1/entitlements/redeem` request body.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RedeemLicenseRequest {
     /// Buyer-entered key, opaque to the app.
     pub license_key: String,
     /// Analytics/abuse-signal only — NOT a DRM binding (D-16).
     pub device_fingerprint: String,
+}
+
+/// WR-04 (D-06) — manual Debug impl so `{:?}` can never leak the raw
+/// license key (a derived Debug would print it verbatim into any future
+/// log/error/panic message).
+impl std::fmt::Debug for RedeemLicenseRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RedeemLicenseRequest")
+            .field("license_key", &"<redacted>")
+            .field("device_fingerprint", &self.device_fingerprint)
+            .finish()
+    }
 }
 
 /// `POST /v1/entitlements/redeem` 200 response body.
@@ -235,6 +247,25 @@ mod tests {
             map_redeem_error(&body),
             RedeemLicenseError::MalformedResponse(_)
         ));
+    }
+
+    /// WR-04 (D-06) — `{:?}` on RedeemLicenseRequest must never print the
+    /// raw license key; the field is redacted by the manual Debug impl.
+    #[test]
+    fn wr04_debug_output_redacts_license_key() {
+        let req = RedeemLicenseRequest {
+            license_key: "KEY-SUPER-SECRET-1".to_string(),
+            device_fingerprint: "fp-1".to_string(),
+        };
+        let debug_str = format!("{req:?}");
+        assert!(
+            !debug_str.contains("KEY-SUPER-SECRET-1"),
+            "Debug output must never contain the raw license key (D-06): {debug_str}"
+        );
+        assert!(
+            debug_str.contains("<redacted>"),
+            "Debug output must mark the key field as redacted: {debug_str}"
+        );
     }
 
     /// redeem_never_string_matches_body — the mapping is a structural match

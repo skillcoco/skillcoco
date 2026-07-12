@@ -414,6 +414,39 @@ fn entitlement_fingerprint_recorded_not_raw_key() {
     assert!(!debug_str.contains(key));
 }
 
+/// WR-04 (D-06) — `{:?}` on the key-carrying IPC request structs must never
+/// print the raw license key; both use redacting manual Debug impls.
+#[test]
+fn wr04_ipc_request_debug_output_redacts_license_key() {
+    let redeem_req = RedeemLicenseIpcRequest {
+        license_key: "KEY-SUPER-SECRET-2".to_string(),
+        device_fingerprint: "fp-1".to_string(),
+    };
+    let debug_str = format!("{redeem_req:?}");
+    assert!(
+        !debug_str.contains("KEY-SUPER-SECRET-2"),
+        "RedeemLicenseIpcRequest Debug must never leak the raw key: {debug_str}"
+    );
+    assert!(debug_str.contains("<redacted>"), "got: {debug_str}");
+
+    let dl_req = DownloadAndImportPackRequest {
+        download_url: "https://hub.example.org/download/1".to_string(),
+        pack_id: "pack-1".to_string(),
+        issuer_id: "issuer-1".to_string(),
+        issuer_name: "Test Issuer".to_string(),
+        buyer_name: "Jane Buyer".to_string(),
+        order_id: "ORD-1".to_string(),
+        redeemed_at: "2026-07-12T00:00:00Z".to_string(),
+        license_key: "KEY-SUPER-SECRET-3".to_string(),
+    };
+    let debug_str = format!("{dl_req:?}");
+    assert!(
+        !debug_str.contains("KEY-SUPER-SECRET-3"),
+        "DownloadAndImportPackRequest Debug must never leak the raw key: {debug_str}"
+    );
+    assert!(debug_str.contains("<redacted>"), "got: {debug_str}");
+}
+
 // ── Task 1 (15-06) — get_entitlement_for_track (local join, no network) ──
 
 fn insert_learning_path(conn: &Connection, track_id: &str, path_id: &str, pack_id: Option<&str>) {
