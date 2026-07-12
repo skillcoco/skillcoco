@@ -188,7 +188,16 @@ export function ExamRunView() {
             attemptId: startResult.attemptId,
           });
           setHistory(historyResult);
-        } catch {
+        } catch (historyErr) {
+          // WR-02 — this failure path is otherwise indistinguishable from
+          // the legitimate "only attempt" case (both render no note). A
+          // dev-visible warning at least surfaces a genuine backend
+          // regression during development/QA instead of degrading
+          // silently in production and in tests.
+          console.warn(
+            "examAttemptHistory failed; suppressing the history note",
+            historyErr,
+          );
           setHistory(null);
         }
       } catch (err) {
