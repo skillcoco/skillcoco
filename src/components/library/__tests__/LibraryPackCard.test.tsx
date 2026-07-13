@@ -1,12 +1,14 @@
 // Phase 16 Plan 02 Task 2 — LibraryPackCard (D-07/D-09/D-10/D-11).
 //
-// Owned-pack card: Start (not-started) / Continue (active) primary action,
-// progress bar for active packs, issuer/verified badge + BuyerAttributionLine
+// Owned-pack card: Continue (active/onboarding) / Review (completed) /
+// Resume (paused/archived) primary action — every import creates an
+// 'active' track (course_io.rs import_course_txn), so no "not-yet-started"
+// state exists (WR-06). Progress bar for active packs, BuyerAttributionLine
 // attribution (display-only, never fails the card), NO delete affordance
 // (D-11 — pack removal out of scope this phase).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import type { LearningTrack } from "@/types";
@@ -32,8 +34,8 @@ import { LibraryPackCard } from "@/components/library/LibraryPackCard";
 
 // NOTE: track.status "active" AND "onboarding" both count as in-progress
 // (Continue) per Dashboard.tsx's activeTracks filter, which LibraryPackCard
-// mirrors exactly. Tests needing a genuinely not-started pack use "paused"
-// as the not-in-progress fixture status.
+// mirrors exactly. Non-in-progress statuses are paused/archived (Resume)
+// and completed (Review) — imports never create a not-yet-active track.
 function makeTrack(overrides: Partial<LearningTrack> = {}): LearningTrack {
   return {
     id: "track-1",
@@ -65,10 +67,20 @@ describe("LibraryPackCard — Phase 16 Plan 02 Task 2", () => {
     vi.mocked(getEntitlementForTrack).mockResolvedValue(null);
   });
 
-  it("shows a Start button with aria-label interpolating the pack title for a not-started track", async () => {
+  // WR-06 — labels match the actual status taxonomy: paused/archived tracks
+  // read Resume, completed tracks read Review ("Start" was unreachable-as-
+  // designed: imports always create status='active' tracks).
+  it("shows a Resume button with aria-label interpolating the pack title for a paused track", async () => {
     renderCard(makeTrack({ status: "paused", topic: "Rust From Zero" }));
     expect(
-      await screen.findByRole("button", { name: "Start Rust From Zero" }),
+      await screen.findByRole("button", { name: "Resume Rust From Zero" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a Review button for a completed track", async () => {
+    renderCard(makeTrack({ status: "completed", topic: "Rust From Zero" }));
+    expect(
+      await screen.findByRole("button", { name: "Review Rust From Zero" }),
     ).toBeInTheDocument();
   });
 
@@ -90,14 +102,12 @@ describe("LibraryPackCard — Phase 16 Plan 02 Task 2", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/track/track-42");
   });
 
-  it("shows a Loader2 spinner and disables the button while starting", async () => {
+  it("clicking Resume navigates straight to /track/{trackId} (no spinner — navigation cannot fail)", async () => {
+    const user = userEvent.setup();
     renderCard(makeTrack({ id: "track-9", status: "paused", topic: "Go Basics" }));
-    const btn = await screen.findByRole("button", { name: "Start Go Basics" });
-    // fireEvent (unlike userEvent) does not auto-flush microtasks, so we can
-    // observe the synchronous starting=true render before navigate resolves.
-    fireEvent.click(btn);
-    expect(btn).toBeDisabled();
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/track/track-9"));
+    const btn = await screen.findByRole("button", { name: "Resume Go Basics" });
+    await user.click(btn);
+    expect(mockNavigate).toHaveBeenCalledWith("/track/track-9");
   });
 
   it("renders BuyerAttributionLine when getEntitlementForTrack resolves an entitlement", async () => {
@@ -124,7 +134,7 @@ describe("LibraryPackCard — Phase 16 Plan 02 Task 2", () => {
 
   it("has no delete affordance (D-11)", async () => {
     renderCard(makeTrack());
-    await screen.findByRole("button", { name: /start|continue/i });
+    await screen.findByRole("button", { name: /resume|continue|review/i });
     expect(screen.queryByText(/delete/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/delete/i)).not.toBeInTheDocument();
   });
