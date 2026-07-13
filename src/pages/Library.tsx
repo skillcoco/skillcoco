@@ -25,6 +25,8 @@ export function Library() {
   const tracks = useLearningStore((s) => s.tracks);
   const loadTracks = useLearningStore((s) => s.loadTracks);
   const starterPacks = useLibraryStore((s) => s.starterPacks);
+  const starterPacksLoading = useLibraryStore((s) => s.isLoading);
+  const starterPacksError = useLibraryStore((s) => s.error);
   const loadStarterPacks = useLibraryStore((s) => s.loadStarterPacks);
 
   useEffect(() => {
@@ -81,11 +83,25 @@ export function Library() {
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-foreground">Starter packs</h2>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {starterPacks.map((pack) => (
-            <StarterPackCard key={pack.id} pack={pack} />
-          ))}
-        </div>
+        {/* WR-02 — surface the store's error/loading states instead of a bare
+            header over an empty grid. */}
+        {starterPacksError ? (
+          <p className="text-xs text-destructive">
+            Couldn't load starter packs: {starterPacksError}
+          </p>
+        ) : starterPacksLoading ? (
+          <p className="text-xs text-muted-foreground">Loading starter packs...</p>
+        ) : starterPacks.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No starter packs available.
+          </p>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {starterPacks.map((pack) => (
+              <StarterPackCard key={pack.id} pack={pack} />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Redeem a license key — LIB-03 (redeem half), D-04 verbatim re-mount */}

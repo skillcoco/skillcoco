@@ -21,6 +21,8 @@ const mockLearningState = vi.hoisted(() => ({
 }));
 const mockLibraryState = vi.hoisted(() => ({
   starterPacks: [] as StarterPackMeta[],
+  isLoading: false,
+  error: null as string | null,
   loadStarterPacks: vi.fn(),
 }));
 
@@ -88,6 +90,8 @@ describe("Library — Phase 16 Plan 02 Task 3", () => {
     mockLoadStarterPacks.mockResolvedValue(undefined);
     mockLearningState.tracks = [];
     mockLibraryState.starterPacks = [];
+    mockLibraryState.isLoading = false;
+    mockLibraryState.error = null;
   });
 
   it("renders the page title and locked subtitle copy", () => {
@@ -134,6 +138,29 @@ describe("Library — Phase 16 Plan 02 Task 3", () => {
     renderLibrary();
     expect(screen.getByTestId("starter-pack-card-k8s")).toBeInTheDocument();
     expect(screen.getByTestId("starter-pack-card-py")).toBeInTheDocument();
+  });
+
+  // WR-02 — the page must surface useLibraryStore's isLoading/error instead
+  // of rendering a bare section header over an empty grid.
+  it("renders the starter-pack load error when the store has an error", () => {
+    mockLibraryState.error = "starter-packs resource directory not found";
+    renderLibrary();
+    expect(
+      screen.getByText(
+        /Couldn't load starter packs: starter-packs resource directory not found/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a loading indicator while starter packs are loading", () => {
+    mockLibraryState.isLoading = true;
+    renderLibrary();
+    expect(screen.getByText(/Loading starter packs/i)).toBeInTheDocument();
+  });
+
+  it("renders an empty message when load finished with zero starter packs", () => {
+    renderLibrary();
+    expect(screen.getByText(/No starter packs available/i)).toBeInTheDocument();
   });
 
   it("re-mounts RedeemLicenseFlow under a Redeem heading (D-04)", () => {
