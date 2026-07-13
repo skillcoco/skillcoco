@@ -98,16 +98,32 @@ describe("StarterPackCard — Phase 16 Plan 02 Task 2", () => {
     resolveFn?.({ trackId: "t", moduleCount: 0, blockCount: 0, warnings: [] });
   });
 
-  it("shows an inline error block when startStarterPack rejects", async () => {
-    vi.mocked(startStarterPack).mockRejectedValue(new Error("boom"));
+  // WR-04 — the backend's typed, user-facing error messages (D-11 taxonomy)
+  // must be surfaced, not discarded behind generic copy.
+  it("surfaces the backend error message when startStarterPack rejects", async () => {
+    vi.mocked(startStarterPack).mockRejectedValue(
+      new Error("This pack was modified after it was signed."),
+    );
     const user = userEvent.setup();
     renderCard(makePack());
 
     await user.click(screen.getByRole("button", { name: /start/i }));
 
     expect(
-      await screen.findByText(/Couldn't start this pack/i),
+      await screen.findByText("This pack was modified after it was signed."),
     ).toBeInTheDocument();
+  });
+
+  it("falls back to generic copy (without the removed Settings -> Import pointer) when the error is empty", async () => {
+    vi.mocked(startStarterPack).mockRejectedValue(new Error(""));
+    const user = userEvent.setup();
+    renderCard(makePack());
+
+    await user.click(screen.getByRole("button", { name: /start/i }));
+
+    const fallback = await screen.findByText(/Couldn't start this pack/i);
+    expect(fallback).toBeInTheDocument();
+    expect(fallback.textContent).not.toMatch(/Settings/i);
   });
 
   it("renders no progress bar and no attribution line", () => {

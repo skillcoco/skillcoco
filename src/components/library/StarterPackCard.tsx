@@ -16,8 +16,18 @@ interface StarterPackCardProps {
   pack: StarterPackMeta;
 }
 
-const START_ERROR_COPY =
-  "Couldn't start this pack. Try again, or check Settings -> Import for details.";
+// WR-04 — fallback only: the backend's typed error messages (D-11 taxonomy)
+// are user-facing plain language and are surfaced directly. The pointer no
+// longer references Settings -> Import (removed this phase, D-03) — the
+// import entry point now lives in the Library's own import section.
+const START_ERROR_FALLBACK =
+  "Couldn't start this pack. Try again, or use the import section below.";
+
+function startErrorMessage(err: unknown): string {
+  const msg =
+    err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  return msg || START_ERROR_FALLBACK;
+}
 
 export function StarterPackCard({ pack }: StarterPackCardProps) {
   const navigate = useNavigate();
@@ -32,7 +42,7 @@ export function StarterPackCard({ pack }: StarterPackCardProps) {
       navigate(`/track/${result.trackId}`);
     } catch (err) {
       console.error("[StarterPackCard] startStarterPack failed:", err);
-      setError(START_ERROR_COPY);
+      setError(startErrorMessage(err));
     } finally {
       setStarting(false);
     }

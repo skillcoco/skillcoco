@@ -24,8 +24,10 @@ interface LibraryPackCardProps {
   track: LearningTrack;
 }
 
+// WR-04 — pointer updated: Settings -> Import was removed this phase (D-03);
+// the import entry point now lives in the Library's own import section.
 const START_ERROR_COPY =
-  "Couldn't start this pack. Try again, or check Settings -> Import for details.";
+  "Couldn't start this pack. Try again, or use the import section below.";
 
 function getTrackColor(topic: string): string {
   const key = topic.toLowerCase();
