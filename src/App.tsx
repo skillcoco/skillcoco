@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Dashboard } from "@/pages/Dashboard";
+import { Library } from "@/pages/Library";
 import { TrackView } from "@/pages/TrackView";
 import { ModuleView } from "@/pages/ModuleView";
 import { ExamRunView } from "@/pages/ExamRunView";
@@ -18,6 +19,7 @@ export default function App() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/library" element={<Library />} />
         <Route path="/track/:trackId" element={<TrackView />} />
         <Route path="/track/:trackId/module/:moduleId" element={<ModuleView />} />
         <Route path="/track/:trackId/exam/:blockId" element={<ExamRunView />} />
