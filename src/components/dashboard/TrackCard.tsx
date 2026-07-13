@@ -5,15 +5,7 @@ import type { LearningTrack } from "@/types";
 import { formatDuration } from "@/lib/utils";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { cn } from "@/lib/utils";
-
-function getTrackColor(topic: string): string {
-  const key = topic.toLowerCase();
-  if (key.includes("kubernetes") || key.includes("k8s")) return "hsl(var(--track-kubernetes))";
-  if (key.includes("rust")) return "hsl(var(--track-rust))";
-  if (key.includes("go") || key.includes("golang")) return "hsl(var(--track-go))";
-  if (key.includes("python")) return "hsl(var(--track-python))";
-  return "hsl(var(--primary))";
-}
+import { getTrackColor } from "@/lib/track-colors";
 
 interface TrackCardProps {
   track: LearningTrack;

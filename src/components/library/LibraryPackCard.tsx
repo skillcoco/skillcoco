@@ -19,19 +19,11 @@ import { useNavigate } from "react-router-dom";
 import { BookOpen } from "lucide-react";
 import type { LearningTrack } from "@/types";
 import { getEntitlementForTrack } from "@/lib/tauri-commands";
+import { getTrackColor } from "@/lib/track-colors";
 import { BuyerAttributionLine } from "@/components/BuyerAttributionLine";
 
 interface LibraryPackCardProps {
   track: LearningTrack;
-}
-
-function getTrackColor(topic: string): string {
-  const key = topic.toLowerCase();
-  if (key.includes("kubernetes") || key.includes("k8s")) return "hsl(var(--track-kubernetes))";
-  if (key.includes("rust")) return "hsl(var(--track-rust))";
-  if (key.includes("go") || key.includes("golang")) return "hsl(var(--track-go))";
-  if (key.includes("python")) return "hsl(var(--track-python))";
-  return "hsl(var(--primary))";
 }
 
 export function LibraryPackCard({ track }: LibraryPackCardProps) {

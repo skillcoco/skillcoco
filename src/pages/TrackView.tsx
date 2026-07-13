@@ -23,6 +23,7 @@ import { useLearningStore } from "@/stores/useLearningStore";
 import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
 import type { PathModule, ModuleStatus } from "@/types";
 import { cn, formatDuration } from "@/lib/utils";
+import { getTrackColor } from "@/lib/track-colors";
 import {
   parsePathModules,
   pickNextModule,
@@ -141,17 +142,6 @@ export function parseLicensor(generatedByModel?: string | null): {
   }
   const name = model.slice(pipeIdx + 1).trim();
   return { licensed: true, licensor: name || null };
-}
-
-// ── Track color helper (matches TrackCard pattern) ──
-
-function getTrackColor(topic: string): string {
-  const key = topic.toLowerCase();
-  if (key.includes("kubernetes") || key.includes("k8s")) return "hsl(var(--track-kubernetes))";
-  if (key.includes("rust")) return "hsl(var(--track-rust))";
-  if (key.includes("go") || key.includes("golang")) return "hsl(var(--track-go))";
-  if (key.includes("python")) return "hsl(var(--track-python))";
-  return "hsl(var(--primary))";
 }
 
 // ── Status config ──

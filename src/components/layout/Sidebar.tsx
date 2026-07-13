@@ -13,15 +13,7 @@ import { useAppStore } from "@/stores/useAppStore";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
-
-function getTrackColor(topic: string): string {
-  const key = topic.toLowerCase();
-  if (key.includes("kubernetes")) return "hsl(var(--track-kubernetes))";
-  if (key.includes("rust")) return "hsl(var(--track-rust))";
-  if (key.includes("go")) return "hsl(var(--track-go))";
-  if (key.includes("python")) return "hsl(var(--track-python))";
-  return "hsl(var(--primary))";
-}
+import { getTrackColor } from "@/lib/track-colors";
 
 export function Sidebar() {
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
