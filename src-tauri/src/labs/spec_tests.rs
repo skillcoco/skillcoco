@@ -118,6 +118,7 @@ fn ai_judge_criteria_minimum_length() {
         requires_docker: false,
         creates: vec![],
         exam: None,
+        grain: Grain::Step,
         steps: vec![LabStep {
             id: "s1".to_string(),
             title: "s1".to_string(),
@@ -128,6 +129,7 @@ fn ai_judge_criteria_minimum_length() {
             },
             hints: vec!["a".to_string(), "b".to_string(), "c".to_string()],
             weight: 1.0,
+            grain: Grain::Step,
         }],
     };
     // Slug "x" passes (single char alphanumeric); ai_judge fails.
@@ -427,6 +429,7 @@ fn exam_spec_fixture() -> LabSpec {
         requires_docker: false,
         creates: vec![],
         exam: None,
+        grain: Grain::Step,
         steps: vec![LabStep {
             id: "s1".to_string(),
             title: "s1".to_string(),
@@ -434,6 +437,7 @@ fn exam_spec_fixture() -> LabSpec {
             check: StepCheck::ExitCode { expected: 0 },
             hints: vec![],
             weight: 1.0,
+            grain: Grain::Step,
         }],
     }
 }

@@ -14,7 +14,7 @@
 //! - `state` — `lab_reset`, `lab_get_progress` + `recompute_practical_mastery`
 //!   + `reset_surgical` + `reset_clears_progress`.
 
-use crate::labs::spec::LabSpec;
+use crate::labs::spec::{Grain, LabSpec};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -260,6 +260,7 @@ mod tests {
                 requires_docker: true,
                 creates: vec![],
                 exam: None,
+                grain: Grain::Step,
                 steps: vec![],
             },
             progress: LabProgress {
