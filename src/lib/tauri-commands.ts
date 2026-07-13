@@ -831,3 +831,35 @@ export async function refreshLessonVideos(
     excludeVideoId: excludeVideoId ?? null,
   });
 }
+
+// ── Phase 16 (Library View) — Plan 01 bundled starter-pack IPC wrappers ──
+//
+// Starter packs are curated free course-export JSON files bundled in app
+// resources (D-12 — offline, no Hub fetch). Starting one routes through the
+// SAME import_course backend gate as a file-picker import (D-13 — no bypass),
+// so startStarterPack returns the existing ImportCourseResult shape verbatim.
+
+/// Lightweight metadata for one bundled starter pack, rendered as a Library
+/// tile (LIB-04). Mirrors the Rust `StarterPackMeta` camelCase struct.
+export interface StarterPackMeta {
+  id: string;
+  title: string;
+  description: string;
+  moduleCount: number;
+}
+
+/// Enumerate the bundled starter packs (LIB-04). Fully offline — reads the
+/// app's bundled resources, never the Hub.
+export async function listStarterPacks(): Promise<StarterPackMeta[]> {
+  return invoke("list_starter_packs");
+}
+
+/// Start a bundled starter pack by id (LIB-02): the backend resolves the
+/// bundled file (path-traversal guarded) and imports it through the unchanged
+/// import_course gate (D-13). Returns the same ImportCourseResult shape as
+/// importCourse (trackId/moduleCount/blockCount/warnings/verified/issuerName).
+export async function startStarterPack(
+  packId: string,
+): Promise<ImportCourseResult> {
+  return invoke("start_starter_pack", { packId });
+}
