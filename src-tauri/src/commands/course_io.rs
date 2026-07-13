@@ -1008,8 +1008,28 @@ fn list_starter_packs_impl(
             }
         };
 
+        // WR-01 — `start_starter_pack_impl` resolves packs by FILENAME
+        // (`{pack_id}.json`), so the id surfaced to the Library MUST be the
+        // filename stem. Using `payload.id` would produce an unstartable tile
+        // whenever a bundled file's internal id diverges from its stem.
+        let stem = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => {
+                log::warn!("[starter_packs] non-UTF-8/empty filename stem for {:?}; skipping", path);
+                continue;
+            }
+        };
+        if payload.id != stem {
+            log::warn!(
+                "[starter_packs] payload id {:?} != filename stem {:?} for {:?}; listing by stem (start_starter_pack resolves by filename)",
+                payload.id,
+                stem,
+                path
+            );
+        }
+
         packs.push(StarterPackMeta {
-            id: payload.id,
+            id: stem,
             title: payload.title,
             description: payload.description,
             module_count: payload.modules.len(),
@@ -2477,5 +2497,33 @@ mod tests {
         assert_eq!(packs[0].id, "good-pack");
         assert_eq!(packs[0].title, "Test Course");
         assert_eq!(packs[0].module_count, 1);
+    }
+
+    /// WR-01 — the id surfaced by listing MUST be the filename stem, because
+    /// `start_starter_pack_impl` resolves the pack by filename. A bundled file
+    /// whose payload `id` diverges from its stem must still produce a
+    /// startable tile (listed id == stem), never a tile whose Start always
+    /// fails with "unknown starter pack id".
+    #[test]
+    fn starter_pack_list_id_is_filename_stem_even_when_payload_id_diverges() {
+        let conn = fresh_conn_with_learner();
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            dir.path().join("stem-pack.json"),
+            minimal_export_json("divergent-payload-id", "topic-pack:divergent-payload-id"),
+        )
+        .unwrap();
+
+        let packs = list_starter_packs_impl(dir.path()).expect("listing must succeed");
+        assert_eq!(packs.len(), 1);
+        assert_eq!(
+            packs[0].id, "stem-pack",
+            "listed id must be the filename stem start_starter_pack consumes"
+        );
+
+        // Round-trip: the listed id must actually start the pack.
+        let result = start_starter_pack_impl(&conn, dir.path(), &packs[0].id)
+            .expect("listed id must be startable");
+        assert!(!result.track_id.is_empty());
     }
 }
