@@ -15,16 +15,24 @@
 export interface BuyerAttributionLineProps {
   buyerName?: string;
   orderId?: string;
+  /**
+   * Optional test-id passthrough (Phase 16 Plan 03 Task 4) — lets call
+   * sites that had a pre-existing `data-testid` on their inline attribution
+   * markup (e.g. TrackView.tsx's `data-testid="buyer-attribution"`) keep
+   * that test contract after refactoring onto this shared component.
+   */
+  testId?: string;
 }
 
 export function BuyerAttributionLine({
   buyerName,
   orderId,
+  testId,
 }: BuyerAttributionLineProps) {
   if (!buyerName || !orderId) return null;
 
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className="text-xs text-muted-foreground" data-testid={testId}>
       Licensed to {buyerName} · order #{orderId}
     </p>
   );

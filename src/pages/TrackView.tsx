@@ -40,6 +40,7 @@ import { useExamStore } from "@/stores/useExamStore";
 import { save } from "@tauri-apps/plugin-dialog";
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
 import { ExportReportDialog } from "@/pages/ExportReportDialog";
+import { BuyerAttributionLine } from "@/components/BuyerAttributionLine";
 
 // ── D-16 / D-05 — mastery band helper ──
 //
@@ -806,17 +807,17 @@ export function TrackView() {
             {/* Phase 15 Plan 06 (D-08) — buyer-attribution second line.
                 Renders ONLY when a local entitlement row exists for this
                 track (get_entitlement_for_track, zero network — ENT-04).
-                Plain muted text, NOT a badge (UI-SPEC: "extend, don't
-                duplicate"). buyerName/orderId render as escaped React text
-                children (T-g73-01 discipline). */}
-            {entitlement && (
-              <p
-                data-testid="buyer-attribution"
-                className="mt-1 text-xs text-muted-foreground"
-              >
-                Licensed to {entitlement.buyerName} · order #{entitlement.orderId}
-              </p>
-            )}
+                Phase 16 Plan 03 Task 4 (D-07) — refactored onto the shared
+                BuyerAttributionLine (third call site consolidation); copy/
+                data-testid preserved verbatim. mt-1 spacing (not part of the
+                shared component's locked className) preserved via wrapper. */}
+            <div className="mt-1">
+              <BuyerAttributionLine
+                buyerName={entitlement?.buyerName}
+                orderId={entitlement?.orderId}
+                testId="buyer-attribution"
+              />
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {/* Phase 12 Plan 04 — Export course button (D-10 UI mirror).
