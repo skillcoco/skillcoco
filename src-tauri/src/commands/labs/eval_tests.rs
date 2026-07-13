@@ -369,6 +369,13 @@ fn check_kind_strings() {
         }),
         "aiJudge"
     );
+    assert_eq!(
+        check_kind_str(&StepCheck::CommandAbsent {
+            pattern: "x".to_string(),
+            match_stderr: false,
+        }),
+        "commandAbsent"
+    );
 }
 
 // ── GAP-03 (Plan 03.1-09): AuthState plumbing into lab_check_step ──

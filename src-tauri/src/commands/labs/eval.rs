@@ -167,6 +167,12 @@ fn check_kind_str(check: &StepCheck) -> String {
         StepCheck::ExitCode { .. } => "exitCode".to_string(),
         StepCheck::FileState { .. } => "fileState".to_string(),
         StepCheck::AiJudge { .. } => "aiJudge".to_string(),
+        // Phase 19.2 (D-07) — deterministic check, same class as
+        // CommandRegex: "commandAbsent" != "aiJudge" so it falls through
+        // the `check_kind == "aiJudge"` branch below with no ai_judge
+        // verdict persistence; Pass/Fail flows straight to
+        // completed_step_ids via matches!(outcome, EvalOutcome::Pass).
+        StepCheck::CommandAbsent { .. } => "commandAbsent".to_string(),
     }
 }
 
