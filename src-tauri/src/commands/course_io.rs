@@ -58,6 +58,7 @@ use chrono::Utc;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tauri::Manager;
 use tauri::State;
 
 use crate::storage_impl::blocks::SqliteBlockStore;
@@ -925,6 +926,180 @@ pub fn import_course(
     let db = state.db.lock().map_err(|e| e.to_string())?;
     import_course_impl(&db.conn, &request.file_path)
         .map_err(|e| e.to_string())
+}
+
+// ── Starter packs (LIB-04, LIB-02, D-12, D-13) ───────────────────────────────
+//
+// Bundled starter packs are ordinary `CourseExportPayload` files shipped
+// under `resources/starter-packs/` (see `tauri.conf.json` `bundle.resources`
+// and `resources/starter-packs/README.md`). `list_starter_packs` enumerates
+// them offline (D-12 — no Hub catalog fetch). `start_starter_pack` resolves
+// a chosen pack id to its bundled file INSIDE that directory (path-traversal
+// guarded) and calls `import_course_impl` UNCHANGED (D-13 — no special-case
+// bypass for bundled content; same fail-closed gate as a file-picker import).
+
+/// Lightweight metadata describing one bundled starter pack, surfaced to the
+/// Library UI as a tile (LIB-04). Parsed from the same `CourseExportPayload`
+/// JSON that `start_starter_pack` later imports — never a separate manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StarterPackMeta {
+    /// Pack identifier (matches the file's `id` field and its filename stem).
+    pub id: String,
+    /// Pack title.
+    pub title: String,
+    /// Pack description.
+    pub description: String,
+    /// Number of modules in the pack.
+    pub module_count: usize,
+}
+
+/// Resolve the bundled `resources/starter-packs` directory under the given
+/// Tauri resource dir. Errors if the directory is absent (e.g. dev build
+/// missing the bundled resources, or a packaging regression).
+fn resolve_starter_packs_dir(resource_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let dir = resource_dir.join("resources").join("starter-packs");
+    if !dir.is_dir() {
+        return Err(format!(
+            "starter-packs resource directory not found at {:?}",
+            dir
+        ));
+    }
+    Ok(dir)
+}
+
+/// Enumerate `*.json` files in `starter_packs_dir` and parse each into a
+/// [`StarterPackMeta`]. A single malformed file is logged and SKIPPED —
+/// never fails the whole batch (partial listing beats an empty Library tile
+/// section).
+fn list_starter_packs_impl(
+    starter_packs_dir: &std::path::Path,
+) -> Result<Vec<StarterPackMeta>, String> {
+    let entries = std::fs::read_dir(starter_packs_dir)
+        .map_err(|e| format!("failed to read starter-packs dir: {}", e))?;
+
+    let mut packs = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                log::warn!("[starter_packs] failed to read dir entry: {}", e);
+                continue;
+            }
+        };
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+
+        let text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                log::warn!("[starter_packs] failed to read {:?}: {}", path, e);
+                continue;
+            }
+        };
+
+        let payload: CourseExportPayload = match serde_json::from_str(&text) {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("[starter_packs] failed to parse {:?}: {}", path, e);
+                continue;
+            }
+        };
+
+        packs.push(StarterPackMeta {
+            id: payload.id,
+            title: payload.title,
+            description: payload.description,
+            module_count: payload.modules.len(),
+        });
+    }
+
+    Ok(packs)
+}
+
+/// Resolve `pack_id` to a bundled file INSIDE `starter_packs_dir`, then start
+/// it through the UNCHANGED `import_course_impl` gate (D-13).
+///
+/// Traversal guard (T-16-01): rejects any `pack_id` containing `..`, `/`, or
+/// a leading path separator BEFORE any path is built, then canonicalizes the
+/// resolved path and asserts it is still inside `starter_packs_dir` — belt
+/// and suspenders against any encoding trick that might slip past the naive
+/// string check.
+fn start_starter_pack_impl(
+    conn: &Connection,
+    starter_packs_dir: &std::path::Path,
+    pack_id: &str,
+) -> Result<ImportCourseResult, ImportCourseError> {
+    // ── Traversal guard (T-16-01) — reject before building any path ────────
+    if pack_id.is_empty()
+        || pack_id.contains("..")
+        || pack_id.contains('/')
+        || pack_id.contains('\\')
+        || pack_id.starts_with('.')
+    {
+        return Err(ImportCourseError::Fs(format!(
+            "invalid starter pack id: {:?}",
+            pack_id
+        )));
+    }
+
+    let candidate = starter_packs_dir.join(format!("{}.json", pack_id));
+
+    // Canonicalize the starter-packs dir itself so the containment check
+    // below is comparing two canonical paths (the candidate file may not
+    // exist yet at this point, so canonicalize the parent dir, not the file).
+    let canonical_dir = std::fs::canonicalize(starter_packs_dir)
+        .map_err(|e| ImportCourseError::Fs(format!("starter-packs dir error: {}", e)))?;
+
+    let canonical_candidate = std::fs::canonicalize(&candidate)
+        .map_err(|_| ImportCourseError::Fs(format!("unknown starter pack id: {:?}", pack_id)))?;
+
+    if !canonical_candidate.starts_with(&canonical_dir) {
+        return Err(ImportCourseError::Fs(format!(
+            "resolved starter pack path escapes the starter-packs dir: {:?}",
+            canonical_candidate
+        )));
+    }
+
+    let path_str = canonical_candidate
+        .to_str()
+        .ok_or_else(|| ImportCourseError::Fs("starter pack path is not valid UTF-8".to_string()))?;
+
+    // D-13: NEW caller of the UNCHANGED gate — no fork, no bypass.
+    import_course_impl(conn, path_str)
+}
+
+// ── Starter pack Tauri command shims ─────────────────────────────────────────
+
+/// List bundled starter packs (LIB-04). Offline — no Hub/server call.
+#[tauri::command]
+pub fn list_starter_packs(app_handle: tauri::AppHandle) -> Result<Vec<StarterPackMeta>, String> {
+    let resource_dir = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?;
+    let starter_packs_dir = resolve_starter_packs_dir(&resource_dir)?;
+    list_starter_packs_impl(&starter_packs_dir)
+}
+
+/// Start a bundled starter pack (LIB-02). Resolves `pack_id` to its bundled
+/// file and imports it through the unchanged `import_course_impl` gate
+/// (D-13 — no special-case bypass for bundled content).
+#[tauri::command]
+pub fn start_starter_pack(
+    pack_id: String,
+    state: State<'_, crate::AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<ImportCourseResult, String> {
+    let resource_dir = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?;
+    let starter_packs_dir = resolve_starter_packs_dir(&resource_dir).map_err(|e| e.to_string())?;
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    start_starter_pack_impl(&db.conn, &starter_packs_dir, &pack_id).map_err(|e| e.to_string())
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -2205,5 +2380,102 @@ mod tests {
             import_course_impl(&conn, &unsigned_path).expect("unsigned free import must succeed");
         assert!(!unsigned_result.verified);
         assert!(unsigned_result.issuer_name.is_none());
+    }
+
+    // ── Starter pack tests (Phase 16, Plan 01, Task 2 — T-16-01/T-16-02) ─────
+
+    /// Create a temp dir acting as the bundled starter-packs dir with one
+    /// valid export-shaped pack file named `{pack_id}.json`.
+    fn starter_packs_fixture_dir(pack_id: &str) -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().unwrap();
+        let json = minimal_export_json(pack_id, format!("topic-pack:{}", pack_id).as_str());
+        std::fs::write(dir.path().join(format!("{}.json", pack_id)), json).unwrap();
+        dir
+    }
+
+    /// T-16-01 traversal guard — `..`, absolute, nested, backslash and empty
+    /// ids are ALL rejected before any path is built.
+    #[test]
+    fn starter_pack_traversal_guard_rejects_escaping_ids() {
+        let conn = fresh_conn_with_learner();
+        let dir = starter_packs_fixture_dir("guard-pack");
+
+        for bad_id in [
+            "../etc/passwd",
+            "..",
+            "/abs",
+            "/etc/passwd",
+            "sub/dir",
+            "a\\b",
+            ".hidden",
+            "",
+        ] {
+            let result = start_starter_pack_impl(&conn, dir.path(), bad_id);
+            assert!(
+                result.is_err(),
+                "traversal guard must reject id {:?}",
+                bad_id
+            );
+        }
+    }
+
+    /// Unknown-but-well-formed id returns Err (not a panic).
+    #[test]
+    fn starter_pack_unknown_id_returns_err() {
+        let conn = fresh_conn_with_learner();
+        let dir = starter_packs_fixture_dir("known-pack");
+
+        let result = start_starter_pack_impl(&conn, dir.path(), "no-such-pack");
+        assert!(result.is_err(), "unknown pack id must be an Err, not a panic");
+    }
+
+    /// Happy path — a valid bundled pack id routes through the UNCHANGED
+    /// import_course_impl gate and returns an ImportCourseResult (D-13).
+    #[test]
+    fn starter_pack_happy_path_imports_via_gate() {
+        let conn = fresh_conn_with_learner();
+        let dir = starter_packs_fixture_dir("starter-happy");
+
+        let result = start_starter_pack_impl(&conn, dir.path(), "starter-happy")
+            .expect("valid bundled starter pack must import");
+
+        assert!(!result.track_id.is_empty(), "track_id must be non-empty");
+        assert_eq!(result.module_count, 1, "fixture has exactly 1 module");
+
+        // D-13: the gate stamped imported:* provenance exactly as a normal
+        // file import would — proof the same code path ran.
+        let prov: String = conn
+            .query_row(
+                "SELECT generated_by_model FROM learning_paths WHERE track_id = ?1",
+                rusqlite::params![result.track_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            prov.starts_with("imported:"),
+            "starter pack import must carry imported:* provenance; got {}",
+            prov
+        );
+    }
+
+    /// list_starter_packs_impl returns metadata for every valid pack and
+    /// SKIPS malformed files without failing the batch.
+    #[test]
+    fn starter_pack_list_skips_malformed_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            dir.path().join("good-pack.json"),
+            minimal_export_json("good-pack", "topic-pack:good-pack"),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("broken.json"), "{ not valid json").unwrap();
+        std::fs::write(dir.path().join("notes.txt"), "ignored — not json").unwrap();
+
+        let packs = list_starter_packs_impl(dir.path()).expect("listing must not fail the batch");
+
+        assert_eq!(packs.len(), 1, "only the valid pack is listed");
+        assert_eq!(packs[0].id, "good-pack");
+        assert_eq!(packs[0].title, "Test Course");
+        assert_eq!(packs[0].module_count, 1);
     }
 }
