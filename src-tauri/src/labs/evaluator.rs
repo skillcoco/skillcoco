@@ -1,10 +1,13 @@
 //! # labs::evaluator — step evaluator (Phase 03.1, Wave 2)
 //!
-//! Inline evaluator for the four StepCheck variants. Determinism is the
+//! Inline evaluator for the five StepCheck variants. Determinism is the
 //! load-bearing contract here:
 //!
 //! - `command_regex` uses `regex::Regex` against `last_output` (or the
 //!   stderr buffer when `match_stderr=true`).
+//! - `command_absent` (Phase 19.2, D-04) is the exact inverse of
+//!   `command_regex` — Pass when the pattern does NOT match, Fail when it
+//!   does. Same `Regex::new` compile path, same `match_stderr` no-op shape.
 //! - `exit_code` is `Indeterminate` when no OSC 133 D sequence has arrived
 //!   (`ctx.last_exit_code == None`).
 //! - `file_state` reads the file under `workspace.join(path)` with `tempfile`
@@ -107,6 +110,10 @@ where
         StepCheck::AiJudge { criteria, threshold } => {
             eval_ai_judge(criteria, *threshold, ctx, runner).await
         }
+        StepCheck::CommandAbsent {
+            pattern,
+            match_stderr,
+        } => eval_command_absent(pattern, *match_stderr, ctx),
     }
 }
 
@@ -128,6 +135,25 @@ fn eval_command_regex(
         Ok(EvalOutcome::Pass)
     } else {
         Ok(EvalOutcome::Fail)
+    }
+}
+
+/// Phase 19.2 (D-04/D-05/D-06) — exact inverse of `eval_command_regex`: Pass
+/// when the pattern does NOT match, Fail when it does. Reuses the identical
+/// `Regex::new` compile path/error shape (D-05); `_match_stderr` stays a
+/// no-op with the same v1 stdout-only buffer caveat as `eval_command_regex`
+/// (D-06) — real stderr-buffer switching is out of scope for this phase.
+fn eval_command_absent(
+    pattern: &str,
+    _match_stderr: bool,
+    ctx: &EvalContext<'_>,
+) -> Result<EvalOutcome, LabError> {
+    let re = Regex::new(pattern)
+        .map_err(|e| LabError::Eval(format!("invalid regex {:?}: {}", pattern, e)))?;
+    if re.is_match(ctx.last_output) {
+        Ok(EvalOutcome::Fail)
+    } else {
+        Ok(EvalOutcome::Pass)
     }
 }
 
@@ -336,6 +362,76 @@ mod tests {
         };
         let ctx = ctx_with("", Some(127));
         assert_eq!(evaluate_step(&check, &ctx).await.unwrap(), EvalOutcome::Fail);
+    }
+
+    /// D-04/D-09 — command_absent Pass when the pattern does NOT match
+    /// last_output (exact inverse of command_regex_match).
+    #[tokio::test]
+    async fn command_absent_pass_when_no_match() {
+        let check = StepCheck::CommandAbsent {
+            pattern: "CrashLoopBackOff".to_string(),
+            match_stderr: false,
+        };
+        let ctx = ctx_with("pod/web created", Some(0));
+        assert_eq!(evaluate_step(&check, &ctx).await.unwrap(), EvalOutcome::Pass);
+    }
+
+    /// D-04/D-09 — command_absent Fail when the pattern DOES match
+    /// last_output (exact inverse of command_regex_no_match).
+    #[tokio::test]
+    async fn command_absent_fail_when_match() {
+        let check = StepCheck::CommandAbsent {
+            pattern: "CrashLoopBackOff".to_string(),
+            match_stderr: false,
+        };
+        let ctx = ctx_with("pod/web CrashLoopBackOff", Some(0));
+        assert_eq!(evaluate_step(&check, &ctx).await.unwrap(), EvalOutcome::Fail);
+    }
+
+    /// D-06/D-09 — command_absent honors match_stderr=false the same
+    /// no-op way command_regex does (v1 stdout-only buffer): Pass when
+    /// the (merged) last_output buffer has no match.
+    #[tokio::test]
+    async fn command_absent_match_stderr_false_pass_when_no_match() {
+        let check = StepCheck::CommandAbsent {
+            pattern: "command not found".to_string(),
+            match_stderr: false,
+        };
+        let ctx = ctx_with("", Some(127));
+        assert_eq!(evaluate_step(&check, &ctx).await.unwrap(), EvalOutcome::Pass);
+    }
+
+    /// D-06/D-09 — command_absent honors match_stderr=true identically
+    /// (no real stderr-buffer switching in v1); Fail when the pattern
+    /// matches the merged last_output buffer regardless of the flag.
+    #[tokio::test]
+    async fn command_absent_match_stderr_true_fail_when_match() {
+        let check = StepCheck::CommandAbsent {
+            pattern: "CrashLoopBackOff".to_string(),
+            match_stderr: true,
+        };
+        let ctx = ctx_with("pod/web CrashLoopBackOff", Some(0));
+        assert_eq!(evaluate_step(&check, &ctx).await.unwrap(), EvalOutcome::Fail);
+    }
+
+    /// D-05 — invalid regex returns the SAME LabError::Eval shape as
+    /// eval_command_regex.
+    #[tokio::test]
+    async fn command_absent_invalid_regex_returns_eval_error() {
+        let check = StepCheck::CommandAbsent {
+            pattern: "(unclosed".to_string(),
+            match_stderr: false,
+        };
+        let ctx = ctx_with("anything", Some(0));
+        let err = evaluate_step(&check, &ctx).await.unwrap_err();
+        match err {
+            LabError::Eval(msg) => assert!(
+                msg.contains("invalid regex"),
+                "expected 'invalid regex' in message, got: {}",
+                msg
+            ),
+            other => panic!("expected LabError::Eval, got {:?}", other),
+        }
     }
 
     /// LAB-06 — exit_code Pass when OSC 133 D ;0 captured.
