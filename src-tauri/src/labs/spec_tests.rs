@@ -437,3 +437,162 @@ fn exam_spec_fixture() -> LabSpec {
         }],
     }
 }
+
+// ── Phase 19.3 (D-01..D-08) — milestone validation grain ──
+//
+// `Grain` does not exist yet on `spec.rs`. These tests fail to COMPILE until
+// Task 1 lands `enum Grain`, `default_grain`, `LabSpec.grain` / `LabStep.grain`
+// (public + Raw), `effective_step_grain`, and
+// `validate_milestone_exam_exclusion`. The compile failure is the correct RED
+// signal (same convention as the Phase 19 EXAM-01 scaffolds above).
+
+/// D-03 — a LAB.md with no `grain:` key anywhere parses to `Grain::Step` on
+/// both the spec and every step (back-compat default).
+#[test]
+fn grain_absent_defaults_to_step() {
+    let (spec, _body) = parse_lab_md(VALID_LAB_MD).expect("valid LAB.md must parse");
+    assert_eq!(spec.grain, Grain::Step, "LabSpec.grain must default to Step");
+    for step in &spec.steps {
+        assert_eq!(
+            step.grain,
+            Grain::Step,
+            "step {:?} grain must default to Step when absent",
+            step.id
+        );
+    }
+}
+
+/// D-03 — `grain: milestone` parses on both lab-level and step-level
+/// frontmatter (snake_case enum values).
+#[test]
+fn grain_milestone_parses() {
+    let md = r#"---
+slug: grain-test
+title: Grain test
+image: alpine
+grain: milestone
+steps:
+  - id: s1
+    title: S1
+    prompt: Do the thing
+    check:
+      kind: exit_code
+      expected: 0
+  - id: s2
+    title: S2
+    prompt: Do another thing
+    grain: step
+    check:
+      kind: exit_code
+      expected: 0
+---
+Body.
+"#;
+    let (spec, _body) = parse_lab_md(md).expect("grain: milestone must parse");
+    assert_eq!(spec.grain, Grain::Milestone, "LabSpec.grain must parse milestone");
+    let s1 = spec.steps.iter().find(|s| s.id == "s1").unwrap();
+    assert_eq!(
+        s1.grain,
+        Grain::Step,
+        "step s1 has no explicit grain; LabStep.grain itself defaults to Step \
+         (effective_step_grain resolves lab-level inheritance separately)"
+    );
+    let s2 = spec.steps.iter().find(|s| s.id == "s2").unwrap();
+    assert_eq!(s2.grain, Grain::Step, "step s2 explicit grain: step must parse");
+}
+
+/// D-03 — `effective_step_grain` resolution: step-level Milestone always
+/// wins; otherwise the lab-level grain applies (inheritance).
+#[test]
+fn effective_step_grain_resolution() {
+    assert_eq!(
+        effective_step_grain(Grain::Step, Grain::Milestone),
+        Grain::Milestone,
+        "a milestone step in a step-grain lab must validate as milestone"
+    );
+    assert_eq!(
+        effective_step_grain(Grain::Milestone, Grain::Step),
+        Grain::Milestone,
+        "a step in a milestone-grain lab inherits milestone (explicit `grain: step` \
+         collapses to the lab grain per D-03 accepted simplification)"
+    );
+    assert_eq!(
+        effective_step_grain(Grain::Step, Grain::Step),
+        Grain::Step
+    );
+    assert_eq!(
+        effective_step_grain(Grain::Milestone, Grain::Milestone),
+        Grain::Milestone
+    );
+}
+
+/// D-05 — a spec with `exam:` metadata AND any milestone grain (lab-level)
+/// is rejected by both `parse_lab_md` and `validate_spec` citing D-05.
+#[test]
+fn exam_milestone_coexistence_rejected_lab_level() {
+    let md = r#"---
+slug: exam-milestone-test
+title: Exam milestone test
+image: alpine
+grain: milestone
+exam:
+  timeLimitMinutes: 30
+  passThresholdPct: 70
+steps:
+  - id: s1
+    title: S1
+    prompt: Do the thing
+    check:
+      kind: exit_code
+      expected: 0
+---
+Body.
+"#;
+    assert_spec_err_msg(parse_lab_md(md), &["d-05", "milestone", "exam"]);
+
+    let mut spec = exam_spec_fixture();
+    spec.exam = Some(ExamMeta {
+        time_limit_minutes: Some(30),
+        pass_threshold_pct: Some(70.0),
+    });
+    spec.grain = Grain::Milestone;
+    match validate_spec(&spec) {
+        Err(LabError::Spec(_)) => {}
+        other => panic!("expected LabError::Spec for exam+milestone coexistence, got {:?}", other),
+    }
+}
+
+/// D-05 — the exam×milestone rejection also fires when ONLY a step (not the
+/// lab) declares milestone grain.
+#[test]
+fn exam_milestone_coexistence_rejected_step_level() {
+    let mut spec = exam_spec_fixture();
+    spec.exam = Some(ExamMeta {
+        time_limit_minutes: Some(30),
+        pass_threshold_pct: Some(70.0),
+    });
+    spec.steps[0].grain = Grain::Milestone;
+    match validate_spec(&spec) {
+        Err(LabError::Spec(_)) => {}
+        other => panic!(
+            "expected LabError::Spec for exam+step-milestone coexistence, got {:?}",
+            other
+        ),
+    }
+}
+
+/// D-05 — a spec with `exam:` metadata and all step-grain (default) steps
+/// parses fine — no false positive from the coexistence validator.
+#[test]
+fn exam_step_grain_ok() {
+    let spec = exam_spec_fixture();
+    let mut spec = spec;
+    spec.exam = Some(ExamMeta {
+        time_limit_minutes: Some(30),
+        pass_threshold_pct: Some(70.0),
+    });
+    assert!(
+        validate_spec(&spec).is_ok(),
+        "exam metadata with all step-grain steps must not trigger the D-05 rejection"
+    );
+}
