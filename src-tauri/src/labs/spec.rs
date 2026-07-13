@@ -73,8 +73,8 @@ fn default_weight() -> f64 {
     1.0
 }
 
-/// One of four check kinds. Tagged enum so LAB.md frontmatter parses naturally:
-/// `kind: command_regex | exit_code | file_state | ai_judge`.
+/// One of five check kinds. Tagged enum so LAB.md frontmatter parses naturally:
+/// `kind: command_regex | exit_code | file_state | ai_judge | command_absent`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StepCheck {
@@ -95,6 +95,14 @@ pub enum StepCheck {
         criteria: String,
         #[serde(default = "default_threshold")]
         threshold: f64,
+    },
+    /// Phase 19.2 (D-01) — deterministic "output must NOT match" check; the
+    /// exact inverse of `CommandRegex`. Same field shape, same
+    /// `#[serde(default)]` on `match_stderr`.
+    CommandAbsent {
+        pattern: String,
+        #[serde(default)]
+        match_stderr: bool,
     },
 }
 
@@ -344,6 +352,13 @@ fn validate_step_check(check: &StepCheck) -> Result<(), LabError> {
             }
         }
         StepCheck::ExitCode { .. } => {}
+        StepCheck::CommandAbsent { pattern, .. } => {
+            if pattern.trim().is_empty() {
+                return Err(LabError::Spec(
+                    "command_absent pattern must not be empty".to_string(),
+                ));
+            }
+        }
     }
     Ok(())
 }

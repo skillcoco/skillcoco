@@ -62,6 +62,18 @@ steps:
       - "Pipe kubectl output into a file under notes/."
       - "Run: mkdir -p notes && kubectl get pods > notes/run-output.txt"
       - "Verify with cat notes/run-output.txt."
+  - id: no-crash-loop
+    title: Confirm the Pod never entered CrashLoopBackOff
+    prompt: |
+      Re-check `kubectl get pods` output one more time and confirm it never
+      showed an `Error` or `CrashLoopBackOff` status.
+    check:
+      kind: command_absent
+      pattern: "Error|CrashLoopBackOff"
+    hints:
+      - "Run kubectl get pods again and read the STATUS column."
+      - "Error/CrashLoopBackOff means the container is failing to start."
+      - "If it appears, check kubectl logs pod/web."
 ---
 
 # Create and inspect a Pod
