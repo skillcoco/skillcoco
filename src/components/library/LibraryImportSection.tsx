@@ -6,6 +6,7 @@ import {
   getEntitlementForTrack,
 } from "@/lib/tauri-commands";
 import { BuyerAttributionLine } from "@/components/BuyerAttributionLine";
+import { useLearningStore } from "@/stores/useLearningStore";
 
 // ── Phase 16 Plan 03 Task 1 — LibraryImportSection ──
 //
@@ -36,6 +37,7 @@ interface ImportState {
 
 export function LibraryImportSection() {
   const [state, setState] = useState<ImportState>({ status: "idle" });
+  const loadTracks = useLearningStore((s) => s.loadTracks);
 
   async function handleImport() {
     setState({ status: "loading" });
@@ -76,6 +78,12 @@ export function LibraryImportSection() {
         verified: result.verified,
         issuerName: result.issuerName,
       });
+
+      // WR-03 — the "Your packs" grid on this same page is fed by
+      // useLearningStore.tracks; refresh it so the new pack appears without
+      // navigating away and back. Fire-and-forget: a failed refresh must not
+      // affect the already-successful import feedback.
+      loadTracks().catch(() => {});
 
       // Attribution is a display-only enhancement — a failed lookup must
       // not affect the already-successful import feedback.

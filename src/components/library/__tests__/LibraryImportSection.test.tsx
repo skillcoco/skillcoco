@@ -11,16 +11,26 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ImportCourseResult } from "@/types/course-io";
 
-const { importCourseMock, openFileDialogMock, getEntitlementForTrackMock } = vi.hoisted(() => ({
-  importCourseMock: vi.fn(),
-  openFileDialogMock: vi.fn(),
-  getEntitlementForTrackMock: vi.fn().mockResolvedValue(null),
-}));
+const { importCourseMock, openFileDialogMock, getEntitlementForTrackMock, loadTracksMock } =
+  vi.hoisted(() => ({
+    importCourseMock: vi.fn(),
+    openFileDialogMock: vi.fn(),
+    getEntitlementForTrackMock: vi.fn().mockResolvedValue(null),
+    loadTracksMock: vi.fn().mockResolvedValue(undefined),
+  }));
 
 vi.mock("@/lib/tauri-commands", () => ({
   importCourse: importCourseMock,
   openFileDialog: openFileDialogMock,
   getEntitlementForTrack: getEntitlementForTrackMock,
+}));
+
+// Selector-aware store mock (mirrors Library.test.tsx's precedent).
+vi.mock("@/stores/useLearningStore", () => ({
+  useLearningStore: vi.fn((selector?: (s: { loadTracks: typeof loadTracksMock }) => unknown) => {
+    const state = { loadTracks: loadTracksMock };
+    return typeof selector === "function" ? selector(state) : state;
+  }),
 }));
 
 import { LibraryImportSection } from "@/components/library/LibraryImportSection";
@@ -41,6 +51,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   openFileDialogMock.mockResolvedValue("/tmp/course.json");
   getEntitlementForTrackMock.mockResolvedValue(null);
+  loadTracksMock.mockResolvedValue(undefined);
 });
 
 describe("LibraryImportSection — Phase 16 Plan 03 Task 1", () => {
@@ -80,6 +91,31 @@ describe("LibraryImportSection — Phase 16 Plan 03 Task 1", () => {
     });
     expect(screen.queryByText(/import failed/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/course imported successfully/i)).not.toBeInTheDocument();
+  });
+
+  // WR-03 — a successful import must refresh the "Your packs" grid on the
+  // same page (useLearningStore.loadTracks), not leave it stale until the
+  // user navigates away and back.
+  it("refreshes the tracks slice after a successful import", async () => {
+    importCourseMock.mockResolvedValue(importResult());
+    render(<LibraryImportSection />);
+    await userEvent.click(screen.getByTestId("import-course-button"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/course imported successfully/i)).toBeInTheDocument();
+    });
+    expect(loadTracksMock).toHaveBeenCalled();
+  });
+
+  it("does not refresh the tracks slice when import fails", async () => {
+    importCourseMock.mockRejectedValue(new Error("bad pack"));
+    render(<LibraryImportSection />);
+    await userEvent.click(screen.getByTestId("import-course-button"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/import failed/i)).toBeInTheDocument();
+    });
+    expect(loadTracksMock).not.toHaveBeenCalled();
   });
 
   it("shows the inline error block (never a raw error string) on import failure", async () => {
