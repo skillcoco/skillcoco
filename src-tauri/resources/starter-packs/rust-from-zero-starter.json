@@ -1,0 +1,72 @@
+{
+  "id": "rust-from-zero-starter",
+  "title": "Rust from Zero (Starter)",
+  "description": "A free starter introduction to Rust: environment setup, ownership and borrowing, and modeling data with structs and enums.",
+  "domain_module": "programming",
+  "modules": [
+    {
+      "id": "rust-setup",
+      "title": "Setup and Hello World",
+      "description": "Install Rust via rustup, configure your editor, and write your first program. Understand cargo, crates, and the Rust compilation model.",
+      "objectives": [
+        "Install Rust and cargo via rustup",
+        "Create and run a new cargo project",
+        "Explain the role of Cargo.toml and the crate registry"
+      ],
+      "difficulty": 1,
+      "estimated_minutes": 25,
+      "exercise_types": [
+        "conceptual_qa",
+        "fill_in_blank"
+      ]
+    },
+    {
+      "id": "rust-ownership",
+      "title": "Ownership and Borrowing",
+      "description": "Master Rust's core memory-safety model: ownership rules, move semantics, borrowing, and references.",
+      "objectives": [
+        "Explain the three ownership rules",
+        "Distinguish moves from copies",
+        "Use immutable and mutable references correctly"
+      ],
+      "difficulty": 2,
+      "estimated_minutes": 45,
+      "exercise_types": [
+        "conceptual_qa",
+        "code_challenge"
+      ]
+    },
+    {
+      "id": "rust-structs-enums",
+      "title": "Structs, Enums, and Pattern Matching",
+      "description": "Model data with structs and enums, and use match expressions for exhaustive, safe control flow.",
+      "objectives": [
+        "Define and instantiate structs and enums",
+        "Write exhaustive match expressions",
+        "Use Option and Result idiomatically"
+      ],
+      "difficulty": 2,
+      "estimated_minutes": 40,
+      "exercise_types": [
+        "conceptual_qa",
+        "code_challenge"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "rust-setup",
+      "to": "rust-ownership"
+    },
+    {
+      "from": "rust-ownership",
+      "to": "rust-structs-enums"
+    }
+  ],
+  "exportVersion": "1.0.0",
+  "exportedAt": "2026-07-12T00:00:00Z",
+  "exportedFrom": "topic-pack:rust-from-zero-starter",
+  "blocks": {},
+  "labs": {},
+  "videos": {}
+}

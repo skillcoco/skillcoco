@@ -33,6 +33,9 @@
       "icons/128x128.png",
       "icons/128x128@2x.png"
     ],
+    "resources": [
+      "resources/starter-packs/"
+    ],
     "macOS": {
       "signingIdentity": "Developer ID Application: <REPLACE_AFTER_ENROLLMENT> (<TEAM_ID>)",
       "entitlements": "./Entitlements.plist",
