@@ -17,6 +17,7 @@ import { useLibraryStore } from "@/stores/useLibraryStore";
 import { LibraryPackCard } from "@/components/library/LibraryPackCard";
 import { StarterPackCard } from "@/components/library/StarterPackCard";
 import { LibraryEmptyState } from "@/components/library/LibraryEmptyState";
+import { LibraryImportSection } from "@/components/library/LibraryImportSection";
 import { RedeemLicenseFlow } from "@/components/RedeemLicenseFlow";
 
 export function Library() {
@@ -99,8 +100,16 @@ export function Library() {
         </div>
       </div>
 
-      {/* 16-03 mount point — LibraryImportSection (import course file) is
-          wired here in the next plan; intentionally not added yet. */}
+      {/* Import a course file — LIB-03 (import-file half), relocated from
+          Settings (D-03) */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold text-foreground">
+          Import a course file
+        </h2>
+        <div className="glass rounded-xl p-5">
+          <LibraryImportSection />
+        </div>
+      </div>
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { SettingsTopicPacksSection } from "@/pages/SettingsTopicPacksSection";
 import { SettingsYouTubeSection } from "@/pages/SettingsYouTubeSection";
 import { SettingsVerifyCertSection } from "@/pages/SettingsVerifyCertSection";
 import { SettingsReportServerSection } from "@/pages/SettingsReportServerSection";
-import { SettingsCourseImportSection } from "@/pages/SettingsCourseImportSection";
+import { SettingsImportMovedNotice } from "@/pages/SettingsImportMovedNotice";
 import { SettingsRedeemLicenseSection } from "@/pages/SettingsRedeemLicenseSection";
 import {
   Shield,
@@ -947,8 +947,8 @@ export function Settings() {
         onKeyRemoved={loadAuthStatus}
       />
 
-      {/* ── Course Import (Phase 12 Plan 04 — D-05/D-09) ── */}
-      <SettingsCourseImportSection />
+      {/* ── Course Import moved to Library (Phase 16 Plan 03 — D-03) ── */}
+      <SettingsImportMovedNotice />
 
       {/* ── Redeem License (Phase 15 Plan 05 — D-01/D-02) ── */}
       <SettingsRedeemLicenseSection />

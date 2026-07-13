@@ -1,8 +1,8 @@
-import { NavLink, Link } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   RotateCcw,
-  Plus,
+  Library,
   Settings,
   Sun,
   Moon,
@@ -140,6 +140,29 @@ export function Sidebar() {
           )}
         </NavLink>
 
+        <NavLink
+          to="/library"
+          className={({ isActive }) =>
+            cn(
+              "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+              isActive
+                ? "bg-white/10 font-medium text-foreground"
+                : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+              collapsed && "justify-center"
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              {isActive && (
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
+              )}
+              <Library size={18} />
+              {!collapsed && <span>Library</span>}
+            </>
+          )}
+        </NavLink>
+
         {/* Learning Tracks Section */}
         {!collapsed && (
           <div className="mt-6">
@@ -147,13 +170,6 @@ export function Sidebar() {
               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
                 Learning Tracks
               </span>
-              <Link
-                to="/onboarding"
-                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
-                aria-label="New track"
-              >
-                <Plus size={14} />
-              </Link>
             </div>
 
             <div className="space-y-0.5">
@@ -207,18 +223,6 @@ export function Sidebar() {
                 );
               })}
             </div>
-
-            {/* New Track Button */}
-            <Link
-              to="/onboarding"
-              className={cn(
-                "mt-1 flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-                "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-              )}
-            >
-              <Plus size={16} />
-              <span>New Track</span>
-            </Link>
           </div>
         )}
 
@@ -238,13 +242,6 @@ export function Sidebar() {
                 />
               </NavLink>
             ))}
-            <Link
-              to="/onboarding"
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
-              title="New Track"
-            >
-              <Plus size={14} />
-            </Link>
           </div>
         )}
       </nav>
