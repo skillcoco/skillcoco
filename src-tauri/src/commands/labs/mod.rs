@@ -446,7 +446,8 @@ mod tests {
         let (spec, body) = crate::labs::spec::parse_lab_md(raw)
             .expect("parse_lab_md must succeed once 03.1-03 lands");
         assert_eq!(spec.slug, "pod-create-and-inspect");
-        assert_eq!(spec.steps.len(), 4);
+        // Phase 19.2 (D-10) — fixture gained a 5th (command_absent) step.
+        assert_eq!(spec.steps.len(), 5);
         assert!(!body.trim().is_empty(), "body must round-trip for paramsJson");
     }
 }

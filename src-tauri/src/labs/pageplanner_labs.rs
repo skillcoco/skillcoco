@@ -580,7 +580,8 @@ mod tests {
             .await
             .expect("valid LAB.md must parse");
         assert_eq!(spec.slug, "pod-create-and-inspect");
-        assert_eq!(spec.steps.len(), 4);
+        // Phase 19.2 (D-10) — fixture gained a 5th (command_absent) step.
+        assert_eq!(spec.steps.len(), 5);
         assert_eq!(spec.image.as_deref(), Some("kindest/node:v1.30"));
         assert!(spec.requires_docker);
         assert!(!source.is_empty(), "source body must be preserved");

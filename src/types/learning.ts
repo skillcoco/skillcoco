@@ -357,10 +357,10 @@ export type LabRuntimeChoice = "docker" | "hostShell" | "autoDetect";
  * evaluator validates field combinations per kind on parse.
  */
 export interface StepCheck {
-  kind: "command_regex" | "exit_code" | "file_state" | "ai_judge";
-  /** command_regex: stdout/stderr regex pattern. */
+  kind: "command_regex" | "exit_code" | "file_state" | "ai_judge" | "command_absent";
+  /** command_regex, command_absent: stdout/stderr regex pattern. */
   pattern?: string;
-  /** command_regex: when true, also match against stderr. */
+  /** command_regex, command_absent: when true, also match against stderr. */
   matchStderr?: boolean;
   /** exit_code: required exit status (defaults to 0 if unset). */
   expected?: number;

@@ -33,13 +33,14 @@ fn assert_spec_err_msg(result: Result<(LabSpec, String), LabError>, needles: &[&
     }
 }
 
-/// LAB-04 — valid LAB.md parses to a 4-step LabSpec.
+/// LAB-04 — valid LAB.md parses to a 5-step LabSpec (D-10: adds a
+/// command_absent step to the fixture in Phase 19.2).
 #[test]
 fn parse_valid_lab_md() {
     let (spec, body) = parse_lab_md(VALID_LAB_MD).expect("valid LAB.md must parse");
     assert_eq!(spec.slug, "pod-create-and-inspect");
     assert_eq!(spec.title, "Create and inspect a Pod");
-    assert_eq!(spec.steps.len(), 4);
+    assert_eq!(spec.steps.len(), 5);
     assert_eq!(spec.image.as_deref(), Some("kindest/node:v1.30"));
     assert!(spec.dockerfile.is_none());
     assert!(spec.requires_docker);
@@ -51,6 +52,25 @@ fn parse_valid_lab_md() {
         "body must include markdown headings, got {:?}",
         body
     );
+}
+
+/// D-10 — the fixture's new step parses to StepCheck::CommandAbsent with
+/// the authored pattern.
+#[test]
+fn parse_valid_lab_md_yields_command_absent_step() {
+    let (spec, _body) = parse_lab_md(VALID_LAB_MD).expect("valid LAB.md must parse");
+    let step = spec
+        .steps
+        .iter()
+        .find(|s| s.id == "no-crash-loop")
+        .expect("no-crash-loop step must exist");
+    match &step.check {
+        StepCheck::CommandAbsent { pattern, match_stderr } => {
+            assert_eq!(pattern, "Error|CrashLoopBackOff");
+            assert!(!match_stderr, "match_stderr must default to false");
+        }
+        other => panic!("expected StepCheck::CommandAbsent, got {:?}", other),
+    }
 }
 
 /// LAB-04 — malformed YAML surfaces LabError::Spec with a useful message.
@@ -140,10 +160,73 @@ fn step_check_serializes_with_snake_case_kind() {
             },
             "\"kind\":\"ai_judge\"",
         ),
+        (
+            StepCheck::CommandAbsent {
+                pattern: "x".to_string(),
+                match_stderr: false,
+            },
+            "\"kind\":\"command_absent\"",
+        ),
     ] {
         let json = serde_json::to_string(&check).unwrap();
         assert!(json.contains(needle), "missing {} in {}", needle, json);
     }
+}
+
+/// D-08 — command_absent round-trips with and without `match_stderr`:
+/// omitted defaults to false; explicit true is preserved.
+#[test]
+fn command_absent_round_trips_match_stderr_default_and_explicit() {
+    let json_no_match_stderr = r#"{"kind":"command_absent","pattern":"CrashLoopBackOff"}"#;
+    let parsed: StepCheck = serde_json::from_str(json_no_match_stderr).unwrap();
+    assert_eq!(
+        parsed,
+        StepCheck::CommandAbsent {
+            pattern: "CrashLoopBackOff".to_string(),
+            match_stderr: false,
+        }
+    );
+
+    let json_match_stderr_true =
+        r#"{"kind":"command_absent","pattern":"CrashLoopBackOff","match_stderr":true}"#;
+    let parsed: StepCheck = serde_json::from_str(json_match_stderr_true).unwrap();
+    assert_eq!(
+        parsed,
+        StepCheck::CommandAbsent {
+            pattern: "CrashLoopBackOff".to_string(),
+            match_stderr: true,
+        }
+    );
+}
+
+/// D-03 — validate_step_check rejects an empty/whitespace-only
+/// command_absent pattern, mirroring command_regex's error shape.
+#[test]
+fn validate_step_check_rejects_empty_command_absent_pattern() {
+    let check = StepCheck::CommandAbsent {
+        pattern: "   ".to_string(),
+        match_stderr: false,
+    };
+    match validate_step_check(&check) {
+        Err(LabError::Spec(msg)) => {
+            assert!(
+                msg.contains("command_absent pattern must not be empty"),
+                "got: {}",
+                msg
+            );
+        }
+        other => panic!("expected LabError::Spec, got {:?}", other),
+    }
+}
+
+/// D-03 — a non-empty command_absent pattern passes validation.
+#[test]
+fn validate_step_check_accepts_non_empty_command_absent_pattern() {
+    let check = StepCheck::CommandAbsent {
+        pattern: "CrashLoopBackOff".to_string(),
+        match_stderr: false,
+    };
+    assert!(validate_step_check(&check).is_ok());
 }
 
 /// LAB-07 — reset_lab is surgical: deletes ONLY declared creates,
