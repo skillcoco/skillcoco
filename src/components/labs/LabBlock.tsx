@@ -77,6 +77,8 @@ export function LabBlock({
   const { theme } = useTheme();
   const openSession = useLabStore((s) => s.openSession);
   const closeSession = useLabStore((s) => s.closeSession);
+  // Phase 19.3 (D-04) — explicit "Validate milestone" trigger.
+  const validateMilestone = useLabStore((s) => s.validateMilestone);
   // Plan 03.1-09 GAP-05 — subscribe to progress for this block. The store
   // populates this entry on `openSession` (initial snapshot) and refreshes
   // it after each Pass via `markStepComplete`. Re-renders flow naturally
@@ -206,6 +208,20 @@ export function LabBlock({
     }
   }, []);
 
+  // Phase 19.3 (D-04) — explicit milestone validation trigger. Fire-and-
+  // forget, mirroring onConfirmReset's shape: the store handles the
+  // invoke + progress refresh on Pass; the button itself has no local
+  // pending/result state this phase (button is a convenience trigger, not
+  // an authority — the Rust handler is the only trusted verdict source).
+  const onValidateMilestone = useCallback(
+    (stepIndex: number) => {
+      const sid = sessionIdRef.current;
+      if (!sid) return;
+      void validateMilestone(sid, stepIndex);
+    },
+    [validateMilestone],
+  );
+
   if (parseError) {
     return (
       <div
@@ -245,6 +261,12 @@ export function LabBlock({
     hintStepIndex != null && spec.steps[hintStepIndex]
       ? spec.steps[hintStepIndex].hints
       : [];
+  // Phase 19.3 (D-03/D-04) — resolve the current step's EFFECTIVE grain:
+  // step-level override wins, else the lab-level default, else "step"
+  // (grain-absent back-compat — no button, byte-identical to today).
+  const effectiveGrain =
+    spec.steps[currentStep]?.grain ?? spec.grain ?? "step";
+  const showValidateMilestone = !examMode && effectiveGrain === "milestone";
 
   const left = (
     <div className="flex h-full flex-col gap-3 p-3">
@@ -263,15 +285,26 @@ export function LabBlock({
             completed_step_ids, which would silently zero the in-flight
             exam attempt's score. Hidden in examMode (matches the hint
             gate). */}
-        {!examMode && (
-          <button
-            type="button"
-            onClick={() => setResetOpen(true)}
-            className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            Reset lab
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {showValidateMilestone && (
+            <button
+              type="button"
+              onClick={() => onValidateMilestone(currentStep)}
+              className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              Validate milestone
+            </button>
+          )}
+          {!examMode && (
+            <button
+              type="button"
+              onClick={() => setResetOpen(true)}
+              className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              Reset lab
+            </button>
+          )}
+        </div>
       </div>
       <LabInstructions
         spec={spec}

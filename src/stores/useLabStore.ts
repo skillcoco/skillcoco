@@ -14,6 +14,7 @@ import {
   labSessionOpen,
   labSessionClose,
   labCheckStep,
+  labValidateMilestone,
   labGetProgress,
 } from "@/lib/tauri-commands";
 import type { LabProgress, LabSession } from "@/types/learning";
@@ -41,6 +42,17 @@ interface LabState {
     lastCommand: string,
     lastOutput: string,
     lastExitCode: number | null,
+  ) => Promise<{ outcome: CheckOutcome }>;
+  /**
+   * Phase 19.3 (D-04) — explicit "Validate milestone" trigger. Invokes
+   * `lab_validate_milestone` (session-scoped history + workspace check,
+   * NOT the single-most-recent-command path `markStepComplete` uses) and
+   * refreshes progress on Pass — same shape as markStepComplete's
+   * invoke-then-refresh precedent.
+   */
+  validateMilestone: (
+    sessionId: string,
+    stepIndex: number,
   ) => Promise<{ outcome: CheckOutcome }>;
   getProgress: (blockId: string, learnerId: string) => Promise<LabProgress>;
 }
@@ -121,6 +133,37 @@ export const useLabStore = create<LabState>((set, _get) => ({
     // Plan 03.1-09 GAP-05 — refresh the canonical lab_progress row from
     // Rust on a successful Pass so the UI reflects the new
     // currentStep + completedStepIds without an extra component round-trip.
+    if (result.passed) {
+      const state = useLabStore.getState();
+      let blockId: string | null = null;
+      let learnerId: string | null = null;
+      for (const [bId, sess] of state.sessions.entries()) {
+        if (sess.sessionId === sessionId) {
+          blockId = bId;
+          learnerId = sess.learnerId ?? null;
+          break;
+        }
+      }
+      if (blockId && learnerId) {
+        try {
+          await state.getProgress(blockId, learnerId);
+        } catch {
+          // Non-fatal: UI keeps the last-known progress until the next
+          // refresh; the Pass already crossed the IPC boundary.
+        }
+      }
+    }
+
+    return { outcome };
+  },
+
+  validateMilestone: async (sessionId, stepIndex) => {
+    const result = await labValidateMilestone({ sessionId, stepIndex });
+    const outcome = reasonToOutcome(result.reason, result.passed);
+
+    // Same GAP-05 progress refresh precedent as markStepComplete: on Pass,
+    // pull the canonical lab_progress row so completed_step_ids/currentStep
+    // reflect the milestone advance without an extra component round-trip.
     if (result.passed) {
       const state = useLabStore.getState();
       let blockId: string | null = null;
