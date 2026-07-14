@@ -95,6 +95,11 @@ export function LabBlock({
   const [resetOpen, setResetOpen] = useState(false);
   const [hintStepIndex, setHintStepIndex] = useState<number | null>(null);
   const [revealedTier, setRevealedTier] = useState(0);
+  // 19.3-REVIEW WR-04 / CR-02 defense-in-depth — true while a milestone
+  // validation IPC is in flight; disables the Validate button so a
+  // double-click cannot fire two lab_validate_milestone calls before the
+  // progress refresh lands.
+  const [validating, setValidating] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
 
   const blockId = block.id;
@@ -208,16 +213,25 @@ export function LabBlock({
     }
   }, []);
 
-  // Phase 19.3 (D-04) — explicit milestone validation trigger. Fire-and-
-  // forget, mirroring onConfirmReset's shape: the store handles the
-  // invoke + progress refresh on Pass; the button itself has no local
-  // pending/result state this phase (button is a convenience trigger, not
-  // an authority — the Rust handler is the only trusted verdict source).
+  // Phase 19.3 (D-04) — explicit milestone validation trigger. The store
+  // handles the invoke + progress refresh on Pass; the button is a
+  // convenience trigger, not an authority — the Rust handler is the only
+  // trusted verdict source. 19.3-REVIEW WR-04: the promise rejection is
+  // caught (session missing / step_index out of range / D-04 grain guard
+  // all return Err) so it never becomes an unhandled rejection, and the
+  // in-flight flag disables the button (CR-02 defense-in-depth against
+  // double-click duplicate Passes).
   const onValidateMilestone = useCallback(
     (stepIndex: number) => {
       const sid = sessionIdRef.current;
       if (!sid) return;
-      void validateMilestone(sid, stepIndex);
+      setValidating(true);
+      validateMilestone(sid, stepIndex)
+        .catch(() => {
+          // Deliberate swallow — surfacing Fail/error verdicts in the UI
+          // is documented out-of-scope this phase (future: toast).
+        })
+        .finally(() => setValidating(false));
     },
     [validateMilestone],
   );
@@ -273,7 +287,14 @@ export function LabBlock({
   const stepGrain = spec.steps[currentStep]?.grain;
   const effectiveGrain =
     stepGrain === "milestone" ? "milestone" : (spec.grain ?? "step");
-  const showValidateMilestone = !examMode && effectiveGrain === "milestone";
+  // WR-04 — range guard: after the final step passes, currentStep equals
+  // steps.length; without the guard the lab-level-milestone fallthrough
+  // would still render the button and clicking it would invoke
+  // lab_validate_milestone with an out-of-range index (Err → rejection).
+  const showValidateMilestone =
+    !examMode &&
+    effectiveGrain === "milestone" &&
+    currentStep < spec.steps.length;
 
   const left = (
     <div className="flex h-full flex-col gap-3 p-3">
@@ -296,8 +317,9 @@ export function LabBlock({
           {showValidateMilestone && (
             <button
               type="button"
+              disabled={validating}
               onClick={() => onValidateMilestone(currentStep)}
-              className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               Validate milestone
             </button>

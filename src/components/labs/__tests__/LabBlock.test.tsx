@@ -359,6 +359,124 @@ describe("LabBlock — Phase 03.1 Wave 0 (failing scaffolds)", () => {
       });
     });
 
+    it("hides the button when currentStep is out of range (all steps done) — WR-04", async () => {
+      // After the final milestone step passes, currentStep === steps.length;
+      // the button must NOT render (clicking would invoke
+      // lab_validate_milestone with an out-of-range index → Err).
+      const milestoneBlock = makeLabBlock({
+        grain: "milestone",
+        steps: [
+          {
+            id: "s1",
+            title: "List pods",
+            prompt: "Run `kubectl get pods`",
+            check: { kind: "command_regex" as const, pattern: "Running" },
+            hints: [],
+            grain: "step",
+          },
+        ],
+      });
+      labStoreState.progress.set("blk-lab-1", {
+        blockId: "blk-lab-1",
+        currentStep: 1, // === steps.length — lab complete
+        completedStepIds: ["s1"],
+        lastUpdated: "2026-05-06T00:00:00Z",
+        practicalMastery: 1.0,
+      });
+      renderLabBlock(milestoneBlock);
+      await waitFor(() => {
+        expect(screen.getByTestId("lab-block")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByRole("button", { name: /validate milestone/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("catches validateMilestone rejection — no unhandled promise rejection — WR-04", async () => {
+      labStoreState.validateMilestone.mockRejectedValue(
+        new Error("step_index 0 out of range"),
+      );
+      const milestoneBlock = makeLabBlock({
+        steps: [
+          {
+            id: "s1",
+            title: "List pods",
+            prompt: "Run `kubectl get pods`",
+            check: { kind: "command_regex" as const, pattern: "Running" },
+            hints: [],
+            grain: "milestone",
+          },
+        ],
+      });
+      const { default: userEvent } = await import("@testing-library/user-event");
+      const user = userEvent.setup();
+      renderLabBlock(milestoneBlock);
+
+      const button = await screen.findByRole("button", {
+        name: /validate milestone/i,
+      });
+      await user.click(button);
+
+      await waitFor(() => {
+        expect(labStoreState.validateMilestone).toHaveBeenCalledWith(
+          "sess-1",
+          0,
+        );
+      });
+      // The rejection must be caught inside the handler; vitest fails the
+      // test on an unhandled rejection, so reaching this point (and the
+      // button re-enabling) is the assertion.
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /validate milestone/i }),
+        ).toBeEnabled();
+      });
+    });
+
+    it("disables the button while validation is in flight (double-click guard, CR-02 defense-in-depth) — WR-04", async () => {
+      let resolveValidation!: (v: { outcome: string }) => void;
+      labStoreState.validateMilestone.mockImplementation(
+        () =>
+          new Promise<{ outcome: string }>((resolve) => {
+            resolveValidation = resolve;
+          }),
+      );
+      const milestoneBlock = makeLabBlock({
+        steps: [
+          {
+            id: "s1",
+            title: "List pods",
+            prompt: "Run `kubectl get pods`",
+            check: { kind: "command_regex" as const, pattern: "Running" },
+            hints: [],
+            grain: "milestone",
+          },
+        ],
+      });
+      const { default: userEvent } = await import("@testing-library/user-event");
+      const user = userEvent.setup();
+      renderLabBlock(milestoneBlock);
+
+      const button = await screen.findByRole("button", {
+        name: /validate milestone/i,
+      });
+      await user.click(button);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /validate milestone/i }),
+        ).toBeDisabled();
+      });
+
+      resolveValidation({ outcome: "pass" });
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /validate milestone/i }),
+        ).toBeEnabled();
+      });
+      expect(labStoreState.validateMilestone).toHaveBeenCalledTimes(1);
+    });
+
     it("hides the Validate milestone button in examMode even for a milestone-grain step", async () => {
       const milestoneBlock = makeLabBlock({
         steps: [
