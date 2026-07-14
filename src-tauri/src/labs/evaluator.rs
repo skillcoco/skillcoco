@@ -122,6 +122,111 @@ where
     }
 }
 
+/// Phase 19.3 (D-02/D-06) — milestone-grain dispatch, evaluated against the
+/// cumulative session history (`ctx.history`, `None` treated as empty)
+/// plus the workspace tree, instead of only `last_output`/`last_exit_code`:
+///
+/// - `command_regex`: Pass iff the regex matches ANY record's output
+///   (match_stderr keeps its step-grain no-op parity). Empty history → Fail.
+/// - `command_absent`: Pass iff the regex matches NO record's output;
+///   EMPTY history → Fail (anti-vacuous rule — see `milestone_reason` for
+///   the "no commands recorded" reason surface).
+/// - `exit_code`: Pass iff ANY record's exit_code equals expected;
+///   empty/no-match → Fail (never Indeterminate at milestone grain —
+///   validation is explicit, so "nothing reached" is a definitive Fail).
+/// - `file_state`: delegates to `eval_file_state` unchanged (end-state by
+///   construction — reads the workspace, history-independent).
+/// - `ai_judge`: judges over the concatenated history tail
+///   (`scrollback_tail(_, 100)`), reusing `eval_ai_judge`'s runner path.
+pub async fn evaluate_step_milestone<R>(
+    check: &StepCheck,
+    ctx: &EvalContext<'_>,
+    runner: Option<&R>,
+) -> Result<EvalOutcome, LabError>
+where
+    R: AiJudgeRunner + ?Sized,
+{
+    let history: &[crate::CommandRecord] = ctx.history.unwrap_or(&[]);
+    match check {
+        StepCheck::CommandRegex { pattern, match_stderr: _ } => {
+            // Reuse the exact Regex::new error shape from eval_command_regex.
+            let re = Regex::new(pattern)
+                .map_err(|e| LabError::Eval(format!("invalid regex {:?}: {}", pattern, e)))?;
+            if history.iter().any(|r| re.is_match(&r.output)) {
+                Ok(EvalOutcome::Pass)
+            } else {
+                Ok(EvalOutcome::Fail)
+            }
+        }
+        StepCheck::CommandAbsent { pattern, match_stderr: _ } => {
+            let re = Regex::new(pattern)
+                .map_err(|e| LabError::Eval(format!("invalid regex {:?}: {}", pattern, e)))?;
+            if history.is_empty() {
+                // D-02 anti-vacuous rule: zero records is Fail, never a
+                // vacuous Pass (deliberate difference from step grain).
+                return Ok(EvalOutcome::Fail);
+            }
+            if history.iter().any(|r| re.is_match(&r.output)) {
+                Ok(EvalOutcome::Fail)
+            } else {
+                Ok(EvalOutcome::Pass)
+            }
+        }
+        StepCheck::ExitCode { expected } => {
+            if history.iter().any(|r| r.exit_code == Some(*expected)) {
+                Ok(EvalOutcome::Pass)
+            } else {
+                Ok(EvalOutcome::Fail)
+            }
+        }
+        StepCheck::FileState { path, contains } => {
+            eval_file_state(path, contains.as_deref(), ctx)
+        }
+        StepCheck::AiJudge { criteria, threshold } => {
+            // Concatenate record outputs into a scrollback-shaped buffer,
+            // cap via scrollback_tail(_, 100) inside build_ai_judge_prompt's
+            // path, and reuse eval_ai_judge's auth/budget/runner behavior by
+            // rebuilding a ctx whose last_output IS the history tail.
+            let concatenated: String = history
+                .iter()
+                .map(|r| r.output.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let tail = scrollback_tail(&concatenated, 100);
+            let judge_ctx = EvalContext {
+                last_command: ctx.last_command,
+                last_output: &tail,
+                last_exit_code: ctx.last_exit_code,
+                workspace: ctx.workspace,
+                ai_authenticated: ctx.ai_authenticated,
+                ai_budget_remaining: ctx.ai_budget_remaining,
+                history: None,
+            };
+            eval_ai_judge(criteria, *threshold, &judge_ctx, runner).await
+        }
+    }
+}
+
+/// Phase 19.3 (D-02) — milestone-specific reason surface. Returns
+/// `Some("no commands recorded ...")` for the anti-vacuous empty-history
+/// `command_absent` Fail; `None` for every other combination (callers fall
+/// back to the generic outcome reason). Reused by `lab_validate_milestone`.
+pub fn milestone_reason(
+    check: &StepCheck,
+    ctx: &EvalContext<'_>,
+    outcome: &EvalOutcome,
+) -> Option<String> {
+    let history_empty = ctx.history.map_or(true, |h| h.is_empty());
+    match (check, outcome) {
+        (StepCheck::CommandAbsent { .. }, EvalOutcome::Fail) if history_empty => Some(
+            "no commands recorded — a milestone command_absent check cannot pass over an \
+             empty session history (D-02 anti-vacuous rule)"
+                .to_string(),
+        ),
+        _ => None,
+    }
+}
+
 fn eval_command_regex(
     pattern: &str,
     _match_stderr: bool,
