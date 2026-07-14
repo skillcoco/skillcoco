@@ -427,6 +427,7 @@ async fn lab_check_step_passes_authenticated_state_to_ai_judge() {
         workspace: &workspace_path,
         ai_authenticated: false,
         ai_budget_remaining: 5,
+        history: None,
     };
     let check = StepCheck::AiJudge {
         criteria: "Output shows pods".to_string(),
@@ -453,6 +454,7 @@ async fn lab_check_step_passes_authenticated_state_to_ai_judge() {
         workspace: &workspace_path,
         ai_authenticated: true,
         ai_budget_remaining: 5,
+        history: None,
     };
     let authed_outcome = evaluate_step_with_judge(&check, &ctx_authed, Some(&runner))
         .await
@@ -473,4 +475,346 @@ async fn lab_check_step_passes_authenticated_state_to_ai_judge() {
     // standing up Tauri State. Referencing the symbol forces a compile
     // error until Task 4 lands (intended RED state).
     let _seam = super::LAB_CHECK_STEP_WITH_SEAM_MARKER;
+}
+
+// ── Phase 19.3 (D-01/D-04) — append-only lab_check_step + lab_validate_milestone ──
+//
+// These tests drive the full handler flow through `lab_check_step_with` /
+// `lab_validate_milestone_with` taking `&AppState` (the test seam — Tauri
+// `State` cannot be constructed in unit tests; mirrors the `..._conn`
+// convention in exam.rs). RED until Task 3 lands the &AppState signature,
+// the unconditional history append, the milestone skip, and the new
+// `lab_validate_milestone_with` + `LabValidateMilestoneRequest` structs.
+
+use crate::labs::LabSession;
+use crate::labs::test_support::MockLabSession;
+use crate::{AppState, LabSessionEntry};
+use std::sync::Arc;
+
+const STEP_GRAIN_LAB_MD: &str = r#"---
+slug: step-grain-lab
+title: Step grain lab
+image: alpine
+steps:
+  - id: create-pod
+    title: Create pod
+    prompt: Create the pod and observe the output.
+    check:
+      kind: command_regex
+      pattern: "pod/web created"
+  - id: second-step
+    title: Second step
+    prompt: Run another command successfully.
+    check:
+      kind: exit_code
+      expected: 0
+---
+Body.
+"#;
+
+const MILESTONE_LAB_MD: &str = r#"---
+slug: milestone-lab
+title: Milestone lab
+image: alpine
+grain: milestone
+steps:
+  - id: create-pod
+    title: Create pod
+    prompt: Create the pod and observe the output.
+    check:
+      kind: command_regex
+      pattern: "pod/web created"
+---
+Body.
+"#;
+
+const MILESTONE_ABSENT_LAB_MD: &str = r#"---
+slug: milestone-absent-lab
+title: Milestone absent lab
+image: alpine
+grain: milestone
+steps:
+  - id: no-crash
+    title: No crash loop
+    prompt: Ensure nothing crash-looped during the session.
+    check:
+      kind: command_absent
+      pattern: "CrashLoopBackOff"
+---
+Body.
+"#;
+
+/// Synthetic AppState with in-memory DB + empty lab_sessions registry
+/// (mirrors session_tests::test_app_state — module-private there).
+fn eval_test_app_state() -> Arc<AppState> {
+    let conn = rusqlite::Connection::open_in_memory().expect("open_in_memory");
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    conn.execute_batch(crate::db::schema::CREATE_TABLES).unwrap();
+    crate::db::migrations::apply_migrations(&conn).unwrap();
+    let db = crate::db::Database { conn };
+    Arc::new(AppState {
+        db: Arc::new(std::sync::Mutex::new(db)),
+        lab_sessions: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        topic_packs: Arc::new(std::sync::Mutex::new(
+            learnforge_core::packs::PackRegistry::default(),
+        )),
+        signing_key: Arc::new(std::sync::Mutex::new(None)),
+        signing_key_path: std::path::PathBuf::from("/tmp/learnforge-eval-tests-keys"),
+    })
+}
+
+/// Seed learner/track/path/module + a lab block whose params_json.labMd is
+/// `lab_md`. Returns (learner_id, module_id, block_id).
+fn insert_lab_fixture_md(state: &AppState, lab_md: &str) -> (String, String, String) {
+    let db = state.db.lock().unwrap();
+    let conn = &db.conn;
+    let (learner, track, path, module, block) =
+        ("lp-1", "trk-1", "path-1", "mod-1", "blk-1");
+    conn.execute(
+        "INSERT INTO learner_profiles (id, display_name) VALUES (?1, 'L')",
+        rusqlite::params![learner],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO learning_tracks (id, learner_id, topic, domain_module)
+         VALUES (?1, ?2, 'k8s', 'kubernetes')",
+        rusqlite::params![track, learner],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO learning_paths (id, track_id) VALUES (?1, ?2)",
+        rusqlite::params![path, track],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO modules (id, path_id, title, ordering) VALUES (?1, ?2, 'M1', 0)",
+        rusqlite::params![module, path],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO module_progress (id, module_id, learner_id, status, mastery_level,
+            attempts, started_at, practical_mastery)
+         VALUES ('mp-1', ?1, ?2, 'in_progress', 0.4, 1, datetime('now'), 0.0)",
+        rusqlite::params![module, learner],
+    )
+    .unwrap();
+    let params_json = serde_json::json!({ "labMd": lab_md }).to_string();
+    conn.execute(
+        "INSERT INTO module_blocks (id, module_id, ordering, block_type, status,
+            params_json, payload_json, source_anchors_json, metadata_json, retry_count,
+            created_at, updated_at)
+         VALUES (?1, ?2, 0, 'lab', 'ready', ?3, '{}', '[]', '{}', 0,
+            datetime('now'), datetime('now'))",
+        rusqlite::params![block, module, params_json],
+    )
+    .unwrap();
+    (learner.to_string(), module.to_string(), block.to_string())
+}
+
+/// Insert a live session entry (MockLabSession) into the registry.
+async fn insert_session(
+    state: &AppState,
+    session_id: &str,
+    learner: &str,
+    module: &str,
+    block: &str,
+    workspace: std::path::PathBuf,
+    total_steps: usize,
+) {
+    let session: Box<dyn LabSession + Send> = Box::new(MockLabSession::default());
+    let entry = LabSessionEntry {
+        session,
+        block_id: block.to_string(),
+        learner_id: learner.to_string(),
+        module_id: module.to_string(),
+        workspace,
+        total_steps,
+        ai_budget_remaining: 5,
+        command_history: Vec::new(),
+    };
+    let mut map = state.lab_sessions.lock().await;
+    map.insert(session_id.to_string(), entry);
+}
+
+fn check_req(session_id: &str, step_index: usize, cmd: &str, output: &str, code: Option<i32>) -> LabCheckStepRequest {
+    LabCheckStepRequest {
+        session_id: session_id.to_string(),
+        step_index,
+        last_command: cmd.to_string(),
+        last_output: output.to_string(),
+        last_exit_code: code,
+    }
+}
+
+fn progress_row(state: &AppState, learner: &str, module: &str, block: &str) -> Option<(i64, String)> {
+    let db = state.db.lock().unwrap();
+    use rusqlite::OptionalExtension;
+    db.conn
+        .query_row(
+            "SELECT current_step, completed_step_ids FROM lab_progress
+             WHERE learner_id = ?1 AND module_id = ?2 AND block_id = ?3",
+            rusqlite::params![learner, module, block],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+        )
+        .optional()
+        .unwrap()
+}
+
+/// D-01 — lab_check_step appends a CommandRecord to the session's
+/// command_history on EVERY call (all grains), before any verdict logic.
+#[tokio::test]
+async fn lab_check_step_appends_history_every_call() {
+    let state = eval_test_app_state();
+    let (learner, module, block) = insert_lab_fixture_md(&state, STEP_GRAIN_LAB_MD);
+    let ws = tempfile::tempdir().unwrap();
+    insert_session(&state, "sess-hist", &learner, &module, &block, ws.path().to_path_buf(), 2).await;
+
+    for i in 0..2 {
+        let req = check_req("sess-hist", 0, &format!("cmd-{}", i), "no match here", Some(1));
+        lab_check_step_with(req, &state, false)
+            .await
+            .expect("lab_check_step must succeed");
+    }
+
+    let map = state.lab_sessions.lock().await;
+    let entry = map.get("sess-hist").unwrap();
+    assert_eq!(entry.command_history.len(), 2, "every call must append");
+    assert_eq!(entry.command_history[0].command, "cmd-0");
+    assert_eq!(entry.command_history[1].command, "cmd-1");
+    assert_eq!(entry.command_history[1].exit_code, Some(1));
+}
+
+/// D-04 — milestone-grain step: lab_check_step appends then returns WITHOUT
+/// evaluating or persisting a verdict; completed_step_ids unchanged.
+#[tokio::test]
+async fn lab_check_step_milestone_skips_verdict() {
+    let state = eval_test_app_state();
+    let (learner, module, block) = insert_lab_fixture_md(&state, MILESTONE_LAB_MD);
+    let ws = tempfile::tempdir().unwrap();
+    insert_session(&state, "sess-ms", &learner, &module, &block, ws.path().to_path_buf(), 1).await;
+
+    // Output that WOULD Pass at step grain — must still not evaluate.
+    let req = check_req("sess-ms", 0, "kubectl apply -f pod.yaml", "pod/web created", Some(0));
+    let result = lab_check_step_with(req, &state, false)
+        .await
+        .expect("lab_check_step must succeed");
+
+    assert!(!result.passed, "milestone step must not report a Pass verdict on prompt-boundary calls");
+    assert!(
+        result.reason.to_lowercase().contains("validate"),
+        "reason must direct the learner to Validate, got: {}",
+        result.reason
+    );
+
+    // No progress advance persisted.
+    match progress_row(&state, &learner, &module, &block) {
+        None => {} // no row minted at all — fine
+        Some((current_step, completed)) => {
+            assert_eq!(current_step, 0, "milestone skip must not advance current_step");
+            assert_eq!(completed, "[]", "milestone skip must not append completed_step_ids");
+        }
+    }
+
+    // But history WAS appended.
+    let map = state.lab_sessions.lock().await;
+    assert_eq!(map.get("sess-ms").unwrap().command_history.len(), 1);
+}
+
+/// D-03 back-compat — step-grain step behaves byte-identically to today:
+/// matching output evaluates Pass and persists the advance.
+#[tokio::test]
+async fn lab_check_step_step_grain_unchanged() {
+    let state = eval_test_app_state();
+    let (learner, module, block) = insert_lab_fixture_md(&state, STEP_GRAIN_LAB_MD);
+    let ws = tempfile::tempdir().unwrap();
+    insert_session(&state, "sess-step", &learner, &module, &block, ws.path().to_path_buf(), 2).await;
+
+    let req = check_req("sess-step", 0, "kubectl apply -f pod.yaml", "pod/web created", Some(0));
+    let result = lab_check_step_with(req, &state, false)
+        .await
+        .expect("lab_check_step must succeed");
+
+    assert!(result.passed, "step-grain Pass path must be unchanged");
+    let (current_step, completed) =
+        progress_row(&state, &learner, &module, &block).expect("row must exist");
+    assert_eq!(current_step, 1);
+    assert!(completed.contains("create-pod"), "completed_step_ids must advance, got {}", completed);
+}
+
+/// D-04 — lab_validate_milestone evaluates the milestone step against the
+/// session history and routes Pass through the SAME persist_outcome
+/// (completed_step_ids advances identically).
+#[tokio::test]
+async fn lab_validate_milestone_routes_through_persist_outcome() {
+    let state = eval_test_app_state();
+    let (learner, module, block) = insert_lab_fixture_md(&state, MILESTONE_LAB_MD);
+    let ws = tempfile::tempdir().unwrap();
+    insert_session(&state, "sess-val", &learner, &module, &block, ws.path().to_path_buf(), 1).await;
+
+    // Seed history through the append-only prompt-boundary path.
+    let req = check_req("sess-val", 0, "kubectl apply -f pod.yaml", "pod/web created", Some(0));
+    lab_check_step_with(req, &state, false).await.unwrap();
+
+    let vreq = LabValidateMilestoneRequest {
+        session_id: "sess-val".to_string(),
+        step_index: 0,
+    };
+    let result = lab_validate_milestone_with(vreq, &state, false)
+        .await
+        .expect("lab_validate_milestone must succeed");
+
+    assert!(result.passed, "history contains a matching record — must Pass");
+    assert_eq!(result.check_kind, "commandRegex");
+    let (current_step, completed) =
+        progress_row(&state, &learner, &module, &block).expect("row must exist after persist");
+    assert_eq!(current_step, 1, "Pass must advance current_step via persist_outcome");
+    assert!(completed.contains("create-pod"), "got {}", completed);
+}
+
+/// D-04 fail-safe guard — lab_validate_milestone on a step-grain step
+/// returns an error (the button only shows for milestone steps, but the
+/// handler must not trust the frontend).
+#[tokio::test]
+async fn lab_validate_milestone_rejects_step_grain() {
+    let state = eval_test_app_state();
+    let (learner, module, block) = insert_lab_fixture_md(&state, STEP_GRAIN_LAB_MD);
+    let ws = tempfile::tempdir().unwrap();
+    insert_session(&state, "sess-rej", &learner, &module, &block, ws.path().to_path_buf(), 2).await;
+
+    let vreq = LabValidateMilestoneRequest {
+        session_id: "sess-rej".to_string(),
+        step_index: 0,
+    };
+    let err = lab_validate_milestone_with(vreq, &state, false)
+        .await
+        .expect_err("step-grain step must be rejected");
+    assert!(
+        err.to_lowercase().contains("milestone"),
+        "error must name the milestone guard, got: {}",
+        err
+    );
+}
+
+/// D-02 anti-vacuous — lab_validate_milestone on a command_absent milestone
+/// step with EMPTY history Fails with the "no commands recorded" reason.
+#[tokio::test]
+async fn lab_validate_milestone_empty_history_command_absent_reason() {
+    let state = eval_test_app_state();
+    let (learner, module, block) = insert_lab_fixture_md(&state, MILESTONE_ABSENT_LAB_MD);
+    let ws = tempfile::tempdir().unwrap();
+    insert_session(&state, "sess-empty", &learner, &module, &block, ws.path().to_path_buf(), 1).await;
+
+    let vreq = LabValidateMilestoneRequest {
+        session_id: "sess-empty".to_string(),
+        step_index: 0,
+    };
+    let result = lab_validate_milestone_with(vreq, &state, false)
+        .await
+        .expect("handler must succeed (Fail is an outcome, not an error)");
+    assert!(!result.passed);
+    assert!(
+        result.reason.contains("no commands recorded"),
+        "reason must contain 'no commands recorded', got: {}",
+        result.reason
+    );
 }

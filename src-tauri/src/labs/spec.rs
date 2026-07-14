@@ -33,7 +33,55 @@ pub struct LabSpec {
     /// time (19-03), not baked in here — see `ExamMeta` doc comment.
     #[serde(default)]
     pub exam: Option<ExamMeta>,
+    /// Phase 19.3 (D-03) — whole-lab default validation grain. Absent
+    /// `grain:` frontmatter defaults to `Grain::Step` (`default_grain`) —
+    /// this is the back-compat HARD GATE: every pre-19.3 LAB.md has no
+    /// `grain:` key and must evaluate byte-identically to today.
+    #[serde(default = "default_grain")]
+    pub grain: Grain,
     pub steps: Vec<LabStep>,
+}
+
+/// Phase 19.3 (D-03) — per-step / per-lab validation grain.
+///
+/// `Step` (default): checks evaluate against the single most recent command
+/// (`EvalContext.last_output`/`last_exit_code`) — today's behavior.
+/// `Milestone`: checks evaluate against the cumulative per-session command
+/// history + workspace tree, only on an explicit "Validate" action (D-04).
+///
+/// A step's *effective* grain is resolved via `effective_step_grain` below,
+/// not by reading this field directly — see that function's doc comment for
+/// the lab-level/step-level inheritance rule (D-03).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Grain {
+    Step,
+    Milestone,
+}
+
+fn default_grain() -> Grain {
+    Grain::Step
+}
+
+/// Phase 19.3 (D-03) — resolve a step's effective validation grain from the
+/// lab-level default and the step's own (possibly-default) grain value.
+///
+/// Step-level `Milestone` always wins (a milestone step in an otherwise
+/// step-grain lab validates as milestone). Otherwise the lab-level grain
+/// applies — so a step in a milestone-grain lab inherits milestone even if
+/// its own field reads `Grain::Step` (accepted simplification: an *explicit*
+/// `grain: step` on a step inside a milestone-grain lab is NOT distinguishable
+/// from "no grain authored" at this layer, since both parse to `Grain::Step`
+/// on `LabStep.grain`. Both still collapse to the lab's milestone grain here
+/// — D-04's UI only shows the Validate button driven by the lab's overall
+/// milestone-ness, so this simplification doesn't lose author-visible
+/// behavior in this phase).
+pub fn effective_step_grain(lab_grain: Grain, step_grain: Grain) -> Grain {
+    if step_grain == Grain::Milestone {
+        Grain::Milestone
+    } else {
+        lab_grain
+    }
 }
 
 /// Phase 19 (EXAM-01) — pack-authored exam calibration.
@@ -67,6 +115,12 @@ pub struct LabStep {
     /// weighting) when absent — `default_weight`.
     #[serde(default = "default_weight")]
     pub weight: f64,
+    /// Phase 19.3 (D-03) — per-step validation grain override. Defaults to
+    /// `Grain::Step` when absent (`default_grain`) — resolve the EFFECTIVE
+    /// grain via `effective_step_grain(lab_grain, step.grain)`, not by
+    /// reading this field alone.
+    #[serde(default = "default_grain")]
+    pub grain: Grain,
 }
 
 fn default_weight() -> f64 {
@@ -124,6 +178,8 @@ struct LabSpecRaw {
     creates: Vec<String>,
     #[serde(default)]
     exam: Option<ExamMeta>,
+    #[serde(default = "default_grain")]
+    grain: Grain,
     steps: Vec<LabStepRaw>,
 }
 
@@ -138,6 +194,8 @@ struct LabStepRaw {
     hints: Vec<String>,
     #[serde(default = "default_weight")]
     weight: f64,
+    #[serde(default = "default_grain")]
+    grain: Grain,
 }
 
 /// Parse a LAB.md document. Returns the typed spec alongside the original
@@ -184,6 +242,7 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
         requires_docker: raw.requires_docker,
         creates: raw.creates,
         exam: raw.exam,
+        grain: raw.grain,
         steps: raw
             .steps
             .into_iter()
@@ -194,9 +253,11 @@ pub fn parse_lab_md(text: &str) -> Result<(LabSpec, String), LabError> {
                 check: s.check,
                 hints: s.hints,
                 weight: s.weight,
+                grain: s.grain,
             })
             .collect(),
     };
+    validate_milestone_exam_exclusion(&spec)?;
     Ok((spec, parsed.content))
 }
 
@@ -225,6 +286,28 @@ pub fn validate_spec(spec: &LabSpec) -> Result<(), LabError> {
     validate_creates(&spec.creates)?;
     if let Some(exam) = &spec.exam {
         validate_exam_meta(exam)?;
+    }
+    validate_milestone_exam_exclusion(spec)?;
+    Ok(())
+}
+
+/// Phase 19.3 (D-05) — author-time fail-closed gate: a spec cannot declare
+/// BOTH `exam:` metadata AND any milestone grain (lab-level or any step).
+/// Exams remain per-step grain only — see `exam_attempt_start_conn`'s
+/// mirror-image runtime gate (D-05, T-19-10/12 exam-integrity posture) for
+/// the belt-and-suspenders check at attempt-start.
+fn validate_milestone_exam_exclusion(spec: &LabSpec) -> Result<(), LabError> {
+    if spec.exam.is_none() {
+        return Ok(());
+    }
+    let has_milestone =
+        spec.grain == Grain::Milestone || spec.steps.iter().any(|s| s.grain == Grain::Milestone);
+    if has_milestone {
+        return Err(LabError::Spec(
+            "D-05: `exam:` metadata and milestone grain cannot coexist in one spec — \
+             exams remain per-step grain only"
+                .to_string(),
+        ));
     }
     Ok(())
 }

@@ -309,7 +309,7 @@ steps:
       emphasis. NO TODO placeholders. The learner reads this and types
       commands; they cannot guess what you mean.
     check:
-      kind: command_regex          # OR exit_code, file_state, ai_judge
+      kind: command_regex          # OR exit_code, file_state, ai_judge, command_absent
       pattern: "Running"           # required for command_regex
       # exit_code requires:  expected: 0
       # file_state requires: path: my-pod.yaml   AND optional: contains: "kind: Pod"
@@ -334,7 +334,7 @@ Rules:
     sentences). Without it the learner sees only step titles and has nothing
     to follow. The parser REJECTS specs with empty prompts.
   - Each step.check uses EXACTLY ONE of: command_regex | exit_code |
-    file_state | ai_judge.
+    file_state | ai_judge | command_absent.
   - PREFER deterministic checks (command_regex, exit_code, file_state).
     Use ai_judge ONLY for genuinely open-ended steps ("explain why X").
   - EVERY step has EXACTLY 3 hints in `hints:` (gentle, partial, full).

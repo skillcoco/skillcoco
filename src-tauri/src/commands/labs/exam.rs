@@ -393,6 +393,30 @@ pub(crate) fn finalize_attempt_conn(
     })
 }
 
+/// Phase 19.3 (D-05) — fail-closed rejection of milestone-grain specs at
+/// exam attempt start. `finalize_attempt_conn` only READS `lab_progress`
+/// (never evaluates): a learner timing out before pressing Validate would
+/// score Fail on a milestone they reached, silently diverging author
+/// intent. Explicit rejection matches the exam-integrity fail-closed
+/// posture (T-19-10/T-19-12). Belt-and-suspenders with the author-time
+/// exam×milestone exclusion in `spec::validate_spec` (also D-05).
+pub(crate) fn reject_milestone_exam_spec(
+    spec: &crate::labs::spec::LabSpec,
+    block_id: &str,
+) -> Result<(), String> {
+    use crate::labs::spec::Grain;
+    let has_milestone = spec.grain == Grain::Milestone
+        || spec.steps.iter().any(|s| s.grain == Grain::Milestone);
+    if has_milestone {
+        return Err(format!(
+            "block {} declares milestone grain; exams are per-step grain only — refusing to \
+             start an exam attempt (D-05, T-19-10/12)",
+            block_id
+        ));
+    }
+    Ok(())
+}
+
 /// `Connection`-based inner helper for `exam_attempt_start` (test seam).
 pub(crate) fn exam_attempt_start_conn(
     conn: &Connection,
@@ -425,6 +449,10 @@ pub(crate) fn exam_attempt_start_conn(
             request.block_id
         ));
     }
+
+    // Phase 19.3 — D-05 fail-closed gate: exams remain per-step grain,
+    // period. Rejected HERE, before any exam_attempts row is minted.
+    reject_milestone_exam_spec(&spec, &request.block_id)?;
 
     let time_limit_minutes = spec
         .exam

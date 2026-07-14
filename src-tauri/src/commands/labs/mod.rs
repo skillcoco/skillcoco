@@ -14,7 +14,7 @@
 //! - `state` — `lab_reset`, `lab_get_progress` + `recompute_practical_mastery`
 //!   + `reset_surgical` + `reset_clears_progress`.
 
-use crate::labs::spec::LabSpec;
+use crate::labs::spec::{Grain, LabSpec};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +25,7 @@ pub mod session;
 pub mod state;
 
 // Re-exports — keep `commands::labs::lab_*` paths stable for `lib.rs`.
-pub use eval::{lab_check_step, lab_show_hint};
+pub use eval::{lab_check_step, lab_show_hint, lab_validate_milestone};
 pub use session::{
     lab_pty_resize, lab_pty_write, lab_runtime_detect, lab_session_close, lab_session_open,
     OSC_133_INIT_SCRIPT,
@@ -154,6 +154,27 @@ pub struct LabCheckStepResult {
     pub mastery_delta: f64,
 }
 
+/// Phase 19.3 (D-04) — explicit milestone validation request. Carries only
+/// the session id + step index; learner/module/block/workspace resolve
+/// server-side from the session sidecar (T-19.3-02).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabValidateMilestoneRequest {
+    pub session_id: String,
+    pub step_index: usize,
+}
+
+/// Phase 19.3 (D-04) — mirrors `LabCheckStepResult`'s shape.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabValidateMilestoneResult {
+    pub step_index: usize,
+    pub passed: bool,
+    pub reason: String,
+    pub check_kind: String,
+    pub mastery_delta: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LabShowHintRequest {
@@ -260,6 +281,7 @@ mod tests {
                 requires_docker: true,
                 creates: vec![],
                 exam: None,
+                grain: Grain::Step,
                 steps: vec![],
             },
             progress: LabProgress {

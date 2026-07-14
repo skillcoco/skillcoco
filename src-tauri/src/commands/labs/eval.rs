@@ -5,11 +5,17 @@
 //! and surfaces hint tiers from the spec.
 
 use super::state::{read_lab_progress, recompute_practical_mastery};
-use super::{LabCheckStepRequest, LabCheckStepResult, LabShowHintRequest, LabShowHintResult};
+use super::{
+    LabCheckStepRequest, LabCheckStepResult, LabShowHintRequest, LabShowHintResult,
+    LabValidateMilestoneRequest, LabValidateMilestoneResult,
+};
 use crate::auth::AuthState;
-use crate::labs::evaluator::{evaluate_step, EvalContext, EvalOutcome};
-use crate::labs::spec::{LabSpec, StepCheck};
-use crate::AppState;
+use crate::labs::evaluator::{
+    evaluate_step, evaluate_step_milestone, milestone_reason, AiJudgeRunner, EvalContext,
+    EvalOutcome,
+};
+use crate::labs::spec::{effective_step_grain, Grain, LabSpec, StepCheck};
+use crate::{push_command_record, AppState, CommandRecord};
 use tauri::State;
 
 /// Plan 03.1-09 GAP-03 — compile-time marker referenced by the RED
@@ -41,23 +47,37 @@ pub async fn lab_check_step(
         .map(|opt| opt.is_some())
         .unwrap_or(false);
 
-    lab_check_step_with(request, state, ai_authenticated).await
+    lab_check_step_with(request, state.inner(), ai_authenticated).await
 }
 
 /// Plan 03.1-09 GAP-03 — inner helper. Accepts `ai_authenticated`
 /// directly so unit tests can exercise the authed / no-auth branches
 /// without constructing Tauri `State<AuthState>`.
+///
+/// Phase 19.3 — takes `&AppState` (not `tauri::State`) so unit tests can
+/// drive the FULL handler flow (append + grain dispatch + persist) against
+/// a synthetic AppState; mirrors exam.rs's `..._conn` test-seam convention.
 pub(crate) async fn lab_check_step_with(
     request: LabCheckStepRequest,
-    state: State<'_, AppState>,
+    state: &AppState,
     ai_authenticated: bool,
 ) -> Result<LabCheckStepResult, String> {
-    // 1. Look up the session sidecar metadata.
+    // 1. Look up the session sidecar metadata AND append the command record
+    //    (D-01: unconditional, all grains, BEFORE any verdict logic) while
+    //    holding the lab_sessions lock.
     let (block_id, learner_id, module_id, workspace, ai_budget) = {
-        let map = state.lab_sessions.lock().await;
+        let mut map = state.lab_sessions.lock().await;
         let entry = map
-            .get(&request.session_id)
+            .get_mut(&request.session_id)
             .ok_or_else(|| format!("session not found: {}", request.session_id))?;
+        push_command_record(
+            &mut entry.command_history,
+            CommandRecord {
+                command: request.last_command.clone(),
+                output: request.last_output.clone(),
+                exit_code: request.last_exit_code,
+            },
+        );
         (
             entry.block_id.clone(),
             entry.learner_id.clone(),
@@ -68,13 +88,26 @@ pub(crate) async fn lab_check_step_with(
     };
 
     // 2. Read the spec from the block.
-    let spec = read_lab_spec_from_db(&state, &block_id)?;
+    let spec = read_lab_spec_from_db(state, &block_id)?;
     let step = spec
         .steps
         .get(request.step_index)
         .ok_or_else(|| format!("step_index {} out of range", request.step_index))?;
 
-    // 3. Build EvalContext + dispatch.
+    // 3. D-04 — milestone-grain steps are append-only at prompt boundaries:
+    //    no verdict evaluation, no persistence, no progress advance. The
+    //    learner validates explicitly via `lab_validate_milestone`.
+    if effective_step_grain(spec.grain, step.grain) == Grain::Milestone {
+        return Ok(LabCheckStepResult {
+            step_index: request.step_index,
+            passed: false,
+            reason: "milestone step — press Validate to check".to_string(),
+            check_kind: check_kind_str(&step.check),
+            mastery_delta: 0.0,
+        });
+    }
+
+    // 4. Step grain — existing path, byte-identical to pre-19.3 behavior.
     let ctx = EvalContext {
         last_command: &request.last_command,
         last_output: &request.last_output,
@@ -82,6 +115,7 @@ pub(crate) async fn lab_check_step_with(
         workspace: &workspace,
         ai_authenticated,
         ai_budget_remaining: ai_budget,
+        history: None,
     };
     let outcome = evaluate_step(&step.check, &ctx)
         .await
@@ -91,9 +125,9 @@ pub(crate) async fn lab_check_step_with(
     let passed = matches!(outcome, EvalOutcome::Pass);
     let reason = outcome_reason(&outcome);
 
-    // 4. Persist outcome.
+    // 5. Persist outcome.
     let mastery_delta = persist_outcome(
-        &state,
+        state,
         &learner_id,
         &module_id,
         &block_id,
@@ -106,6 +140,110 @@ pub(crate) async fn lab_check_step_with(
     )?;
 
     Ok(LabCheckStepResult {
+        step_index: request.step_index,
+        passed,
+        reason,
+        check_kind,
+        mastery_delta,
+    })
+}
+
+/// Phase 19.3 (D-04) — explicit milestone validation IPC. Evaluates the
+/// current milestone-grain step against the session's cumulative command
+/// history + workspace tree and routes the outcome through the SAME
+/// `persist_outcome` path as `lab_check_step` (Pass advances
+/// completed_step_ids identically).
+#[tauri::command]
+pub async fn lab_validate_milestone(
+    request: LabValidateMilestoneRequest,
+    state: State<'_, AppState>,
+    auth_state: State<'_, AuthState>,
+) -> Result<LabValidateMilestoneResult, String> {
+    let ai_authenticated = auth_state
+        .get_active_credential()
+        .map(|opt| opt.is_some())
+        .unwrap_or(false);
+
+    lab_validate_milestone_with(request, state.inner(), ai_authenticated).await
+}
+
+/// Inner helper (test seam — mirrors `lab_check_step_with`).
+///
+/// T-19.3-02: session-scoped — learner/module/block/workspace resolve from
+/// the server-held `LabSessionEntry` sidecar, never from the request.
+pub(crate) async fn lab_validate_milestone_with(
+    request: LabValidateMilestoneRequest,
+    state: &AppState,
+    ai_authenticated: bool,
+) -> Result<LabValidateMilestoneResult, String> {
+    // 1. Session sidecar + history snapshot.
+    let (block_id, learner_id, module_id, workspace, ai_budget, history) = {
+        let map = state.lab_sessions.lock().await;
+        let entry = map
+            .get(&request.session_id)
+            .ok_or_else(|| format!("session not found: {}", request.session_id))?;
+        (
+            entry.block_id.clone(),
+            entry.learner_id.clone(),
+            entry.module_id.clone(),
+            entry.workspace.clone(),
+            entry.ai_budget_remaining,
+            entry.command_history.clone(),
+        )
+    };
+
+    // 2. Spec + step + grain guard (fail-safe: the Validate button only
+    //    shows for milestone steps, but the handler must not trust the
+    //    frontend).
+    let spec = read_lab_spec_from_db(state, &block_id)?;
+    let step = spec
+        .steps
+        .get(request.step_index)
+        .ok_or_else(|| format!("step_index {} out of range", request.step_index))?;
+    if effective_step_grain(spec.grain, step.grain) != Grain::Milestone {
+        return Err(format!(
+            "step_index {} is not milestone-grain; lab_validate_milestone only validates \
+             milestone steps (D-04)",
+            request.step_index
+        ));
+    }
+
+    // 3. Evaluate against history + workspace.
+    let ctx = EvalContext {
+        last_command: "",
+        last_output: "",
+        last_exit_code: None,
+        workspace: &workspace,
+        ai_authenticated,
+        ai_budget_remaining: ai_budget,
+        history: Some(&history),
+    };
+    let outcome = evaluate_step_milestone(&step.check, &ctx, None::<&dyn AiJudgeRunner>)
+        .await
+        .map_err(|e| format!("evaluate_step_milestone: {}", e))?;
+
+    let check_kind = check_kind_str(&step.check);
+    let passed = matches!(outcome, EvalOutcome::Pass);
+    // D-02 — surface the anti-vacuous "no commands recorded" reason where
+    // applicable; otherwise fall back to the generic outcome reason.
+    let reason =
+        milestone_reason(&step.check, &ctx, &outcome).unwrap_or_else(|| outcome_reason(&outcome));
+
+    // 4. SAME persist path as lab_check_step (D-04 key link).
+    let mastery_delta = persist_outcome(
+        state,
+        &learner_id,
+        &module_id,
+        &block_id,
+        &step.id,
+        spec.steps.len(),
+        &outcome,
+        &check_kind,
+        request.step_index,
+        &reason,
+    )?;
+
+    Ok(LabValidateMilestoneResult {
         step_index: request.step_index,
         passed,
         reason,
@@ -130,7 +268,7 @@ pub async fn lab_show_hint(
             .ok_or_else(|| format!("session not found: {}", request.session_id))?;
         entry.block_id.clone()
     };
-    let spec = read_lab_spec_from_db(&state, &block_id)?;
+    let spec = read_lab_spec_from_db(state.inner(), &block_id)?;
     let step = spec
         .steps
         .get(request.step_index)
@@ -191,7 +329,7 @@ fn outcome_reason(outcome: &EvalOutcome) -> String {
 
 #[allow(clippy::too_many_arguments)]
 fn persist_outcome(
-    state: &State<'_, AppState>,
+    state: &AppState,
     learner_id: &str,
     module_id: &str,
     block_id: &str,
@@ -288,7 +426,7 @@ pub(crate) fn persist_ai_judge_verdict(
 }
 
 fn read_lab_spec_from_db(
-    state: &State<'_, AppState>,
+    state: &AppState,
     block_id: &str,
 ) -> Result<LabSpec, String> {
     let db = state

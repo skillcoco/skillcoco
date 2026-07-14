@@ -336,6 +336,7 @@ where
             workspace: workspace.clone(),
             total_steps,
             ai_budget_remaining: AI_JUDGE_DEFAULT_BUDGET,
+            command_history: Vec::new(),
         };
         map.insert(session_id.clone(), entry);
     }

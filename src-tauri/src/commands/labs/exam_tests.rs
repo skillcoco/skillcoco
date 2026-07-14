@@ -982,3 +982,99 @@ fn exam_attempt_history_attempt_number_breaks_ties_on_identical_started_at() {
         history_b.attempt_number
     );
 }
+
+// ── Phase 19.3 (D-05) — fail-closed exam rejection of milestone grain ──
+//
+// `reject_milestone_exam_spec` does not exist yet — RED until Task 3 lands
+// the gate in exam_attempt_start_conn (after the D-02 gate, before any
+// exam_attempts row is minted).
+
+/// Minimal exam-flagged LabSpec with configurable grains for gate tests.
+fn milestone_gate_spec(
+    lab_grain: crate::labs::spec::Grain,
+    step_grain: crate::labs::spec::Grain,
+) -> crate::labs::spec::LabSpec {
+    use crate::labs::spec::{ExamMeta, LabSpec, LabStep, StepCheck};
+    LabSpec {
+        slug: "milestone-gate".to_string(),
+        title: "Milestone gate".to_string(),
+        image: Some("alpine".to_string()),
+        dockerfile: None,
+        requires_docker: false,
+        creates: vec![],
+        exam: Some(ExamMeta {
+            time_limit_minutes: Some(45),
+            pass_threshold_pct: Some(70.0),
+        }),
+        grain: lab_grain,
+        steps: vec![LabStep {
+            id: "s1".to_string(),
+            title: "S1".to_string(),
+            prompt: "do the thing".to_string(),
+            check: StepCheck::ExitCode { expected: 0 },
+            hints: vec![],
+            weight: 1.0,
+            grain: step_grain,
+        }],
+    }
+}
+
+/// D-05 — a spec declaring lab-level milestone grain is rejected with a
+/// typed error naming D-05 before any exam_attempts row can be minted.
+#[test]
+fn exam_start_rejects_milestone_lab() {
+    use crate::labs::spec::Grain;
+    let spec = milestone_gate_spec(Grain::Milestone, Grain::Step);
+    let err = reject_milestone_exam_spec(&spec, "blk-ms").expect_err("must reject");
+    assert!(err.contains("D-05"), "error must cite D-05, got: {}", err);
+    assert!(
+        err.to_lowercase().contains("milestone"),
+        "error must name milestone grain, got: {}",
+        err
+    );
+}
+
+/// D-05 — the rejection also fires when only a STEP declares milestone.
+#[test]
+fn exam_start_rejects_milestone_step() {
+    use crate::labs::spec::Grain;
+    let spec = milestone_gate_spec(Grain::Step, Grain::Milestone);
+    let err = reject_milestone_exam_spec(&spec, "blk-ms").expect_err("must reject");
+    assert!(err.contains("D-05"), "error must cite D-05, got: {}", err);
+    // Step-grain-only spec passes the gate (no false positive).
+    let ok_spec = milestone_gate_spec(Grain::Step, Grain::Step);
+    assert!(reject_milestone_exam_spec(&ok_spec, "blk-ok").is_ok());
+}
+
+/// D-05 end-to-end — a stored milestone+exam spec cannot start an attempt
+/// through `exam_attempt_start_conn` (either via the author-time validator
+/// in read_lab_spec_conn or the runtime gate) and NO exam_attempts row is
+/// minted (fail-closed proof).
+#[test]
+fn exam_start_milestone_spec_mints_no_attempt_row() {
+    let conn = fresh_conn();
+    let (learner, module, block) = seed_exam_module(&conn);
+    // Overwrite the stored spec with a milestone+exam variant.
+    let mut payload = exam_spec_json();
+    payload["spec"]["grain"] = serde_json::json!("milestone");
+    conn.execute(
+        "UPDATE module_blocks SET payload_json = ?1 WHERE id = ?2",
+        rusqlite::params![payload.to_string(), block],
+    )
+    .unwrap();
+
+    let clock = FakeClock { now: chrono::Utc::now() };
+    let request = ExamAttemptStartRequest {
+        block_id: block.clone(),
+        track_id: "trk-exam-1".to_string(),
+        module_id: module.clone(),
+        learner_id: learner.clone(),
+    };
+    let result = exam_attempt_start_conn(&conn, &request, &clock);
+    assert!(result.is_err(), "milestone exam spec must not start an attempt");
+
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM exam_attempts", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0, "no exam_attempts row may be minted (fail-closed)");
+}

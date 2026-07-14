@@ -145,6 +145,7 @@ async fn open_session_for_test(
             workspace: workspace.clone(),
             total_steps,
             ai_budget_remaining: AI_JUDGE_DEFAULT_BUDGET,
+            command_history: Vec::new(),
         };
         map.insert(session_id.clone(), entry);
     }
@@ -203,6 +204,7 @@ fn entry_with_mock(session_id: &str, mock: MockLabSession) -> LabSessionEntry {
         workspace: std::path::PathBuf::from("/tmp"),
         total_steps: 0,
         ai_budget_remaining: AI_JUDGE_DEFAULT_BUDGET,
+        command_history: Vec::new(),
     }
 }
 

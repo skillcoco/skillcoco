@@ -30,6 +30,59 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use vector::VectorState;
 
+/// Phase 19.3 (D-01) — one recorded command at the eval IPC boundary.
+/// `lab_check_step` appends one of these to the owning session's
+/// `command_history` on EVERY call (all grains), so milestone-grain
+/// validation (`lab_validate_milestone`) can evaluate against the
+/// cumulative session history instead of only the last command.
+///
+/// In-memory only: history lives on `LabSessionEntry` and does NOT persist
+/// across app restarts (documented accepted scope for this phase).
+#[derive(Debug, Clone)]
+pub struct CommandRecord {
+    pub command: String,
+    pub output: String,
+    pub exit_code: Option<i32>,
+}
+
+/// Phase 19.3 (D-01) — hard cap on records per session history.
+pub const LAB_HISTORY_MAX_RECORDS: usize = 200;
+/// Phase 19.3 (D-01) — hard cap on cumulative `output` bytes per session
+/// history (1 MiB, à la `MAX_PACK_BYTES` self-imposed-cap precedent).
+pub const LAB_HISTORY_MAX_BYTES: usize = 1024 * 1024;
+
+/// Phase 19.3 (D-01) — append `rec` then evict OLDEST records first until
+/// BOTH `len <= LAB_HISTORY_MAX_RECORDS` AND cumulative `output` bytes
+/// `<= LAB_HISTORY_MAX_BYTES`.
+///
+/// Single->1 MiB record policy: a record whose output alone exceeds the
+/// byte cap has its output TRUNCATED to `LAB_HISTORY_MAX_BYTES` (at a char
+/// boundary) before insertion — len/bytes are both bounded unconditionally.
+///
+/// Accepted limitation (D-01, documented): eviction can UNDER-REPORT
+/// `command_absent` at milestone grain — a record matching the forbidden
+/// pattern that was evicted before Validate is pressed will not fail the
+/// check. Learner-local, no privilege exposure; the caps exist to bound
+/// the higher-severity DoS (T-19.3-01).
+pub fn push_command_record(history: &mut Vec<CommandRecord>, mut rec: CommandRecord) {
+    if rec.output.len() > LAB_HISTORY_MAX_BYTES {
+        let mut cut = LAB_HISTORY_MAX_BYTES;
+        while cut > 0 && !rec.output.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        rec.output.truncate(cut);
+    }
+    history.push(rec);
+    while history.len() > LAB_HISTORY_MAX_RECORDS {
+        history.remove(0);
+    }
+    let mut total: usize = history.iter().map(|r| r.output.len()).sum();
+    while total > LAB_HISTORY_MAX_BYTES && history.len() > 1 {
+        let evicted = history.remove(0);
+        total -= evicted.output.len();
+    }
+}
+
 /// Sidecar metadata carried alongside each live `LabSession` in the
 /// `AppState.lab_sessions` registry. Lets `lab_reset` / `lab_pty_*` /
 /// `lab_check_step` recover the (learner, module, block, workspace) tuple
@@ -44,6 +97,11 @@ pub struct LabSessionEntry {
     /// Per-session AI-judge budget (decremented on each LLM call). Initial
     /// value matches `labs::evaluator` default budget (5).
     pub ai_budget_remaining: u32,
+    /// Phase 19.3 (D-01) — per-session command history appended by
+    /// `lab_check_step` on every call; bounded by `push_command_record`
+    /// (200 records / 1 MiB, oldest evicted first). In-memory only — not
+    /// persisted across app restarts.
+    pub command_history: Vec<CommandRecord>,
 }
 
 pub struct AppState {
@@ -278,6 +336,8 @@ pub fn run() {
             commands::labs::session::lab_pty_resize,
             commands::labs::eval::lab_check_step,
             commands::labs::eval::lab_show_hint,
+            // Milestone validation grain (Phase 19.3 — D-04)
+            commands::labs::eval::lab_validate_milestone,
             commands::labs::state::lab_reset,
             commands::labs::state::lab_get_progress,
             commands::labs::session::lab_runtime_detect,
@@ -401,3 +461,10 @@ mod build_app_tests {
         let _: fn(AppState) = _type_check;
     }
 }
+
+// Phase 19.3 (D-01) — CommandRecord history tests live in a sibling file
+// to keep lib.rs under the 500-line CLAUDE.md cap (same convention as
+// labs::spec / commands::labs::eval).
+#[cfg(test)]
+#[path = "command_history_tests.rs"]
+mod command_history_tests;
