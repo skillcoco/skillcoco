@@ -572,6 +572,26 @@ fn eval_test_app_state() -> Arc<AppState> {
 /// Seed learner/track/path/module + a lab block whose params_json.labMd is
 /// `lab_md`. Returns (learner_id, module_id, block_id).
 fn insert_lab_fixture_md(state: &AppState, lab_md: &str) -> (String, String, String) {
+    let params_json = serde_json::json!({ "labMd": lab_md }).to_string();
+    insert_lab_fixture(state, &params_json, "{}")
+}
+
+/// WR-01 — like `insert_lab_fixture_md` but stores a pre-serialized spec in
+/// payload_json.spec (the PagePlanner-emitted shape) with NO labMd fallback,
+/// so tests can drive the stored-spec validation path.
+fn insert_lab_fixture_payload(
+    state: &AppState,
+    spec_json: serde_json::Value,
+) -> (String, String, String) {
+    let payload_json = serde_json::json!({ "spec": spec_json }).to_string();
+    insert_lab_fixture(state, "{}", &payload_json)
+}
+
+fn insert_lab_fixture(
+    state: &AppState,
+    params_json: &str,
+    payload_json: &str,
+) -> (String, String, String) {
     let db = state.db.lock().unwrap();
     let conn = &db.conn;
     let (learner, track, path, module, block) =
@@ -604,14 +624,13 @@ fn insert_lab_fixture_md(state: &AppState, lab_md: &str) -> (String, String, Str
         rusqlite::params![module, learner],
     )
     .unwrap();
-    let params_json = serde_json::json!({ "labMd": lab_md }).to_string();
     conn.execute(
         "INSERT INTO module_blocks (id, module_id, ordering, block_type, status,
             params_json, payload_json, source_anchors_json, metadata_json, retry_count,
             created_at, updated_at)
-         VALUES (?1, ?2, 0, 'lab', 'ready', ?3, '{}', '[]', '{}', 0,
+         VALUES (?1, ?2, 0, 'lab', 'ready', ?3, ?4, '[]', '{}', 0,
             datetime('now'), datetime('now'))",
-        rusqlite::params![block, module, params_json],
+        rusqlite::params![block, module, params_json, payload_json],
     )
     .unwrap();
     (learner.to_string(), module.to_string(), block.to_string())
@@ -775,6 +794,53 @@ async fn lab_validate_milestone_routes_through_persist_outcome() {
         progress_row(&state, &learner, &module, &block).expect("row must exist after persist");
     assert_eq!(current_step, 1, "Pass must advance current_step via persist_outcome");
     assert!(completed.contains("create-pod"), "got {}", completed);
+}
+
+/// 19.3-REVIEW WR-01 — the evaluation path's spec reader must run
+/// `validate_spec` on DB-stored payload specs (delegating to
+/// `read_lab_spec_conn`), so a stored spec violating the D-05 exam x
+/// milestone exclusion never reaches milestone scoring. With no labMd
+/// fallback, the invalid stored spec must surface as an error.
+#[tokio::test]
+async fn lab_validate_milestone_rejects_invalid_stored_payload_spec() {
+    let state = eval_test_app_state();
+    // exam: + milestone grain coexisting — validate_spec (D-05
+    // validate_milestone_exam_exclusion) must reject this spec.
+    let invalid_spec = serde_json::json!({
+        "slug": "exam-milestone-lab",
+        "title": "Exam x milestone (invalid)",
+        "image": "alpine",
+        "dockerfile": null,
+        "requiresDocker": true,
+        "creates": [],
+        "exam": { "timeLimitMinutes": 10, "passThresholdPct": 70.0 },
+        "grain": "milestone",
+        "steps": [{
+            "id": "s1",
+            "title": "T",
+            "prompt": "p",
+            "check": { "kind": "command_regex", "pattern": "x" },
+            "hints": [],
+            "weight": 1.0,
+            "grain": "step"
+        }]
+    });
+    let (learner, module, block) = insert_lab_fixture_payload(&state, invalid_spec);
+    let ws = tempfile::tempdir().unwrap();
+    insert_session(&state, "sess-inv", &learner, &module, &block, ws.path().to_path_buf(), 1).await;
+
+    let vreq = LabValidateMilestoneRequest {
+        session_id: "sess-inv".to_string(),
+        step_index: 0,
+    };
+    let err = lab_validate_milestone_with(vreq, &state, false)
+        .await
+        .expect_err("stored spec failing validate_spec must never reach milestone scoring");
+    assert!(
+        err.contains("no readable lab spec"),
+        "invalid stored spec with no labMd fallback must error, got: {}",
+        err
+    );
 }
 
 /// 19.3-REVIEW CR-02 — `persist_outcome` must be idempotent on Pass: two

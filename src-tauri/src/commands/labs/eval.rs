@@ -437,6 +437,14 @@ pub(crate) fn persist_ai_judge_verdict(
     Ok(())
 }
 
+/// 19.3-REVIEW WR-01 — delegates to the single promoted
+/// `read_lab_spec_conn` helper (commands/labs/mod.rs) so DB-stored specs
+/// are re-validated via `validate_spec` on the EVALUATION path too: the
+/// D-05 exam x milestone exclusion, duplicate step ids, and weight checks
+/// all hold before `lab_check_step` / `lab_validate_milestone` /
+/// `lab_show_hint` score anything. Validation is cheap (in-memory walks,
+/// per-call) — no caching needed. Previously this was a drifted bespoke
+/// copy that skipped validate_spec entirely.
 fn read_lab_spec_from_db(
     state: &AppState,
     block_id: &str,
@@ -445,34 +453,7 @@ fn read_lab_spec_from_db(
         .db
         .lock()
         .map_err(|e| format!("db lock: {}", e))?;
-    let conn = &db.conn;
-    let block = {
-        use learnforge_core::blocks::BlockStore;
-        crate::storage_impl::blocks::SqliteBlockStore(conn)
-            .get_by_id(block_id)
-            .map_err(|e| format!("get_block: {}", e))?
-            .ok_or_else(|| format!("block not found: {}", block_id))?
-    };
-
-    if !block.payload_json.trim().is_empty() && block.payload_json != "{}" {
-        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&block.payload_json) {
-            if let Some(spec_val) = payload.get("spec") {
-                if let Ok(spec) =
-                    serde_json::from_value::<LabSpec>(spec_val.clone())
-                {
-                    return Ok(spec);
-                }
-            }
-        }
-    }
-    if let Ok(params) = serde_json::from_str::<serde_json::Value>(&block.params_json) {
-        if let Some(md) = params.get("labMd").and_then(|v| v.as_str()) {
-            return crate::labs::spec::parse_lab_md(md)
-                .map(|(s, _)| s)
-                .map_err(|e| format!("parse_lab_md: {}", e));
-        }
-    }
-    Err(format!("block {} has no readable lab spec", block_id))
+    super::read_lab_spec_conn(&db.conn, block_id).map(|(spec, _)| spec)
 }
 
 #[cfg(test)]
