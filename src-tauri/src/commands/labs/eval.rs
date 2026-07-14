@@ -82,6 +82,7 @@ pub(crate) async fn lab_check_step_with(
         workspace: &workspace,
         ai_authenticated,
         ai_budget_remaining: ai_budget,
+        history: None,
     };
     let outcome = evaluate_step(&step.check, &ctx)
         .await

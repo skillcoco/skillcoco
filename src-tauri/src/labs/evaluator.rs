@@ -38,6 +38,11 @@ pub struct EvalContext<'a> {
     /// Remaining ai_judge calls in this lab session's budget. When 0,
     /// ai_judge falls back to Manual to keep LLM cost predictable.
     pub ai_budget_remaining: u32,
+    /// Phase 19.3 (D-06) — per-session command history view for
+    /// milestone-grain evaluation (`evaluate_step_milestone`). `None` for
+    /// every step-grain call (back-compat: existing eval fns never read
+    /// this field, so their behavior is byte-identical regardless of value).
+    pub history: Option<&'a [crate::CommandRecord]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -284,6 +289,7 @@ mod tests {
             workspace: Path::new("/tmp/learnforge-eval-test"),
             ai_authenticated: true,
             ai_budget_remaining: 5,
+            history: None,
         }
     }
 
@@ -299,6 +305,7 @@ mod tests {
             workspace: dir,
             ai_authenticated: auth,
             ai_budget_remaining: budget,
+            history: None,
         }
     }
 
@@ -576,5 +583,207 @@ mod tests {
         assert!(p.contains("kubectl get pods"));
         assert!(p.contains("web 1/1 Running"));
         assert!(p.contains("\"pass\""), "must specify the JSON shape");
+    }
+
+    // ── Phase 19.3 (D-02/D-06) — evaluate_step_milestone ──
+    //
+    // `evaluate_step_milestone` does not exist yet. These tests fail to
+    // COMPILE until Task 2 lands it — the correct RED signal.
+
+    use crate::CommandRecord;
+
+    fn rec(output: &str, exit_code: Option<i32>) -> CommandRecord {
+        CommandRecord {
+            command: "cmd".to_string(),
+            output: output.to_string(),
+            exit_code,
+        }
+    }
+
+    fn milestone_ctx<'a>(history: &'a [CommandRecord], workspace: &'a std::path::Path) -> EvalContext<'a> {
+        EvalContext {
+            last_command: "",
+            last_output: "",
+            last_exit_code: None,
+            workspace,
+            ai_authenticated: true,
+            ai_budget_remaining: 5,
+            history: Some(history),
+        }
+    }
+
+    /// D-02 — command_regex Passes iff the regex matches ANY record's output.
+    #[tokio::test]
+    async fn milestone_command_regex_matches_any_record() {
+        let history = vec![
+            rec("pod/api created", None),
+            rec("pod/web created", Some(0)),
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = milestone_ctx(&history, dir.path());
+        let check = StepCheck::CommandRegex {
+            pattern: "pod/web (created|configured)".to_string(),
+            match_stderr: false,
+        };
+        let outcome = evaluate_step_milestone(&check, &ctx, None::<&NoJudgeRunner>)
+            .await
+            .unwrap();
+        assert_eq!(outcome, EvalOutcome::Pass);
+    }
+
+    /// D-02 — command_regex over EMPTY history Fails (nothing reached; no
+    /// record output can match). Explicitly named per plan-checker warning.
+    #[tokio::test]
+    async fn milestone_command_regex_empty_history_fails() {
+        let history: Vec<CommandRecord> = vec![];
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = milestone_ctx(&history, dir.path());
+        let check = StepCheck::CommandRegex {
+            pattern: "pod/web (created|configured)".to_string(),
+            match_stderr: false,
+        };
+        let outcome = evaluate_step_milestone(&check, &ctx, None::<&NoJudgeRunner>)
+            .await
+            .unwrap();
+        assert_eq!(outcome, EvalOutcome::Fail, "empty history must Fail for command_regex");
+    }
+
+    /// D-02 anti-vacuous rule — command_absent over EMPTY history Fails
+    /// with reason "no commands recorded" (explicit difference from
+    /// step-grain's locked inverse semantics).
+    #[tokio::test]
+    async fn milestone_command_absent_empty_history_fails() {
+        let history: Vec<CommandRecord> = vec![];
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = milestone_ctx(&history, dir.path());
+        let check = StepCheck::CommandAbsent {
+            pattern: "CrashLoopBackOff".to_string(),
+            match_stderr: false,
+        };
+        let outcome = evaluate_step_milestone(&check, &ctx, None::<&NoJudgeRunner>)
+            .await
+            .unwrap();
+        assert_eq!(outcome, EvalOutcome::Fail, "empty history must Fail (anti-vacuous)");
+        let reason = milestone_reason(&check, &ctx, &outcome)
+            .expect("empty-history command_absent Fail must carry an explicit reason");
+        assert!(
+            reason.contains("no commands recorded"),
+            "reason must contain 'no commands recorded', got: {}",
+            reason
+        );
+    }
+
+    /// D-02 — command_absent Passes over non-empty history iff NO record
+    /// matches the pattern.
+    #[tokio::test]
+    async fn milestone_command_absent_passes_when_no_record_matches() {
+        let history = vec![rec("pod/web created", Some(0)), rec("pod/web Running", Some(0))];
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = milestone_ctx(&history, dir.path());
+        let check = StepCheck::CommandAbsent {
+            pattern: "CrashLoopBackOff".to_string(),
+            match_stderr: false,
+        };
+        let outcome = evaluate_step_milestone(&check, &ctx, None::<&NoJudgeRunner>)
+            .await
+            .unwrap();
+        assert_eq!(outcome, EvalOutcome::Pass);
+    }
+
+    /// D-02 — command_absent Fails when ANY record's output matches.
+    #[tokio::test]
+    async fn milestone_command_absent_fails_when_any_record_matches() {
+        let history = vec![
+            rec("pod/web created", Some(0)),
+            rec("pod/web CrashLoopBackOff", Some(1)),
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = milestone_ctx(&history, dir.path());
+        let check = StepCheck::CommandAbsent {
+            pattern: "CrashLoopBackOff".to_string(),
+            match_stderr: false,
+        };
+        let outcome = evaluate_step_milestone(&check, &ctx, None::<&NoJudgeRunner>)
+            .await
+            .unwrap();
+        assert_eq!(outcome, EvalOutcome::Fail);
+    }
+
+    /// D-02 — exit_code Passes iff ANY record's exit_code equals expected.
+    #[tokio::test]
+    async fn milestone_exit_code_matches_any_record() {
+        let history = vec![rec("oops", Some(1)), rec("ok", Some(0))];
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = milestone_ctx(&history, dir.path());
+        let check = StepCheck::ExitCode { expected: 0 };
+        let outcome = evaluate_step_milestone(&check, &ctx, None::<&NoJudgeRunner>)
+            .await
+            .unwrap();
+        assert_eq!(outcome, EvalOutcome::Pass);
+    }
+
+    /// D-02 — exit_code Fails over empty history (nothing reached).
+    #[tokio::test]
+    async fn milestone_exit_code_empty_history_fails() {
+        let history: Vec<CommandRecord> = vec![];
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = milestone_ctx(&history, dir.path());
+        let check = StepCheck::ExitCode { expected: 0 };
+        let outcome = evaluate_step_milestone(&check, &ctx, None::<&NoJudgeRunner>)
+            .await
+            .unwrap();
+        assert_eq!(outcome, EvalOutcome::Fail);
+    }
+
+    /// D-02 — file_state is byte-identical to step grain (history-independent,
+    /// reads workspace).
+    #[tokio::test]
+    async fn milestone_file_state_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pod.yaml"),
+            "kind: Pod\nmetadata:\n  name: web\n",
+        )
+        .unwrap();
+        let history = vec![rec("irrelevant", Some(0))];
+        let ctx = milestone_ctx(&history, dir.path());
+        let check = StepCheck::FileState {
+            path: "pod.yaml".to_string(),
+            contains: Some("kind: Pod".to_string()),
+        };
+        let outcome = evaluate_step_milestone(&check, &ctx, None::<&NoJudgeRunner>)
+            .await
+            .unwrap();
+        assert_eq!(outcome, EvalOutcome::Pass);
+    }
+
+    /// D-02/D-06 — ai_judge judges over the concatenated history tail via
+    /// scrollback_tail(_, 100), reusing eval_ai_judge's runner path.
+    #[tokio::test]
+    async fn milestone_ai_judge_uses_concatenated_history() {
+        let runner = MockRunner::ok("{\"pass\": true, \"reason\": \"ok\"}");
+        let history = vec![rec("NAME READY STATUS", Some(0)), rec("web 1/1 Running", Some(0))];
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = milestone_ctx(&history, dir.path());
+        let outcome = evaluate_step_milestone(&ai_judge(), &ctx, Some(&runner))
+            .await
+            .unwrap();
+        assert_eq!(outcome, EvalOutcome::Pass);
+        assert_eq!(runner.call_count(), 1);
+    }
+
+    /// EvalContext.history == None must reproduce every existing step-grain
+    /// verdict byte-identically (back-compat, D-06) — spot-check via
+    /// evaluate_step (the step-grain entrypoint) still passing with
+    /// history: None on the shared ctx_with helper.
+    #[tokio::test]
+    async fn step_grain_context_history_none_back_compat() {
+        let check = StepCheck::CommandRegex {
+            pattern: "pod/web (created|configured)".to_string(),
+            match_stderr: false,
+        };
+        let ctx = ctx_with("pod/web created", Some(0));
+        assert!(ctx.history.is_none());
+        assert_eq!(evaluate_step(&check, &ctx).await.unwrap(), EvalOutcome::Pass);
     }
 }

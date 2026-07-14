@@ -427,6 +427,7 @@ async fn lab_check_step_passes_authenticated_state_to_ai_judge() {
         workspace: &workspace_path,
         ai_authenticated: false,
         ai_budget_remaining: 5,
+        history: None,
     };
     let check = StepCheck::AiJudge {
         criteria: "Output shows pods".to_string(),
@@ -453,6 +454,7 @@ async fn lab_check_step_passes_authenticated_state_to_ai_judge() {
         workspace: &workspace_path,
         ai_authenticated: true,
         ai_budget_remaining: 5,
+        history: None,
     };
     let authed_outcome = evaluate_step_with_judge(&check, &ctx_authed, Some(&runner))
         .await
