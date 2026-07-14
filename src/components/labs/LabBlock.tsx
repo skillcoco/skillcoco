@@ -261,11 +261,18 @@ export function LabBlock({
     hintStepIndex != null && spec.steps[hintStepIndex]
       ? spec.steps[hintStepIndex].hints
       : [];
-  // Phase 19.3 (D-03/D-04) — resolve the current step's EFFECTIVE grain:
-  // step-level override wins, else the lab-level default, else "step"
-  // (grain-absent back-compat — no button, byte-identical to today).
+  // Phase 19.3 (D-03/D-04) — resolve the current step's EFFECTIVE grain,
+  // MIRRORING the backend rule (spec.rs::effective_step_grain) exactly:
+  // step-level "milestone" wins, OTHERWISE the lab-level grain applies
+  // (else "step" — grain-absent back-compat, byte-identical to today).
+  // NOTE (19.3-REVIEW CR-01): `step.grain ?? spec.grain` is WRONG here —
+  // serde serializes LabStep.grain with #[serde(default)] and no
+  // skip_serializing_if, so every payload_json step carries an explicit
+  // "grain": "step" and nullish-coalescing never falls through to the
+  // lab-level grain, deadlocking lab-level milestone labs.
+  const stepGrain = spec.steps[currentStep]?.grain;
   const effectiveGrain =
-    spec.steps[currentStep]?.grain ?? spec.grain ?? "step";
+    stepGrain === "milestone" ? "milestone" : (spec.grain ?? "step");
   const showValidateMilestone = !examMode && effectiveGrain === "milestone";
 
   const left = (

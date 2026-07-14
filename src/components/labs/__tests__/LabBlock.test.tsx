@@ -291,6 +291,34 @@ describe("LabBlock — Phase 03.1 Wave 0 (failing scaffolds)", () => {
       });
     });
 
+    it("shows the button for a LAB-LEVEL milestone spec in the Rust-serialized shape (spec.grain=milestone, steps[].grain='step') — CR-01", async () => {
+      // serde serializes LabStep.grain with #[serde(default)] and NO
+      // skip_serializing_if, so every step carries an explicit
+      // "grain": "step". The backend rule (spec.rs::effective_step_grain)
+      // is: step-level Milestone wins, OTHERWISE the lab-level grain
+      // applies. The frontend must mirror that exactly — `step.grain ??
+      // spec.grain` never falls through to the lab grain for this shape.
+      const labLevelMilestoneBlock = makeLabBlock({
+        grain: "milestone",
+        steps: [
+          {
+            id: "s1",
+            title: "List pods",
+            prompt: "Run `kubectl get pods`",
+            check: { kind: "command_regex" as const, pattern: "Running" },
+            hints: [],
+            grain: "step",
+          },
+        ],
+      });
+      renderLabBlock(labLevelMilestoneBlock);
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /validate milestone/i }),
+        ).toBeInTheDocument();
+      });
+    });
+
     it("renders NO Validate milestone button for a grain-absent (step) spec — back-compat", async () => {
       renderLabBlock(); // default makeLabBlock() has no `grain` anywhere
       await waitFor(() => {
