@@ -18,8 +18,8 @@ points:
 - You grant the maintainers a perpetual, worldwide copyright and patent license
   over your contributions.
 - Section 5 grants the maintainers the right to incorporate your contributions
-  into commercial products (LearnForge Studio or successors) under any license.
-  The public MIT-licensed copy is unaffected.
+  into commercial products (LearnForge Pro, LearnForge Hub, LearnForge Studio,
+  or successors) under any license. The public MIT-licensed copy is unaffected.
 
 ### How to sign
 
@@ -200,18 +200,21 @@ non-obvious reasoning.
 
 ---
 
-## Open core — OSS vs Studio
+## Open core — OSS vs the commercial platform
 
 LearnForge follows an **open-core model**:
 
 | What | Where | License |
 |------|-------|---------|
-| Adaptive engine, labs, BKT, SM-2, AI integration | **This repo** | MIT |
-| Multi-tenant web, cohorts, manager dashboards, SSO/SAML, SCORM/xAPI, white-label | LearnForge Studio (separate repo) | Commercial |
+| Adaptive engine (BKT, SM-2, microlearning), open pack format, lessons/video/quizzes, gamification, AI tutor (BYOK/local) | **This repo** | MIT |
+| Integrated learning environment: terminal + IDE, validated/graded labs, interactive simulators, exam simulators | LearnForge Pro (private) | Commercial |
+| Course licensing, verifiable certificates, progress sync, cohort/manager reporting, multi-tenant web | LearnForge Hub (private) | Commercial |
+| Course authoring + AI enrichment for educators | LearnForge Studio (private) | Commercial |
 
+Some Pro-tier features (terminal labs, exam-sim) still exist in this repository
+today; they are scheduled to move out in a planned "OSS-lite" milestone.
 Contributions to this repository improve the open-source desktop product.
-Features that belong exclusively to the commercial product will be built in the
-Studio repository by the core team.
+Commercial-product features are built in their own repositories by the core team.
 
 If you are unsure whether your contribution is in scope, open an issue and ask
 before investing time in implementation.

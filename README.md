@@ -25,6 +25,25 @@ Type any subject in the onboarding ("Spanish", "Watercolor", "Kubernetes", "Musi
 
 ---
 
+## Open core
+
+LearnForge is the **open-source core of the LearnForge platform**. This repository —
+the adaptive learning engine (BKT + SM-2 + microlearning), the open pack format,
+lessons, video, quizzes, gamification, and the AI tutor (bring your own key or run
+local models) — is MIT licensed and always will be.
+
+Commercial products by Initcron Systems build on top of it:
+
+- **LearnForge Pro** — the integrated learning environment: embedded terminal + IDE,
+  validated and graded hands-on labs, interactive simulators, exam simulators.
+- **LearnForge Hub** — course licensing, verifiable certificates, progress sync,
+  and cohort reporting for educators and corporate teams.
+- **LearnForge Studio** — course authoring and AI enrichment for educators.
+
+Contributions here improve the open core. See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+---
+
 ## Preview
 
 <table>
@@ -101,12 +120,9 @@ LearnForge is a Tauri 2 desktop application: a Rust backend (`src-tauri`) commun
 
 ## Open source
 
-LearnForge is a **single MIT-licensed product**.
-
-The full experience — BKT mastery, SM-2 spaced repetition, hands-on
-terminal labs, topic packs, daily microlearning, achievement badges,
-and exportable certificates — ships in the open-source desktop app.
-No crippling. No paid tier. Free OSS = real product.
+All code in this repository is MIT licensed — the adaptive engine, the pack
+format, and the desktop app. See the [Open core](#open-core) section above for
+how this repository relates to the commercial LearnForge products.
 
 The `learnforge-core` Rust crate is published to crates.io. The
 backend exposes a `LearnForgePlugin` trait for community extensions
