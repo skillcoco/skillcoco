@@ -47,17 +47,46 @@ pub struct CommandRecord {
 
 /// Phase 19.3 (D-01) — hard cap on records per session history.
 pub const LAB_HISTORY_MAX_RECORDS: usize = 200;
-/// Phase 19.3 (D-01) — hard cap on cumulative `output` bytes per session
-/// history (1 MiB, à la `MAX_PACK_BYTES` self-imposed-cap precedent).
+/// Phase 19.3 (D-01) — hard cap on cumulative `command` + `output` bytes
+/// per session history (1 MiB, à la `MAX_PACK_BYTES` self-imposed-cap
+/// precedent). 19.3-REVIEW CR-03: BOTH fields count toward this budget —
+/// counting only output left `command` unbounded (200 records x unbounded
+/// renderer-supplied command bytes defeats the T-19.3-01 memory bound).
 pub const LAB_HISTORY_MAX_BYTES: usize = 1024 * 1024;
+/// 19.3-REVIEW CR-03 — per-record cap on `command` bytes (4 KiB). A real
+/// interactive command line is far smaller; a multi-megabyte paste or a
+/// hostile renderer gets truncated before insertion.
+pub const LAB_HISTORY_MAX_COMMAND_BYTES: usize = 4 * 1024;
+/// 19.3-REVIEW CR-03 — per-record cap on `output` bytes (256 KiB). Bounds
+/// any single record so no one command can consume the whole session
+/// budget (previously a single output could reach the full 1 MiB).
+pub const LAB_HISTORY_MAX_OUTPUT_BYTES: usize = 256 * 1024;
+
+/// Truncate `s` to at most `max` bytes at a char boundary (UTF-8 safe).
+fn truncate_at_char_boundary(s: &mut String, max: usize) {
+    if s.len() > max {
+        let mut cut = max;
+        while cut > 0 && !s.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        s.truncate(cut);
+    }
+}
+
+/// Bytes a record contributes to the session budget (CR-03: command AND
+/// output).
+fn record_bytes(r: &CommandRecord) -> usize {
+    r.command.len() + r.output.len()
+}
 
 /// Phase 19.3 (D-01) — append `rec` then evict OLDEST records first until
-/// BOTH `len <= LAB_HISTORY_MAX_RECORDS` AND cumulative `output` bytes
-/// `<= LAB_HISTORY_MAX_BYTES`.
+/// BOTH `len <= LAB_HISTORY_MAX_RECORDS` AND cumulative `command + output`
+/// bytes `<= LAB_HISTORY_MAX_BYTES`.
 ///
-/// Single->1 MiB record policy: a record whose output alone exceeds the
-/// byte cap has its output TRUNCATED to `LAB_HISTORY_MAX_BYTES` (at a char
-/// boundary) before insertion — len/bytes are both bounded unconditionally.
+/// Per-record policy (CR-03): `command` is truncated to
+/// `LAB_HISTORY_MAX_COMMAND_BYTES` and `output` to
+/// `LAB_HISTORY_MAX_OUTPUT_BYTES` (both at char boundaries) before
+/// insertion — len/bytes are all bounded unconditionally.
 ///
 /// Accepted limitation (D-01, documented): eviction can UNDER-REPORT
 /// `command_absent` at milestone grain — a record matching the forbidden
@@ -65,21 +94,16 @@ pub const LAB_HISTORY_MAX_BYTES: usize = 1024 * 1024;
 /// check. Learner-local, no privilege exposure; the caps exist to bound
 /// the higher-severity DoS (T-19.3-01).
 pub fn push_command_record(history: &mut Vec<CommandRecord>, mut rec: CommandRecord) {
-    if rec.output.len() > LAB_HISTORY_MAX_BYTES {
-        let mut cut = LAB_HISTORY_MAX_BYTES;
-        while cut > 0 && !rec.output.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        rec.output.truncate(cut);
-    }
+    truncate_at_char_boundary(&mut rec.command, LAB_HISTORY_MAX_COMMAND_BYTES);
+    truncate_at_char_boundary(&mut rec.output, LAB_HISTORY_MAX_OUTPUT_BYTES);
     history.push(rec);
     while history.len() > LAB_HISTORY_MAX_RECORDS {
         history.remove(0);
     }
-    let mut total: usize = history.iter().map(|r| r.output.len()).sum();
+    let mut total: usize = history.iter().map(record_bytes).sum();
     while total > LAB_HISTORY_MAX_BYTES && history.len() > 1 {
         let evicted = history.remove(0);
-        total -= evicted.output.len();
+        total -= record_bytes(&evicted);
     }
 }
 
