@@ -98,13 +98,19 @@ fn apply_outcome_to_db(
         // its SQL here.
         persist_ai_judge_verdict(conn, learner, module, block, step_index, &verdict).unwrap();
     }
+    // CR-02 — mirrors persist_outcome's idempotent Pass update (json_each
+    // guard against duplicate completed_step_ids entries).
     if matches!(outcome, EvalOutcome::Pass) {
         conn.execute(
             "UPDATE lab_progress
              SET current_step = current_step + 1,
                  completed_step_ids = json_insert(completed_step_ids, '$[#]', ?1),
                  last_updated = datetime('now')
-             WHERE learner_id = ?2 AND module_id = ?3 AND block_id = ?4",
+             WHERE learner_id = ?2 AND module_id = ?3 AND block_id = ?4
+               AND NOT EXISTS (
+                 SELECT 1 FROM json_each(lab_progress.completed_step_ids)
+                 WHERE json_each.value = ?1
+               )",
             rusqlite::params![step_id, learner, module, block],
         )
         .unwrap();
@@ -769,6 +775,65 @@ async fn lab_validate_milestone_routes_through_persist_outcome() {
         progress_row(&state, &learner, &module, &block).expect("row must exist after persist");
     assert_eq!(current_step, 1, "Pass must advance current_step via persist_outcome");
     assert!(completed.contains("create-pod"), "got {}", completed);
+}
+
+/// 19.3-REVIEW CR-02 — `persist_outcome` must be idempotent on Pass: two
+/// consecutive `lab_validate_milestone_with` Passes on the SAME step (the
+/// milestone evidence is persistent session history, so a double-click
+/// fires two passing calls) must leave current_step = 1, exactly ONE entry
+/// in completed_step_ids, and practical_mastery <= 1.0.
+#[tokio::test]
+async fn lab_validate_milestone_repeated_pass_is_idempotent() {
+    let state = eval_test_app_state();
+    let (learner, module, block) = insert_lab_fixture_md(&state, MILESTONE_LAB_MD);
+    let ws = tempfile::tempdir().unwrap();
+    insert_session(&state, "sess-idem", &learner, &module, &block, ws.path().to_path_buf(), 1).await;
+
+    // Seed passing evidence into the session history once.
+    let req = check_req("sess-idem", 0, "kubectl apply -f pod.yaml", "pod/web created", Some(0));
+    lab_check_step_with(req, &state, false).await.unwrap();
+
+    for _ in 0..2 {
+        let vreq = LabValidateMilestoneRequest {
+            session_id: "sess-idem".to_string(),
+            step_index: 0,
+        };
+        let result = lab_validate_milestone_with(vreq, &state, false)
+            .await
+            .expect("lab_validate_milestone must succeed");
+        assert!(result.passed, "history still matches — both calls Pass");
+    }
+
+    let (current_step, completed) =
+        progress_row(&state, &learner, &module, &block).expect("row must exist");
+    assert_eq!(
+        current_step, 1,
+        "repeated Pass on the same step must not overrun current_step"
+    );
+    let v: serde_json::Value = serde_json::from_str(&completed).unwrap();
+    assert_eq!(
+        v.as_array().unwrap().len(),
+        1,
+        "completed_step_ids must contain the step id exactly ONCE, got {}",
+        completed
+    );
+
+    let mastery: f64 = {
+        let db = state.db.lock().unwrap();
+        db.conn
+            .query_row(
+                "SELECT practical_mastery FROM module_progress
+                 WHERE module_id = ?1 AND learner_id = ?2",
+                rusqlite::params![module, learner],
+                |r| r.get::<_, f64>(0),
+            )
+            .unwrap()
+    };
+    assert!(
+        mastery <= 1.0,
+        "practical_mastery must never exceed 1.0, got {}",
+        mastery
+    );
 }
 
 /// D-04 fail-safe guard — lab_validate_milestone on a step-grain step

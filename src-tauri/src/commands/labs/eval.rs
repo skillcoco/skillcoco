@@ -376,13 +376,25 @@ fn persist_outcome(
     }
 
     // On Pass: append to completed_step_ids + bump current_step.
+    //
+    // 19.3-REVIEW CR-02 — IDEMPOTENT: at milestone grain the passing
+    // evidence is the persistent session history, so a repeated
+    // `lab_validate_milestone` on an already-passed step Passes again. The
+    // json_each guard skips the update when step_id is already present,
+    // preventing duplicate completed_step_ids entries (which inflate
+    // practical_mastery past 1.0 — it feeds achievements) and current_step
+    // overrun past total_steps.
     if matches!(outcome, EvalOutcome::Pass) {
         conn.execute(
             "UPDATE lab_progress
              SET current_step = current_step + 1,
                  completed_step_ids = json_insert(completed_step_ids, '$[#]', ?1),
                  last_updated = datetime('now')
-             WHERE learner_id = ?2 AND module_id = ?3 AND block_id = ?4",
+             WHERE learner_id = ?2 AND module_id = ?3 AND block_id = ?4
+               AND NOT EXISTS (
+                 SELECT 1 FROM json_each(lab_progress.completed_step_ids)
+                 WHERE json_each.value = ?1
+               )",
             rusqlite::params![step_id, learner_id, module_id, block_id],
         )
         .map_err(|e| format!("Pass update: {}", e))?;
