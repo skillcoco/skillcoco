@@ -10,6 +10,7 @@ const labStoreState = vi.hoisted(() => ({
   openSession: vi.fn(),
   closeSession: vi.fn(),
   markStepComplete: vi.fn(),
+  validateMilestone: vi.fn(),
   getProgress: vi.fn(),
   // GAP-05 (Plan 03.1-09): progress map keyed by blockId. LabBlock reads
   // `useLabStore((s) => s.progress.get(blockId))` for currentStep +
@@ -96,7 +97,7 @@ function makeLabBlock(payload: Partial<LabBlockPayload["spec"]> = {}): ModuleBlo
       },
     ],
     ...payload,
-  };
+  } as LabBlockPayload["spec"];
   return {
     id: "blk-lab-1",
     moduleId: "mod-1",
@@ -113,10 +114,15 @@ function makeLabBlock(payload: Partial<LabBlockPayload["spec"]> = {}): ModuleBlo
   };
 }
 
-function renderLabBlock(block = makeLabBlock()) {
+function renderLabBlock(block = makeLabBlock(), examMode = false) {
   return render(
     <MemoryRouter>
-      <LabBlock block={block} learnerId="learner-1" trackId="trk-1" />
+      <LabBlock
+        block={block}
+        learnerId="learner-1"
+        trackId="trk-1"
+        examMode={examMode}
+      />
     </MemoryRouter>,
   );
 }
@@ -255,5 +261,96 @@ describe("LabBlock — Phase 03.1 Wave 0 (failing scaffolds)", () => {
       expect(screen.getByTestId("lab-step-1")).toHaveAttribute("data-active", "true");
     });
     expect(screen.getByTestId("lab-step-0")).toHaveAttribute("data-completed", "true");
+  });
+
+  // ── Phase 19.3-02 (D-04): conditional "Validate milestone" button ───────
+
+  describe("Validate milestone button (D-04)", () => {
+    beforeEach(() => {
+      labStoreState.validateMilestone.mockResolvedValue({ outcome: "pass" });
+    });
+
+    it("shows the Validate milestone button when the current step's effective grain is milestone", async () => {
+      const milestoneBlock = makeLabBlock({
+        steps: [
+          {
+            id: "s1",
+            title: "List pods",
+            prompt: "Run `kubectl get pods`",
+            check: { kind: "command_regex" as const, pattern: "Running" },
+            hints: [],
+            grain: "milestone",
+          },
+        ],
+      });
+      renderLabBlock(milestoneBlock);
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /validate milestone/i }),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("renders NO Validate milestone button for a grain-absent (step) spec — back-compat", async () => {
+      renderLabBlock(); // default makeLabBlock() has no `grain` anywhere
+      await waitFor(() => {
+        expect(screen.getByTestId("lab-block")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByRole("button", { name: /validate milestone/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("clicking Validate milestone calls the store action with (sessionId, currentStep)", async () => {
+      const milestoneBlock = makeLabBlock({
+        steps: [
+          {
+            id: "s1",
+            title: "List pods",
+            prompt: "Run `kubectl get pods`",
+            check: { kind: "command_regex" as const, pattern: "Running" },
+            hints: [],
+            grain: "milestone",
+          },
+        ],
+      });
+      const { default: userEvent } = await import("@testing-library/user-event");
+      const user = userEvent.setup();
+      renderLabBlock(milestoneBlock);
+
+      const button = await screen.findByRole("button", {
+        name: /validate milestone/i,
+      });
+      await user.click(button);
+
+      await waitFor(() => {
+        expect(labStoreState.validateMilestone).toHaveBeenCalledWith(
+          "sess-1",
+          0,
+        );
+      });
+    });
+
+    it("hides the Validate milestone button in examMode even for a milestone-grain step", async () => {
+      const milestoneBlock = makeLabBlock({
+        steps: [
+          {
+            id: "s1",
+            title: "List pods",
+            prompt: "Run `kubectl get pods`",
+            check: { kind: "command_regex" as const, pattern: "Running" },
+            hints: [],
+            grain: "milestone",
+          },
+        ],
+      });
+      renderLabBlock(milestoneBlock, true);
+      await waitFor(() => {
+        expect(screen.getByTestId("lab-block")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByRole("button", { name: /validate milestone/i }),
+      ).not.toBeInTheDocument();
+    });
   });
 });
