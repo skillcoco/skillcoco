@@ -16,6 +16,39 @@ bumps may include backwards-incompatible changes).
 
 ## [Unreleased]
 
+<!-- Planning milestone v1.1 "Course Commerce Pilot" closed 2026-07-14
+     (git tag: milestone/v1.1). App remains pre-release; these entries
+     ship with the first public release. -->
+
+### Added
+
+- Library view (`/library`): unified home for course packs — owned packs
+  with one-click Start/Continue and progress, bundled free starter packs,
+  inline license-key redeem, and pack-file import (relocated from
+  Settings; sidebar "New track" affordances consolidated into a single
+  Library entry). (Phase 16)
+- License-key redeem flow with staged confirmation, local entitlement
+  cache (SHA-256 key fingerprints), buyer attribution on tracks and
+  cards, and offline re-import from the retained pack artifact.
+  (Phase 15)
+- Cryptographic pack trust: Ed25519-signed course packs verified by a
+  fail-closed import gate; issuer badges on verified content; forge-sign
+  CLI for pack/report signing and verification. (Phases 13-14)
+- Signed skill reports: tamper-evident report envelope with capability
+  table, evidence ledger, and mastery bands; PDF + JSON export; in-app
+  verify panel; cohort aggregator for workshops. (Phase 18)
+- Exam-Sim mode: timed, hint-free exam runs over the labs engine with
+  server-authoritative scoring, best-attempt history, and exam results
+  as a distinct evidence class in skill reports. (Phase 19)
+- Topic packs can ship their own lab content (`labs/<slug>/LAB.md`),
+  loaded verbatim with zero LLM calls; LLM generation remains the
+  fallback. (Phase 19.1)
+- New deterministic lab check kinds: `command_absent` ("output must NOT
+  match", zero-LLM) and `grain: milestone` (validate reached state
+  against cumulative session history via an explicit Validate action).
+  Existing labs are unaffected; exams reject milestone grain by design.
+  (Phases 19.2-19.3)
+
 ### Removed
 
 - `scripts/` (sheet2pack converter + enrichment pipeline and its test
