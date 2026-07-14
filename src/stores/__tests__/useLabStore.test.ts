@@ -76,6 +76,7 @@ describe("useLabStore — Phase 03.1 Wave 0 (failing scaffolds)", () => {
       reason: "Command output matched pattern",
       checkKind: "command_regex",
       masteryDelta: 0.1,
+      outcome: "pass",
     });
 
     const store = useLabStore.getState();
@@ -92,6 +93,67 @@ describe("useLabStore — Phase 03.1 Wave 0 (failing scaffolds)", () => {
       }),
     );
     expect(result.outcome).toBe("pass");
+  });
+
+  // ── 19.3-REVIEW WR-03 — outcome crosses the wire structurally; the store
+  // must NOT sniff reason prose (Manual was misreported as "indeterminate"
+  // because its reason contains "budget exhausted"; Indeterminate's reason
+  // contains none of the sniffed substrings and fell through to "fail").
+
+  it("wr03_manual_outcome_passes_through — Manual is 'manual', not 'indeterminate'", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      stepIndex: 0,
+      passed: false,
+      reason: "manual recheck required (AI-judge budget exhausted or no auth)",
+      checkKind: "aiJudge",
+      masteryDelta: 0,
+      outcome: "manual",
+    });
+    const store = useLabStore.getState();
+    const result = await store.markStepComplete("sess-1", 0, "cmd", "out", 0);
+    expect(result.outcome).toBe("manual");
+  });
+
+  it("wr03_indeterminate_outcome_passes_through — Indeterminate is not 'fail'", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      stepIndex: 0,
+      passed: false,
+      reason: "no exit code observed yet — run the command and try again",
+      checkKind: "exitCode",
+      masteryDelta: 0,
+      outcome: "indeterminate",
+    });
+    const store = useLabStore.getState();
+    const result = await store.markStepComplete("sess-1", 0, "cmd", "out", null);
+    expect(result.outcome).toBe("indeterminate");
+  });
+
+  it("wr03_milestone_pending_passes_through — D-04 advisory is not 'fail'", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      stepIndex: 0,
+      passed: false,
+      reason: "milestone step — press Validate to check",
+      checkKind: "commandRegex",
+      masteryDelta: 0,
+      outcome: "milestone_pending",
+    });
+    const store = useLabStore.getState();
+    const result = await store.markStepComplete("sess-1", 0, "cmd", "out", 0);
+    expect(result.outcome).toBe("milestone_pending");
+  });
+
+  it("wr03_validate_milestone_outcome_passes_through — validateMilestone uses the wire outcome", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      stepIndex: 0,
+      passed: false,
+      reason: "manual recheck required (AI-judge budget exhausted or no auth)",
+      checkKind: "aiJudge",
+      masteryDelta: 0,
+      outcome: "manual",
+    });
+    const store = useLabStore.getState();
+    const result = await store.validateMilestone("sess-1", 0);
+    expect(result.outcome).toBe("manual");
   });
 
   it("lab_store_get_progress — hydrates progress map via lab_get_progress", async () => {

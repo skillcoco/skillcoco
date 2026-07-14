@@ -19,8 +19,20 @@ import {
 } from "@/lib/tauri-commands";
 import type { LabProgress, LabSession } from "@/types/learning";
 
-/** Step-evaluation outcome surfaced to UI. Mirrors Rust CheckOutcome. */
-export type CheckOutcome = "pass" | "fail" | "indeterminate" | "manual";
+/**
+ * Step-evaluation outcome surfaced to UI. 19.3-REVIEW WR-03: this is the
+ * Rust handler's structural `outcome` field passed through verbatim — the
+ * store no longer derives it by substring-matching the `reason` prose
+ * (which misreported Manual as "indeterminate" and Indeterminate /
+ * milestone-pending as "fail"). "milestone_pending" is the D-04
+ * prompt-boundary advisory on milestone-grain steps.
+ */
+export type CheckOutcome =
+  | "pass"
+  | "fail"
+  | "indeterminate"
+  | "manual"
+  | "milestone_pending";
 
 interface LabState {
   /** Active lab session keyed by blockId — populated by openSession. */
@@ -55,18 +67,6 @@ interface LabState {
     stepIndex: number,
   ) => Promise<{ outcome: CheckOutcome }>;
   getProgress: (blockId: string, learnerId: string) => Promise<LabProgress>;
-}
-
-function reasonToOutcome(reason: string, passed: boolean): CheckOutcome {
-  if (passed) return "pass";
-  // The Rust evaluator emits a small set of reason strings — match the
-  // ones that are NOT real failures so we can route them to UI states.
-  const lc = reason.toLowerCase();
-  if (lc.includes("indeterminate") || lc.includes("budget exhausted")) {
-    return "indeterminate";
-  }
-  if (lc.includes("manual")) return "manual";
-  return "fail";
 }
 
 export const useLabStore = create<LabState>((set, _get) => ({
@@ -128,7 +128,8 @@ export const useLabStore = create<LabState>((set, _get) => ({
       lastOutput,
       lastExitCode,
     });
-    const outcome = reasonToOutcome(result.reason, result.passed);
+    // WR-03 — structural outcome from the wire; no prose sniffing.
+    const outcome: CheckOutcome = result.outcome;
 
     // Plan 03.1-09 GAP-05 — refresh the canonical lab_progress row from
     // Rust on a successful Pass so the UI reflects the new
@@ -159,7 +160,8 @@ export const useLabStore = create<LabState>((set, _get) => ({
 
   validateMilestone: async (sessionId, stepIndex) => {
     const result = await labValidateMilestone({ sessionId, stepIndex });
-    const outcome = reasonToOutcome(result.reason, result.passed);
+    // WR-03 — structural outcome from the wire; no prose sniffing.
+    const outcome: CheckOutcome = result.outcome;
 
     // Same GAP-05 progress refresh precedent as markStepComplete: on Pass,
     // pull the canonical lab_progress row so completed_step_ids/currentStep

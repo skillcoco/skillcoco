@@ -104,6 +104,9 @@ pub(crate) async fn lab_check_step_with(
             reason: "milestone step — press Validate to check".to_string(),
             check_kind: check_kind_str(&step.check),
             mastery_delta: 0.0,
+            // WR-03 — advisory, NOT a Fail: the UI must not render this
+            // prompt-boundary skip as a failed check.
+            outcome: "milestone_pending".to_string(),
         });
     }
 
@@ -145,6 +148,7 @@ pub(crate) async fn lab_check_step_with(
         reason,
         check_kind,
         mastery_delta,
+        outcome: outcome_str(&outcome).to_string(),
     })
 }
 
@@ -258,6 +262,7 @@ pub(crate) async fn lab_validate_milestone_with(
         reason,
         check_kind,
         mastery_delta,
+        outcome: outcome_str(&outcome).to_string(),
     })
 }
 
@@ -323,6 +328,18 @@ fn check_kind_str(check: &StepCheck) -> String {
     }
 }
 
+/// 19.3-REVIEW WR-03 — stable snake_case outcome string for the wire (and
+/// the persisted ai_judge verdict). The frontend consumes this structurally
+/// instead of substring-sniffing the human-readable `reason`.
+fn outcome_str(outcome: &EvalOutcome) -> &'static str {
+    match outcome {
+        EvalOutcome::Pass => "pass",
+        EvalOutcome::Fail => "fail",
+        EvalOutcome::Indeterminate => "indeterminate",
+        EvalOutcome::Manual => "manual",
+    }
+}
+
 fn outcome_reason(outcome: &EvalOutcome) -> String {
     match outcome {
         EvalOutcome::Pass => "step passed".to_string(),
@@ -368,12 +385,7 @@ fn persist_outcome(
     // For ai_judge outcomes (Pass/Fail/Manual), persist the verdict —
     // keyed per step (WR-06) plus the legacy last_ai_judge slot.
     if check_kind == "aiJudge" {
-        let verdict_outcome = match outcome {
-            EvalOutcome::Pass => "pass",
-            EvalOutcome::Fail => "fail",
-            EvalOutcome::Indeterminate => "indeterminate",
-            EvalOutcome::Manual => "manual",
-        };
+        let verdict_outcome = outcome_str(outcome);
         let verdict = serde_json::json!({
             "step_index": step_index,
             "outcome": verdict_outcome,

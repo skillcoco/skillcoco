@@ -499,6 +499,12 @@ export interface LabCheckStepResult {
   reason: string;
   checkKind: string;
   masteryDelta: number;
+  /**
+   * 19.3-REVIEW WR-03 — structural outcome from the Rust evaluator so the
+   * UI never sniffs `reason` prose. "milestone_pending" is the D-04
+   * prompt-boundary advisory on milestone-grain steps (not a real Fail).
+   */
+  outcome: "pass" | "fail" | "indeterminate" | "manual" | "milestone_pending";
 }
 
 /**
@@ -519,6 +525,11 @@ export interface LabValidateMilestoneResult {
   reason: string;
   checkKind: string;
   masteryDelta: number;
+  /**
+   * WR-03 — structural outcome; never "milestone_pending" here (this
+   * handler always evaluates), but typed identically for symmetry.
+   */
+  outcome: "pass" | "fail" | "indeterminate" | "manual" | "milestone_pending";
 }
 
 export interface LabShowHintRequest {

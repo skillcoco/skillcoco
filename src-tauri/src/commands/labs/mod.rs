@@ -152,6 +152,11 @@ pub struct LabCheckStepResult {
     pub reason: String,
     pub check_kind: String, // "commandRegex" | "exitCode" | "fileState" | "aiJudge"
     pub mastery_delta: f64,
+    /// 19.3-REVIEW WR-03 — structural outcome so the frontend never sniffs
+    /// reason prose: "pass" | "fail" | "indeterminate" | "manual" |
+    /// "milestone_pending" (the D-04 prompt-boundary advisory on
+    /// milestone-grain steps — not a real Fail).
+    pub outcome: String,
 }
 
 /// Phase 19.3 (D-04) — explicit milestone validation request. Carries only
@@ -173,6 +178,10 @@ pub struct LabValidateMilestoneResult {
     pub reason: String,
     pub check_kind: String,
     pub mastery_delta: f64,
+    /// WR-03 — structural outcome: "pass" | "fail" | "indeterminate" |
+    /// "manual" (never "milestone_pending" here — this handler always
+    /// evaluates).
+    pub outcome: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -357,9 +366,10 @@ mod tests {
             reason: "ok".to_string(),
             check_kind: "commandRegex".to_string(),
             mastery_delta: 0.25,
+            outcome: "pass".to_string(),
         };
         let json = serde_json::to_string(&result).unwrap();
-        for k in ["stepIndex", "passed", "reason", "checkKind", "masteryDelta"] {
+        for k in ["stepIndex", "passed", "reason", "checkKind", "masteryDelta", "outcome"] {
             assert_camel(&json, k);
         }
     }

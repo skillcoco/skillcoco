@@ -730,6 +730,9 @@ async fn lab_check_step_milestone_skips_verdict() {
         "reason must direct the learner to Validate, got: {}",
         result.reason
     );
+    // WR-03 — structural outcome, not prose-sniffing: the D-04 advisory
+    // must NOT surface as "fail" in the UI.
+    assert_eq!(result.outcome, "milestone_pending");
 
     // No progress advance persisted.
     match progress_row(&state, &learner, &module, &block) {
@@ -790,6 +793,8 @@ async fn lab_validate_milestone_routes_through_persist_outcome() {
 
     assert!(result.passed, "history contains a matching record — must Pass");
     assert_eq!(result.check_kind, "commandRegex");
+    // WR-03 — the outcome enum crosses the wire structurally.
+    assert_eq!(result.outcome, "pass");
     let (current_step, completed) =
         progress_row(&state, &learner, &module, &block).expect("row must exist after persist");
     assert_eq!(current_step, 1, "Pass must advance current_step via persist_outcome");
