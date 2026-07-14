@@ -324,6 +324,12 @@ export async function labShowHint(
   return invoke("lab_show_hint", { request });
 }
 
+export async function labValidateMilestone(
+  request: import("@/types/learning").LabValidateMilestoneRequest,
+): Promise<import("@/types/learning").LabValidateMilestoneResult> {
+  return invoke("lab_validate_milestone", { request });
+}
+
 export async function labReset(
   request: import("@/types/learning").LabResetRequest,
 ): Promise<import("@/types/learning").LabResetResult> {

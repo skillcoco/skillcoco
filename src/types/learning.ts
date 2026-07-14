@@ -383,6 +383,12 @@ export interface LabStep {
   check: StepCheck;
   /** Three-tier progressive hints: gentle nudge → partial → full solution. */
   hints: string[];
+  /**
+   * Phase 19.3 (D-03) — per-step validation grain override. Absent means
+   * "no override" (matches the lab-level grain, or "step" if that's also
+   * absent) — mirrors the Rust `Grain::Step` default / back-compat gate.
+   */
+  grain?: "step" | "milestone";
 }
 
 export interface LabSpec {
@@ -397,6 +403,12 @@ export interface LabSpec {
   /** Files this lab produces — used by surgical Reset (LAB-07). */
   creates: string[];
   steps: LabStep[];
+  /**
+   * Phase 19.3 (D-03) — whole-lab default validation grain. Absent means
+   * "step" (back-compat: every pre-19.3 LAB.md has no `grain:` key and
+   * renders identically to today — no Validate-milestone button).
+   */
+  grain?: "step" | "milestone";
 }
 
 /** Source markdown + generation prompt for regen (mirrors QuizPayload pattern). */
@@ -482,6 +494,26 @@ export interface LabCheckStepRequest {
 }
 
 export interface LabCheckStepResult {
+  stepIndex: number;
+  passed: boolean;
+  reason: string;
+  checkKind: string;
+  masteryDelta: number;
+}
+
+/**
+ * Phase 19.3 (D-04) — explicit milestone validation request. Carries only
+ * the session id + step index; learner/module/block/workspace resolve
+ * server-side from the session sidecar (mirrors `LabCheckStepRequest`'s
+ * camelCase shape).
+ */
+export interface LabValidateMilestoneRequest {
+  sessionId: string;
+  stepIndex: number;
+}
+
+/** Phase 19.3 (D-04) — mirrors `LabCheckStepResult`'s shape. */
+export interface LabValidateMilestoneResult {
   stepIndex: number;
   passed: boolean;
   reason: string;
