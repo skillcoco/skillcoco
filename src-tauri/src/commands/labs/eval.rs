@@ -218,6 +218,15 @@ pub(crate) async fn lab_validate_milestone_with(
         ai_budget_remaining: ai_budget,
         history: Some(&history),
     };
+    // 19.3-REVIEW WR-02 — `None` runner: DELIBERATE parity with the
+    // step-grain production path (`evaluate_step` internally passes
+    // `None::<&NoJudgeRunner>`). No production `AiJudgeRunner` impl exists
+    // anywhere in the crate (pre-existing, predates 19.3), so ai_judge
+    // with auth+budget degrades to Manual at BOTH grains identically.
+    // Wiring a real runner (over ai::retry::ai_request_with_retry, with
+    // ai_budget_remaining decrement) is a cross-grain change deferred to
+    // its own phase — when it lands, thread it through this seam and
+    // `lab_check_step_with` together.
     let outcome = evaluate_step_milestone(&step.check, &ctx, None::<&dyn AiJudgeRunner>)
         .await
         .map_err(|e| format!("evaluate_step_milestone: {}", e))?;
