@@ -30,11 +30,11 @@ issues, discussions, or pull requests.**
 Use one of these private channels instead:
 
 1. **GitHub Private Vulnerability Reporting (preferred):** open
-   <https://github.com/agentixgarage/learnforge/security> and click
+   <https://github.com/skillcoco/skillcoco/security> and click
    "Report a vulnerability." This routes the report directly to the
    maintainers as a private security advisory draft and is the
    fastest path to a CVE if one is warranted.
-2. **Email (fallback):** `hello@learnforge.dev`. Use this if you do
+2. **Email (fallback):** `hello@initcron.org`. Use this if you do
    not have a GitHub account or the Security tab is unavailable to
    you. Encrypt sensitive payloads at your discretion; we do not
    currently publish a GPG key — request one in your initial email if
@@ -57,7 +57,7 @@ We will **acknowledge your report within 3 working days**.
 If the issue is confirmed as a vulnerability, we will:
 
 1. Open a draft [GitHub Security Advisory](https://docs.github.com/en/code-security/security-advisories)
-   in the `agentixgarage/learnforge` repository and invite you as a
+   in the `skillcoco/skillcoco` repository and invite you as a
    collaborator.
 2. Develop a fix in a temporary private fork attached to that
    advisory.
@@ -121,7 +121,7 @@ In scope for this policy:
 - `learnforge-core` crate (Rust library published to crates.io)
 - SkillCoco desktop application (Tauri 2, distributed via GitHub
   Releases on macOS, Linux, and Windows)
-- The `agentixgarage/learnforge` repository itself, including CI
+- The `skillcoco/skillcoco` repository itself, including CI
   workflows under `.github/workflows/`
 
 Out of scope:
