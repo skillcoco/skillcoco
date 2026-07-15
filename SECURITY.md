@@ -1,6 +1,6 @@
 # Security Policy
 
-LearnForge ships an open-source desktop application plus the
+SkillCoco ships an open-source desktop application plus the
 `learnforge-core` Rust crate. This policy describes how to report a
 vulnerability in either component, what response you can expect, and
 how we coordinate disclosure.
@@ -18,7 +18,7 @@ releases.
 | < 0.1   | not supported      |
 
 The same support window applies to both `learnforge-core` (crates.io)
-and the LearnForge desktop application (GitHub Releases). Their
+and the SkillCoco desktop application (GitHub Releases). Their
 versions may diverge at the patch level per D-03c, but the supported
 minor track is shared.
 
@@ -119,14 +119,14 @@ rest, eliminating that class of long-lived credential entirely.
 In scope for this policy:
 
 - `learnforge-core` crate (Rust library published to crates.io)
-- LearnForge desktop application (Tauri 2, distributed via GitHub
+- SkillCoco desktop application (Tauri 2, distributed via GitHub
   Releases on macOS, Linux, and Windows)
 - The `agentixgarage/learnforge` repository itself, including CI
   workflows under `.github/workflows/`
 
 Out of scope:
 
-- The closed-source `LearnForge Studio` (paid tier) — report Studio
+- The closed-source `SkillCoco Studio` (paid tier) — report Studio
   vulnerabilities via the same channels above; they are handled
   under a separate disclosure track.
 - Third-party dependencies (please report upstream first; we will

@@ -1,7 +1,7 @@
-# Coordination: LearnForge ↔ Creator Studio
+# Coordination: SkillCoco ↔ Creator Studio
 
-LearnForge (this repo — open-source learner app, MIT) has a private
-companion product, **LearnForge Creator Studio** (educator
+SkillCoco (this repo — open-source learner app, MIT) has a private
+companion product, **SkillCoco Creator Studio** (educator
 course-production workstation, closed-source, separate repo). The two
 are independent products with their own development, licensing, and
 maintenance since 2026-07-10.
