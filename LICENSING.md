@@ -1,11 +1,12 @@
 # Licensing
 
-LearnForge is a **100% MIT-licensed product**. There is no proprietary
-tier, no commercial overlay, and no dual-license structure. The full
-adaptive engine — BKT, SM-2, AI content generation, terminal labs,
-topic packs, daily microlearning, achievement badges, and exportable
-certificates — ships in the open-source desktop app under the MIT
-license.
+Everything in this repository is **100% MIT-licensed** — no dual-license
+structure, no proprietary code here. The full adaptive engine — BKT, SM-2,
+AI content generation, terminal labs, topic packs, daily microlearning,
+achievement badges, and exportable certificates — ships in this open-source
+desktop app under the MIT license. Commercial SkillCoco products
+(Pro, Hub, Studio) live in separate private repositories; see the
+"Open core" section of the [README](README.md).
 
 ## TL;DR
 
@@ -43,4 +44,4 @@ first pull request (automated via GitHub Actions).
 
 ## Questions
 
-Email `hello@learnforge.dev` for licensing questions.
+Open a [GitHub Issue](https://github.com/skillcoco/skillcoco/issues) for licensing questions.

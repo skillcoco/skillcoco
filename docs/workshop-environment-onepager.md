@@ -1,10 +1,10 @@
 # Workshop / Team Environment Requirements
 
-**One-pager for facilitators running a LearnForge workshop or team pilot.**
+**One-pager for facilitators running a SkillCoco workshop or team pilot.**
 Read this before the session — every item below is a pre-flight check, not
 a runtime surprise.
 
-LearnForge pairs with two Phase 18 deliverables for workshop/team pilots:
+SkillCoco pairs with two Phase 18 deliverables for workshop/team pilots:
 signed **skill-report export** (per-learner, verifiable evidence of
 knowledge + practical mastery) and the **`scripts/skill-report-aggregate.py`**
 cohort-summary tool, which verifies every learner's exported report and
@@ -22,13 +22,13 @@ machine.
 - Locked-down corporate laptops are the most common failure point —
   Docker Desktop requires admin rights to install on most platforms.
   Confirm installation ahead of the session, not on the day.
-- If Docker cannot run, LearnForge's runtime setting can be switched to
+- If Docker cannot run, SkillCoco's runtime setting can be switched to
   Auto-detect or Host-shell — see the fallback section below — but plan
   for it in advance rather than discovering it mid-lab.
 
 ## 2. Host-shell fallback implications
 
-When Docker is unavailable, LearnForge falls back to running lab steps
+When Docker is unavailable, SkillCoco falls back to running lab steps
 directly in a host shell (a real PTY on the learner's own machine, not a
 container). This keeps labs functional on locked-down machines, but the
 isolation and safety guarantees are meaningfully weaker:
@@ -70,7 +70,7 @@ complete labs, just with a different isolation trade-off.
 
 ## 4. BYO-key decision (facilitator pre-flight)
 
-LearnForge's AI features (path generation, AI-judged lab steps, content
+SkillCoco's AI features (path generation, AI-judged lab steps, content
 generation) require an AI provider credential per learner install — there
 is no shared server-side key. Before the session, the facilitator must
 decide and communicate one of:
@@ -94,7 +94,7 @@ workshop plan assumes one.
 
 Run through this list with (or send to) participants before the session:
 
-- [ ] LearnForge installed and opens without errors.
+- [ ] SkillCoco installed and opens without errors.
 - [ ] Docker Desktop installed and running (or: participant has been told
       they will run labs in host-shell fallback mode).
 - [ ] Network/proxy access confirmed to the AI provider's API endpoint (if

@@ -3,7 +3,7 @@
 **Status:** Active as of 2026-06-17 (Phase 8 publish-prep)
 **Authoritative source:** Phase 8 D-03 / D-03b / D-03c, D-08 / D-08b / D-08c, locked O-8
 
-This document describes how LearnForge version numbers are assigned,
+This document describes how SkillCoco version numbers are assigned,
 how releases are cut, and the strict ordering rule between the
 `learnforge-core` crate publish and the desktop application release.
 For per-release change history, see the `CHANGELOG.md` files
@@ -11,12 +11,12 @@ referenced at the bottom of this document.
 
 ## Scope: two independent version streams
 
-LearnForge ships TWO artifacts that version independently:
+SkillCoco ships TWO artifacts that version independently:
 
 | Artifact                | Where it lives          | Tag namespace             | Bumped when                                                   |
 | ----------------------- | ----------------------- | ------------------------- | ------------------------------------------------------------- |
 | `learnforge-core` crate | crates.io               | `core-v{major}.{minor}.{patch}` | Any change to crate source, public API, or crate metadata |
-| LearnForge desktop app  | GitHub Releases         | `v{major}.{minor}.{patch}`      | Any change to desktop app behaviour, UX, or bundled config |
+| SkillCoco desktop app  | GitHub Releases         | `v{major}.{minor}.{patch}`      | Any change to desktop app behaviour, UX, or bundled config |
 
 The desktop app *depends on* the crate. Per D-03c the desktop app's
 **minor** number tracks the crate's minor number (so v0.2.x desktop
@@ -25,7 +25,7 @@ ship a UX-only fix as 0.2.1 while core stays at 0.2.0.
 
 ## Semver discipline (D-03)
 
-LearnForge follows [Semantic Versioning 2.0.0](https://semver.org/)
+SkillCoco follows [Semantic Versioning 2.0.0](https://semver.org/)
 strictly. The version triplet is `MAJOR.MINOR.PATCH`:
 
 - **PATCH** (`0.x.Y` bump) — bug fixes, performance improvements,
@@ -41,7 +41,7 @@ strictly. The version triplet is `MAJOR.MINOR.PATCH`:
 
 ### Pre-1.0 rules (D-08c)
 
-Until LearnForge ships 1.0.0, breaking changes that would otherwise
+Until SkillCoco ships 1.0.0, breaking changes that would otherwise
 require a MAJOR bump go in `0.X.0` MINOR bumps. This is per the
 semver spec ("Anything MAY change at any time. The public API
 SHOULD NOT be considered stable") and matches how the broader
@@ -79,7 +79,7 @@ room for soak.
 
 ## Cadence (D-03b)
 
-LearnForge releases when ready. There is no fixed cadence — no
+SkillCoco releases when ready. There is no fixed cadence — no
 quarterly, no monthly. A release is cut when the maintainer judges
 that the accumulated changes deserve one (typically: a notable bug
 fix has landed, OR a small batch of features is ready, OR a security

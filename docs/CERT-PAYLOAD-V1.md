@@ -1,4 +1,4 @@
-# LearnForge Certificate Payload — v1
+# SkillCoco Certificate Payload — v1
 
 **Status:** Active for Phase 6.
 **Authored:** 2026-06-16 (Phase 6 Plan 06-01 / Wave 0).
@@ -156,4 +156,4 @@ TBD — Wave 2 (Plan 06-03) publishes:
 
 *Phase: 06-certification*
 *Plan: 06-01 (Wave 0 — TDD scaffolds)*
-*Audience: Phase 14 hosted-verifier authors + future LearnForge security audits*
+*Audience: Phase 14 hosted-verifier authors + future SkillCoco security audits*

@@ -8,7 +8,7 @@
 **One public GitHub repository — one MIT product.**
 
 ```
-agentixgarage/learnforge   ← single public repo (MIT)
+skillcoco/skillcoco   ← single public repo (MIT)
 ├── LICENSE              ← MIT
 ├── LICENSING.md         ← reader-facing license summary
 ├── README.md            ← public-facing project intro

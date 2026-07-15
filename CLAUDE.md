@@ -2,18 +2,20 @@
 
 ## Platform Context (read first)
 
-- This repo is the **open-source core** of the LearnForge platform family.
-  LearnForge Pro, LearnForge Hub, and LearnForge Studio are commercial, private repos.
-- Coordination anchor: the private `learnforge-hub` repo → `PLATFORM.md`. Cross-repo
-  contracts are the pack schema and the `learnforge-core` crate; cross-repo changes
-  are decided there first.
+- This repo is the **open-source core** of the SkillCoco platform family
+  (brand renamed from LearnForge, D-13, 2026-07-15). SkillCoco Pro, SkillCoco Hub,
+  and SkillCoco Studio are commercial, private repos.
+- Coordination anchor: the private `skillcoco-hub` repo → `PLATFORM.md`. Cross-repo
+  contracts are the pack schema and the `skillcoco-core` crate (currently still
+  named `learnforge-core` in code; rename lands in the strip milestone); cross-repo
+  changes are decided there first.
 - **No feature-parity obligation with Pro.** OSS is allowed to be boring.
 - Planned background milestone "OSS-lite strip + open-core launch" (required before
   public promotion, no other deadline): remove terminal labs, exam-sim, entitlements/
   redeem, and the client-side certificate trust chain. Keep: adaptive engine
   (BKT/SM-2/microlearning), pack format + import, lessons/video/quizzes,
   gamification, AI tutor (BYOK/local models), simple local completion badge.
-- The full-featured lineage continues in the private `learnforge-pro` fork
+- The full-featured lineage continues in the private `skillcoco-pro` fork
   (forked 2026-07-14 at `0c516fb`).
 
 ## Behavioral Rules (Always Enforced)

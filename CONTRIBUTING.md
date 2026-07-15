@@ -1,6 +1,6 @@
-# Contributing to LearnForge
+# Contributing to SkillCoco
 
-Thank you for your interest in contributing to LearnForge! This document covers
+Thank you for your interest in contributing to SkillCoco! This document covers
 everything you need to get started: the Contributor License Agreement, dev
 environment setup, coding standards, and the pull-request workflow.
 
@@ -8,7 +8,7 @@ environment setup, coding standards, and the pull-request workflow.
 
 ## Contributor License Agreement (CLA)
 
-LearnForge is developed under an open-core model. To protect both contributors
+SkillCoco is developed under an open-core model. To protect both contributors
 and the project, **all contributors must sign the CLA before their first pull
 request can be merged.**
 
@@ -18,7 +18,7 @@ points:
 - You grant the maintainers a perpetual, worldwide copyright and patent license
   over your contributions.
 - Section 5 grants the maintainers the right to incorporate your contributions
-  into commercial products (LearnForge Pro, LearnForge Hub, LearnForge Studio,
+  into commercial products (SkillCoco Pro, SkillCoco Hub, SkillCoco Studio,
   or successors) under any license. The public MIT-licensed copy is unaffected.
 
 ### How to sign
@@ -50,7 +50,7 @@ future contributions. You only sign once.
 ### Clone and install
 
 ```bash
-git clone https://github.com/agentixgarage/learnforge.git
+git clone https://github.com/skillcoco/skillcoco.git
 cd learnforge
 pnpm install
 ```
@@ -108,7 +108,7 @@ pnpm run lint
 
 ## Test-driven development (TDD)
 
-LearnForge uses **TDD London School** (mock-first):
+SkillCoco uses **TDD London School** (mock-first):
 
 1. **RED** — write one failing test that describes the desired behaviour. Run it,
    verify it fails for the right reason (assertion failure, not compile error).
@@ -202,14 +202,14 @@ non-obvious reasoning.
 
 ## Open core — OSS vs the commercial platform
 
-LearnForge follows an **open-core model**:
+SkillCoco follows an **open-core model**:
 
 | What | Where | License |
 |------|-------|---------|
 | Adaptive engine (BKT, SM-2, microlearning), open pack format, lessons/video/quizzes, gamification, AI tutor (BYOK/local) | **This repo** | MIT |
-| Integrated learning environment: terminal + IDE, validated/graded labs, interactive simulators, exam simulators | LearnForge Pro (private) | Commercial |
-| Course licensing, verifiable certificates, progress sync, cohort/manager reporting, multi-tenant web | LearnForge Hub (private) | Commercial |
-| Course authoring + AI enrichment for educators | LearnForge Studio (private) | Commercial |
+| Integrated learning environment: terminal + IDE, validated/graded labs, interactive simulators, exam simulators | SkillCoco Pro (private) | Commercial |
+| Course licensing, verifiable certificates, progress sync, cohort/manager reporting, multi-tenant web | SkillCoco Hub (private) | Commercial |
+| Course authoring + AI enrichment for educators | SkillCoco Studio (private) | Commercial |
 
 Some Pro-tier features (terminal labs, exam-sim) still exist in this repository
 today; they are scheduled to move out in a planned "OSS-lite" milestone.
@@ -223,8 +223,8 @@ before investing time in implementation.
 
 ## Getting help
 
-- **Bug reports / feature requests:** [GitHub Issues](https://github.com/agentixgarage/learnforge/issues)
-- **Questions:** Start a [GitHub Discussion](https://github.com/agentixgarage/learnforge/discussions)
+- **Bug reports / feature requests:** [GitHub Issues](https://github.com/skillcoco/skillcoco/issues)
+- **Questions:** Start a [GitHub Discussion](https://github.com/skillcoco/skillcoco/discussions)
 - **Security vulnerabilities:** Email `bean@initcron.org` — do not open a public issue
 
 ---

@@ -1,6 +1,6 @@
-# LearnForge Contributor License Agreement (CLA)
+# SkillCoco Contributor License Agreement (CLA)
 
-Thank you for your interest in contributing to LearnForge (the "Project").
+Thank you for your interest in contributing to SkillCoco (the "Project").
 
 This Contributor License Agreement ("Agreement") clarifies the
 intellectual property license granted with contributions from any
@@ -61,21 +61,21 @@ aware and which are associated with any part of your Contributions.
 
 ## 5. Relicensing Rights (Open Core)
 
-LearnForge is developed under an open-core model. The Project is
+SkillCoco is developed under an open-core model. The Project is
 released to the public under the MIT License, and the Maintainers
 additionally develop commercial products (including but not limited
-to "LearnForge Studio") that may incorporate the Project's source
+to "SkillCoco Studio") that may incorporate the Project's source
 code in whole or in part.
 
 You expressly grant the Maintainers the perpetual, worldwide,
 royalty-free right to relicense your Contributions under any
 license — including proprietary, commercial, or restrictive
 licenses — for the purpose of incorporating your Contributions into
-LearnForge Studio or any other commercial product owned by the
+SkillCoco Studio or any other commercial product owned by the
 Maintainers.
 
 This relicensing right does not affect the MIT-licensed availability
-of your Contributions in the public LearnForge repository: the
+of your Contributions in the public SkillCoco repository: the
 public copy remains under the MIT License, and you and other
 third parties retain all rights granted to you by the MIT License.
 

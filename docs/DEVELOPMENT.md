@@ -33,7 +33,7 @@ Optional but recommended:
 
 ```bash
 # Clone
-gh repo clone agentixgarage/learnforge ~/work/apps/learnforge
+gh repo clone skillcoco/skillcoco ~/work/apps/learnforge
 cd ~/work/apps/learnforge
 
 # Install JS deps

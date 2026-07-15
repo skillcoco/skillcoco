@@ -1,6 +1,6 @@
 # macOS Code Signing & Notarization Setup (Maintainer Playbook)
 
-This document walks the LearnForge release maintainer through the
+This document walks the SkillCoco release maintainer through the
 one-time Apple Developer enrollment + GitHub-repo-secret population
 required before pushing the first signed desktop release tag (Wave 7).
 
@@ -31,7 +31,7 @@ in the plan.
 
 1. Go to https://developer.apple.com/programs/enroll/
 2. Sign in with the Apple ID you intend to associate with the
-   LearnForge developer identity. Use a maintainer-controlled Apple ID,
+   SkillCoco developer identity. Use a maintainer-controlled Apple ID,
    not a personal one — ownership transfer between Apple IDs is
    non-trivial.
 3. Choose **Individual** ($99/year) or **Organization** ($299/year).
@@ -233,12 +233,12 @@ rotation completes before the certificate expires.
 - Tauri 2 macOS signing docs: https://v2.tauri.app/distribute/sign/macos/
 - `notarytool` reference: `man notarytool` or `xcrun notarytool --help`
 - GitHub repo secrets: https://docs.github.com/en/actions/security-guides/encrypted-secrets
-- LearnForge `release.yml`: `.github/workflows/release.yml`
-- LearnForge `Entitlements.plist`: `src-tauri/Entitlements.plist`
-- LearnForge `tauri.conf.json`: `src-tauri/tauri.conf.json`
+- SkillCoco `release.yml`: `.github/workflows/release.yml`
+- SkillCoco `Entitlements.plist`: `src-tauri/Entitlements.plist`
+- SkillCoco `tauri.conf.json`: `src-tauri/tauri.conf.json`
 
 ---
 
-*Document owner: LearnForge release maintainer*
+*Document owner: SkillCoco release maintainer*
 *Originally authored as part of Phase 8 Plan 08-06 (Wave 6)*
 *Required reading before pushing the first `v0.1.0` tag (Wave 7)*
