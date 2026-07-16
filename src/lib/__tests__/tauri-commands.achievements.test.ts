@@ -114,44 +114,4 @@ describe("Phase 6 Certification IPC envelope (Rust param name = `request`)", () 
     );
     expect(path).toBe("/tmp/badge.png");
   });
-
-  it("verifySignature sends { request: { payloadB64, publicKeyPemOverride } }", async () => {
-    invokeMock.mockResolvedValueOnce({
-      valid: true,
-      learner: "Ada",
-      track: "Kubernetes",
-      level: "Associate",
-      completionDate: "2026-06-15T00:00:00Z",
-      keyFingerprint: "deadbeef",
-      payloadVersion: 1,
-      error: null,
-    });
-    await commands.verifySignature({
-      payloadB64: "abc.def",
-      publicKeyPemOverride: null,
-    });
-    expect(invokeMock).toHaveBeenCalledWith("verify_signature", {
-      request: { payloadB64: "abc.def", publicKeyPemOverride: null },
-    });
-  });
-
-  it("verifySignature forwards the override PEM when provided", async () => {
-    invokeMock.mockResolvedValueOnce({
-      valid: false,
-      learner: "",
-      track: "",
-      level: "",
-      completionDate: "",
-      keyFingerprint: "",
-      payloadVersion: 0,
-      error: "signature_mismatch",
-    });
-    await commands.verifySignature({
-      payloadB64: "abc.def",
-      publicKeyPemOverride: "-----BEGIN PUBLIC KEY-----\nAA\n-----END PUBLIC KEY-----",
-    });
-    const [, payload] = invokeMock.mock.calls[0];
-    const env = payload as { request: { publicKeyPemOverride: string | null } };
-    expect(env.request.publicKeyPemOverride).toContain("BEGIN PUBLIC KEY");
-  });
 });

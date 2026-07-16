@@ -372,17 +372,13 @@ pub fn run() {
             topic_packs::commands::set_topic_pack_enabled,
             topic_packs::commands::reload_skills,
             topic_packs::commands::get_topic_pack_modules,
-            // Certification (Phase 6 — Wave 2 / Phase 13 OSS Consolidation)
-            // Phase 13 (D-08): export_badge, verify_signature,
-            // get_signing_public_key, fingerprint_from_public_pem restored
-            // from pro/ back into the OSS binary.
+            // Certification (Phase 6 — Wave 2). The completion badge is
+            // self-signed; the cert-verify surface was removed in the Phase 23
+            // trust-chain strip.
             commands::achievements::list_achievements_for_learner,
             commands::achievements::get_track_certifications,
             commands::achievements::export_certificate,
             commands::achievements::export_badge,
-            commands::achievements::verify_signature,
-            commands::achievements::get_signing_public_key,
-            commands::achievements::fingerprint_from_public_pem,
             // Video-enriched lessons (Phase 11 — Plan 02)
             commands::videos::get_lesson_videos,
             commands::videos::refresh_lesson_videos,

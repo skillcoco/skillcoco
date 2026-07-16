@@ -42,23 +42,9 @@ base64 = { workspace = true }
 rand = { workspace = true }
 jsonschema = { workspace = true }
 include_dir = { workspace = true }
-serde_json_canonicalizer = "0.3.2"
-clap = { version = "4.6.1", features = ["derive"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-
-# ---------------------------------------------------------------------------
-# forge-sign — Phase 14 pack-signing CLI (keygen-root / issue-cert / sign).
-# Cargo does NOT scope [dependencies] per-target: this [[bin]] shares the
-# [lib]'s dependency table and compiles under the unscoped
-# `cargo build --target wasm32-unknown-unknown -p learnforge-core` gate
-# (14-RESEARCH Pitfall 1). Its own code must therefore use ONLY deps proven
-# wasm32-compilable (std::fs + clap). The bin never RUNS on wasm32.
-# ---------------------------------------------------------------------------
-[[bin]]
-name = "forge-sign"
-path = "src/bin/forge-sign.rs"
 
 # ---------------------------------------------------------------------------
 # WASM target overrides (R1 / Pitfall 2 / Pitfall 10).

@@ -47,13 +47,4 @@ export interface ImportCourseResult {
   blockCount: number;
   /** Non-fatal warnings surfaced during import (e.g. skipped non-ready blocks). */
   warnings: string[];
-  /**
-   * `true` when the pack carried a signature block and the full chain of
-   * trust verified successfully (TRUST-01, D-14). `false` for unsigned
-   * Open-tier imports. Phase 14 Plan 06 (CR-01) — was missing from this
-   * wire type even though the Rust ImportCourseResult always sends it.
-   */
-  verified?: boolean;
-  /** Publisher name from the verified issuer cert, when `verified` is `true`. */
-  issuerName?: string | null;
 }

@@ -17,10 +17,6 @@ interface ImportState {
   blockCount?: number;
   warnings?: string[];
   error?: string;
-  /** `true` when the imported pack's signature chain of trust verified (TRUST-01, D-14). */
-  verified?: boolean;
-  /** Publisher name from the verified issuer cert, when `verified` is `true`. */
-  issuerName?: string | null;
 }
 
 export function LibraryImportSection() {
@@ -63,8 +59,6 @@ export function LibraryImportSection() {
         moduleCount: result.moduleCount,
         blockCount: result.blockCount,
         warnings: result.warnings,
-        verified: result.verified,
-        issuerName: result.issuerName,
       });
 
       // WR-03 — the "Your packs" grid on this same page is fed by
@@ -102,11 +96,6 @@ export function LibraryImportSection() {
               {state.moduleCount} module{state.moduleCount !== 1 ? "s" : ""},{" "}
               {state.blockCount} block{state.blockCount !== 1 ? "s" : ""}
             </p>
-            {state.verified === true && state.issuerName && (
-              <p className="text-xs text-muted-foreground">
-                Verified publisher: <span className="font-medium">{state.issuerName}</span>
-              </p>
-            )}
             {state.warnings && state.warnings.length > 0 && (
               <div className="mt-2 space-y-1">
                 {state.warnings.map((w, i) => (

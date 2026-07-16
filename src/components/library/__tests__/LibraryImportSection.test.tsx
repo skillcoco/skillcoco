@@ -37,8 +37,6 @@ function importResult(overrides: Partial<ImportCourseResult> = {}): ImportCourse
     moduleCount: 4,
     blockCount: 12,
     warnings: [],
-    verified: true,
-    issuerName: "Test Publisher",
     ...overrides,
   };
 }

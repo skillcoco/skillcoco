@@ -12,9 +12,9 @@
 //!   `chmod 0o600` immediately after write.
 //! - **Lazy init (Pattern 2)** — A fresh keypair is generated only on the
 //!   first call; subsequent calls re-read the persisted PEM.
-//! - The private key never crosses the IPC boundary; only the public PEM
-//!   surface is exposed via `export_public_pem` (read by the
-//!   `get_signing_public_key` IPC handler).
+//! - The private key never crosses the IPC boundary. `FsKeyStore` signs the
+//!   local completion badge; the `export_public_pem` accessor remains for the
+//!   `SigningKeyStore` trait contract.
 //!
 //! The body of `get_or_init` is lifted **verbatim** from
 //! `src-tauri/src/achievements/signing.rs:45-82` (pre-Wave-5 snapshot); the

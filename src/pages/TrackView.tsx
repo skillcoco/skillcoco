@@ -16,7 +16,6 @@ import {
   Download,
   Loader2,
   Crown,
-  ShieldCheck,
 } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
@@ -682,24 +681,6 @@ export function TrackView() {
                 </span>
               );
             })()}
-            {/* Phase 14 Plan 05 (D-14) — verified-state badge. Renders ONLY
-                when the track record's `verified` flag (surfaced by the
-                14-04 import gate over IPC) is true. This flag is read
-                as-is from the track record — NO cryptographic verification
-                runs in the browser (RESEARCH.md Architectural
-                Responsibility Map). Issuer name is auto-escaped as a React
-                text child (T-g73-01 discipline — never
-                dangerouslySetInnerHTML). Silent on success otherwise
-                (no toast/modal per D-14). */}
-            {currentPath?.verified === true && (
-              <span
-                data-testid="licensed-badge-verified"
-                className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-gradient-to-r from-emerald-500/15 to-teal-500/10 px-2.5 py-0.5 text-xs font-semibold tracking-wide text-emerald-600 shadow-[0_0_12px_rgba(16,185,129,0.25)] dark:text-emerald-400"
-              >
-                <ShieldCheck size={13} />
-                Verified{currentPath?.issuerName ? ` · ${currentPath.issuerName}` : ""}
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-3">
             {/* Phase 12 Plan 04 — Export course button (D-10 UI mirror).

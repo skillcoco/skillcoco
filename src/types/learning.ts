@@ -73,22 +73,6 @@ export interface LearningPath {
   edges?: PathEdge[];
   estimatedHours: number;
   createdAt: string;
-  /**
-   * Phase 14 Plan 04/05 (D-14) — signature-verification result for a
-   * signed pack import, surfaced by the 14-04 import gate on the track
-   * record (camelCase over IPC: `verified`/`issuerName`). `true` only when
-   * a valid Ed25519 chain of trust (root -> issuer -> pack) was verified
-   * at import time. Read-only display flag — NO cryptographic verification
-   * runs in the browser; this field is never recomputed client-side.
-   * Optional so pre-Phase-14 records (and unsigned imports) deserialize
-   * without a verified badge.
-   */
-  verified?: boolean;
-  /**
-   * Phase 14 Plan 04/05 (D-14) — issuer name from the verified signing
-   * cert, paired with `verified`. null when unverified or not present.
-   */
-  issuerName?: string | null;
 }
 
 export interface PathModule {

@@ -439,15 +439,13 @@ export async function importCourse(
 }
 
 import { save } from "@tauri-apps/plugin-dialog";
-import { writeFile, readTextFile } from "@tauri-apps/plugin-fs";
+import { writeFile } from "@tauri-apps/plugin-fs";
 import type {
   Achievement,
   ExportBadgeRequest,
   ExportCertificateRequest,
   GetTrackCertificationsRequest,
   TrackCertifications,
-  VerifySignatureRequest,
-  VerifySignatureResult,
 } from "@/types/achievements";
 
 /// List the current learner's earned achievements (badges + certificates).
@@ -494,61 +492,6 @@ export async function exportBadge(
   if (!path) return null;
   await writeFile(path, new Uint8Array(bytes));
   return path;
-}
-
-/// Verify a pasted base64-encoded signed payload against either the local
-/// public key (default) or a user-provided PEM override.
-export async function verifySignature(
-  request: VerifySignatureRequest,
-): Promise<VerifySignatureResult> {
-  return invoke("verify_signature", { request });
-}
-
-// ── Phase 6 (Certification) — Plan 06-06 (Wave 5) Settings Verify panel ──
-//
-// Both wrappers are pure shims around `signing::*` helpers. They power
-// the Settings "Verify certificate" section: `getSigningPublicKey` feeds
-// the "Show signing public key" clipboard export AND seeds the mount-time
-// localFingerprint state (W4 fix — see SettingsVerifyCertSection.tsx);
-// `fingerprintFromPublicPem` derives the 8-hex fingerprint from any PEM
-// string (local or pasted override) without running a full verify pass.
-
-/// Return the local install's Ed25519 signing public-key PEM
-/// (`<app_data>/keys/cert_signing_public.pem`). Rejects with "Io ..." or
-/// "not found"-style errors on the cold-start case where no certificate
-/// has been issued yet (Phase 6 generates the keypair lazily on first
-/// issuance per RESEARCH.md Pattern 2). Callers must absorb errors
-/// silently — the Verify panel still works without a local key.
-export async function getSigningPublicKey(): Promise<string> {
-  return invoke("get_signing_public_key");
-}
-
-/// Derive the 8-hex SHA-256 fingerprint from a public-key PEM string.
-/// Pure helper — no disk I/O. Enforces a 4KB cap on the input PEM
-/// (T-06-22). The Settings Verify panel calls this on mount with the
-/// local public PEM so the untrusted-signer warning fires on the FIRST
-/// override paste — no prior verify pass required.
-export async function fingerprintFromPublicPem(
-  publicKeyPem: string,
-): Promise<string> {
-  return invoke("fingerprint_from_public_pem", {
-    request: { publicKeyPem },
-  });
-}
-
-/// Open a native file picker for a report/certificate JSON file and return
-/// its text content, or `null` if the user cancelled. 18-06 UAT: verifying
-/// an exported report by picking the file beats pasting 10KB+ of JSON.
-/// The backend's MAX_REPORT_JSON_LEN (64KB) cap stays authoritative; no
-/// size gating here.
-export async function pickAndReadReportFile(): Promise<string | null> {
-  const path = await open({
-    multiple: false,
-    directory: false,
-    filters: [{ name: "Report or certificate (JSON)", extensions: ["json"] }],
-  });
-  if (typeof path !== "string" || path.length === 0) return null;
-  return readTextFile(path);
 }
 
 // ── Ollama connection probe ──────────────────────────────────────────────────

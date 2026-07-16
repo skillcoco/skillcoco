@@ -83,35 +83,6 @@ export interface ExportBadgeRequest {
   achievementId: string;
 }
 
-export interface VerifySignatureRequest {
-  payloadB64: string;
-  publicKeyPemOverride: string | null;
-}
-
-export interface VerifySignatureResult {
-  valid: boolean;
-  learner: string;
-  track: string;
-  level: string;
-  completionDate: string;
-  keyFingerprint: string;
-  /// Dispatch tag. Phase 6 emits 1; Phase 14 introduces 2.
-  payloadVersion: number;
-  /// Structured error code on failure ("payload_too_large",
-  /// "malformed_envelope", "invalid_base64", "signature_mismatch", …).
-  /// `null` on `valid=true`.
-  error: string | null;
-}
-
 export interface GetTrackCertificationsRequest {
   trackId: string;
 }
-
-// ── Legacy Wave 0 names retained for the brief overlap until Wave 5
-//     UI lands. New code should use VerifySignatureRequest /
-//     VerifySignatureResult.
-
-/** @deprecated Use VerifySignatureRequest. */
-export type VerifyCertificateRequest = VerifySignatureRequest;
-/** @deprecated Use VerifySignatureResult. */
-export type VerifyCertificateResult = VerifySignatureResult;
