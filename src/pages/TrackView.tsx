@@ -32,7 +32,6 @@ import {
 import {
   listTopicPacksAdmin,
   exportCourse,
-  getOrCreateProfile,
   examBlocksForTrack,
   getEntitlementForTrack,
   type EntitlementAttribution,
@@ -40,7 +39,6 @@ import {
 import { useExamStore } from "@/stores/useExamStore";
 import { save } from "@tauri-apps/plugin-dialog";
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
-import { ExportReportDialog } from "@/pages/ExportReportDialog";
 import { BuyerAttributionLine } from "@/components/BuyerAttributionLine";
 
 // ── D-16 / D-05 — mastery band helper ──
@@ -499,15 +497,6 @@ export function TrackView() {
   >("idle");
   const [exportMessage, setExportMessage] = useState<string | null>(null);
 
-  // ── Phase 18 Plan 05 (Wave 3) — Export skill report dialog state ──
-  const [reportDialogOpen, setReportDialogOpen] = useState(false);
-  const [learnerName, setLearnerName] = useState("");
-  useEffect(() => {
-    getOrCreateProfile()
-      .then((p) => setLearnerName(p.displayName))
-      .catch((err) => console.error("Failed to load profile:", err));
-  }, []);
-
   // Phase 5 Plan 05 (Wave 4) — R1 / T-05-17 mitigation: when this track was
   // generated from a Topic Pack AND the pack's source is "skill" (i.e.
   // user-authored), surface a "From skill: <id>" attribution badge so
@@ -835,19 +824,6 @@ export function TrackView() {
                 )}
               </button>
             )}
-            {/* Phase 18 Plan 05 — "Export skill report" entry point.
-                Secondary (outline) tier — deliberately does not compete with
-                "Export course" above (18-UI-SPEC.md placement contract). */}
-            <button
-              type="button"
-              onClick={() => setReportDialogOpen(true)}
-              data-testid="export-skill-report-button"
-              title="Export a signed skill report for this track"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Download size={13} />
-              Export skill report
-            </button>
             <div className="text-right">
               <div className="text-2xl font-bold text-foreground">
                 {Math.round(currentTrack.progressPercent)}%
@@ -1077,16 +1053,6 @@ export function TrackView() {
           }
         />
       )}
-
-      {/* Phase 18 Plan 05 — Export skill report dialog, scoped to this track. */}
-      <ExportReportDialog
-        open={reportDialogOpen}
-        onOpenChange={setReportDialogOpen}
-        defaultScope="track"
-        trackId={trackId}
-        trackTopic={currentTrack.topic}
-        learnerName={learnerName}
-      />
     </div>
   );
 }

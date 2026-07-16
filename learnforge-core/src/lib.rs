@@ -35,7 +35,6 @@
 //! - [`packs`] — Topic-pack subsystem: bundled loader, schema validator, `PackSource` + `PackStore` traits (Wave 7).
 //! - [`achievements`] — Achievement issuance algorithm + `AchievementStore` trait + `maybe_issue` with A5 clock injection (Wave 8).
 //! - [`verifier`] — Phase 14 verification contract stub (D-08).
-//! - [`reports`] — Signed skill report assembly: `ReportStore` trait + `assemble()` with A5 clock injection, D-04 whole-profile merge/attribution, D-05 bands, D-07 reserved exam evidence class (Phase 18).
 //!
 //! All algorithmic modules have now moved to `learnforge-core`. PDF/PNG
 //! rendering (printpdf/qrcode/image) STAYS in `src-tauri` per D-03
@@ -59,7 +58,6 @@ pub mod microlearning;
 pub mod pack_trust;
 pub mod packs;
 pub mod path;
-pub mod reports;
 pub mod signing;
 pub mod sm2;
 pub mod threshold;

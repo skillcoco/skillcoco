@@ -137,6 +137,6 @@ mod tests {
         let count: i32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 20, "exactly 20 rows in schema_migrations after idempotent double-apply (v015..v020 added)");
+        assert_eq!(count, 18, "exactly 18 rows in schema_migrations after idempotent double-apply (v017/v018 removed in reports strip)");
     }
 }

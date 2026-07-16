@@ -451,7 +451,7 @@ fn read_lab_spec_conn_rejects_invalid_stored_spec() {
 /// spec has NO `exam:` frontmatter must be rejected by
 /// `exam_attempt_start`, not just filtered by the frontend. Otherwise a
 /// devtools IPC call against an easy regular lab mints a fake 100% Exam
-/// row that flows into the signed skill-report evidence ledger.
+/// row in the exam-attempt ledger.
 #[test]
 fn exam_attempt_start_rejects_non_exam_block() {
     let conn = fresh_conn();

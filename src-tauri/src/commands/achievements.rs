@@ -29,14 +29,11 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::achievements::artifacts::{self, BadgePngInput, CertificatePdfInput};
-use crate::commands::reports::MAX_REPORT_JSON_LEN;
 use crate::storage_impl::achievements::SqliteAchievementStore;
 use crate::storage_impl::signing::FsKeyStore;
 use learnforge_core::achievements::{
     Achievement, AchievementError, AchievementStore, TrackCertifications,
 };
-use learnforge_core::canonical_json::canonical_json_bytes;
-use learnforge_core::reports::ReportEnvelopeV1;
 use learnforge_core::signing::{self as signing, SigningKeyStore};
 
 // ── Request / Result types ────────────────────────────────────────────────
@@ -69,11 +66,6 @@ pub struct VerifySignatureRequest {
 }
 
 /// Phase 13 (OSS Consolidation / D-08) — restored from pro/.
-///
-/// Phase 18 (18-06 / REP-02) — extended with optional report-shaped fields
-/// (`#[serde(default)]` so pre-existing cert-payload deserialization is
-/// unaffected). These populate ONLY on the report-envelope branch of
-/// `verify_signature_inner`; cert payloads leave them at their defaults.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifySignatureResult {
@@ -85,20 +77,6 @@ pub struct VerifySignatureResult {
     pub key_fingerprint: String,
     pub payload_version: u32,
     pub error: Option<String>,
-    // ── Report-shaped fields (18-06 / REP-02) ──────────────────────────
-    /// Learner display name from the report payload (`payload.learnerName`).
-    #[serde(default)]
-    pub report_learner_name: Option<String>,
-    /// Human-readable scope label (`payload.scopeLabel` — track topic, or
-    /// "Whole Profile").
-    #[serde(default)]
-    pub report_scope_label: Option<String>,
-    /// Number of capability rows in the report (`payload.capabilities.len()`).
-    #[serde(default)]
-    pub report_capability_count: Option<u32>,
-    /// Report generation timestamp (`payload.metadata.generatedAt`).
-    #[serde(default)]
-    pub report_generated_at: Option<String>,
 }
 
 /// Phase 13 (OSS Consolidation / D-08) — restored from pro/.
@@ -156,98 +134,6 @@ fn format_issued_date(rfc3339: &str) -> String {
 fn encode_qr_payload(payload_json: &str, sig_hex: &str) -> String {
     let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload_json.as_bytes());
     format!("{}.{}", b64, sig_hex)
-}
-
-/// Phase 18 (18-06 / REP-02) — the report-envelope discriminator + verify
-/// branch. Returns `None` when `input` is NOT a report envelope (caller
-/// falls through to the legacy cert path); returns `Some(result)` when it
-/// IS a report envelope (whether the signature verifies or not — a
-/// tampered/oversize report envelope still short-circuits here with
-/// `valid: false`, it never falls through to the cert path).
-///
-/// Recomputes `canonical_json_bytes(&envelope.payload)` — the EXACT bytes
-/// `export_report_json` signed — and verifies via the SAME
-/// `signing::verify_payload` crypto path certs use (no second
-/// implementation). This is the byte-identical reconciliation: the string
-/// `export_report_json` writes to disk is, byte for byte, the string this
-/// function accepts.
-fn try_verify_report_envelope(input: &str, public_pem: &str) -> Option<VerifySignatureResult> {
-    let trimmed = input.trim();
-
-    // A report envelope is a JSON object; the legacy cert envelope is
-    // "<b64url>.<hex>" (never starts with '{'). Cheap pre-check avoids
-    // paying JSON-parse cost on every cert verification.
-    if !trimmed.starts_with('{') {
-        return None;
-    }
-
-    // T-18-17 — defense-in-depth size cap BEFORE parse (DoS resistance).
-    // Both call sites (`verify_signature` + the test-only
-    // `verify_signature_inner` mirror) already gate report-shaped input
-    // against `MAX_REPORT_JSON_LEN` before reaching here, but this
-    // function is defensive on its own in case a future call site skips
-    // that gate.
-    if trimmed.len() > MAX_REPORT_JSON_LEN {
-        return Some(VerifySignatureResult {
-            valid: false,
-            error: Some("report_json_too_large".to_string()),
-            ..Default::default()
-        });
-    }
-
-    let envelope = match serde_json::from_str::<ReportEnvelopeV1>(trimmed) {
-        Ok(e) => e,
-        Err(_) => return None,
-    };
-
-    // Discriminate: a genuine report payload carries a `capabilities`
-    // array (even if empty for a zero-track whole-profile report). This
-    // is the "payload-type dispatch, not schema contortion" approach
-    // (RESEARCH.md Pitfall 1).
-    if envelope.payload.capabilities.is_empty() && envelope.payload.scope_label.is_empty() {
-        // Defensive: an all-empty payload is ambiguous — most likely not a
-        // genuine report envelope. Still, ReportEnvelopeV1 parsed
-        // successfully via serde, so treat it as a (probably degenerate)
-        // report rather than silently falling through; a whole-profile
-        // report with zero tracks is a legitimate empty-capabilities case
-        // per the UI-SPEC empty state, so don't reject on empty
-        // capabilities alone — only reject when scope_label is ALSO empty
-        // (a genuinely malformed/placeholder payload).
-        return None;
-    }
-
-    let canonical = match canonical_json_bytes(&envelope.payload) {
-        Ok(b) => b,
-        Err(_) => {
-            return Some(VerifySignatureResult {
-                valid: false,
-                error: Some("report_payload_encoding_error".to_string()),
-                ..Default::default()
-            });
-        }
-    };
-
-    let is_valid = signing::verify_payload(public_pem, &canonical, &envelope.signature_hex);
-
-    let mut result = VerifySignatureResult {
-        valid: is_valid,
-        payload_version: envelope.payload.payload_version,
-        report_learner_name: Some(envelope.payload.learner_name.clone()),
-        report_scope_label: Some(envelope.payload.scope_label.clone()),
-        report_capability_count: Some(envelope.payload.capabilities.len() as u32),
-        report_generated_at: Some(envelope.payload.metadata.generated_at.clone()),
-        ..Default::default()
-    };
-
-    if let Ok(fp) = signing::fingerprint_from_public_pem(public_pem) {
-        result.key_fingerprint = fp;
-    }
-
-    if !is_valid {
-        result.error = Some("signature_mismatch".to_string());
-    }
-
-    Some(result)
 }
 
 // ── IPC handlers ─────────────────────────────────────────────────────────
@@ -408,23 +294,9 @@ pub fn verify_signature(
     request: VerifySignatureRequest,
     state: State<'_, crate::AppState>,
 ) -> Result<VerifySignatureResult, String> {
-    // ── Size caps (T-06-09 / T-13-01 / T-18-17) ────────────────────────
-    // Report-shaped input (JSON object) gets the larger MAX_REPORT_JSON_LEN
-    // cap (a real exported report routinely exceeds the 8KB cert cap —
-    // D-02: 8-15 capability rows with itemized evidence); cert-shaped
-    // input ("<b64>.<hex>", never starts with '{') keeps the original 8KB
-    // cap unchanged (T-13-01 preserved verbatim for the cert path).
-    let trimmed_for_shape_check = request.payload_b64.trim();
-    let looks_like_report_json = trimmed_for_shape_check.starts_with('{');
-    if looks_like_report_json {
-        if request.payload_b64.len() > MAX_REPORT_JSON_LEN {
-            return Ok(VerifySignatureResult {
-                valid: false,
-                error: Some("report_json_too_large".to_string()),
-                ..Default::default()
-            });
-        }
-    } else if request.payload_b64.len() > MAX_PAYLOAD_B64_LEN {
+    // ── Size caps (T-06-09 / T-13-01) ──────────────────────────────────
+    // T-13-01 preserved verbatim for the cert path.
+    if request.payload_b64.len() > MAX_PAYLOAD_B64_LEN {
         return Ok(VerifySignatureResult {
             valid: false,
             error: Some("payload_too_large".to_string()),
@@ -455,16 +327,6 @@ pub fn verify_signature(
             }
         },
     };
-
-    // ── Report-envelope parse branch (18-06 / REP-02) ──────────────────
-    // Tried BEFORE the legacy "<b64>.<hex>" cert path — a raw ReportEnvelopeV1
-    // JSON string has no '.' dot-envelope, so it would otherwise fall
-    // through to `malformed_envelope`. This branch is ADDITIVE: if the
-    // input does not parse as a report envelope, execution falls through
-    // to the unchanged cert path below (branch-not-replace).
-    if let Some(result) = try_verify_report_envelope(&request.payload_b64, &public_pem) {
-        return Ok(result);
-    }
 
     // ── Split "<b64>.<hex>" envelope ───────────────────────────────────
     let Some((payload_part, sig_part)) = request.payload_b64.split_once('.') else {
@@ -837,25 +699,12 @@ mod tests {
     /// kept in lockstep with the production `verify_signature` handler
     /// above — if the handler changes, this helper changes with it.
     fn verify_signature_inner(public_pem: &str, payload_b64: &str) -> VerifySignatureResult {
-        let trimmed_for_shape_check = payload_b64.trim();
-        let looks_like_report_json = trimmed_for_shape_check.starts_with('{');
-        if looks_like_report_json {
-            if payload_b64.len() > MAX_REPORT_JSON_LEN {
-                return VerifySignatureResult {
-                    valid: false,
-                    error: Some("report_json_too_large".to_string()),
-                    ..Default::default()
-                };
-            }
-        } else if payload_b64.len() > MAX_PAYLOAD_B64_LEN {
+        if payload_b64.len() > MAX_PAYLOAD_B64_LEN {
             return VerifySignatureResult {
                 valid: false,
                 error: Some("payload_too_large".to_string()),
                 ..Default::default()
             };
-        }
-        if let Some(result) = try_verify_report_envelope(payload_b64, public_pem) {
-            return result;
         }
         let Some((payload_part, sig_part)) = payload_b64.split_once('.') else {
             return VerifySignatureResult {
@@ -1038,148 +887,6 @@ mod tests {
         assert_eq!(result.learner, "");
         assert_eq!(result.track, "");
         assert_eq!(result.level, "");
-    }
-
-    // ── Phase 18 (18-06 / REP-02): report-envelope verify branch ──────
-
-    /// Build a signed `ReportEnvelopeV1` fixture and serialize it via
-    /// `canonical_json_bytes` — the EXACT byte-production path
-    /// `export_report_json` uses (18-03). Returns the JSON string the
-    /// Verify panel would receive if the learner pasted the exported file.
-    fn build_signed_report_envelope_json(key: &SigningKey) -> String {
-        use learnforge_core::reports::{
-            CapabilityRow, EvidenceItem, MasteryDimension, ReportMetadata, ReportPayloadV1,
-        };
-
-        let payload = ReportPayloadV1 {
-            learner_name: "Ada".to_string(),
-            learner_id: "lp1".to_string(),
-            scope_label: "Kubernetes".to_string(),
-            capabilities: vec![CapabilityRow {
-                slug: "can-configure-rbac".to_string(),
-                label: "Can configure RBAC policies".to_string(),
-                knowledge: MasteryDimension {
-                    band: "Proficient".to_string(),
-                    pct: 0.8,
-                },
-                practical: Some(MasteryDimension {
-                    band: "Working".to_string(),
-                    pct: 0.4,
-                }),
-                contributing_tracks: vec!["trk1".to_string()],
-                evidence: vec![EvidenceItem {
-                    class: learnforge_core::reports::EvidenceClass::Quiz,
-                    label: "Quiz: RBAC basics".to_string(),
-                    detail: "9/10".to_string(),
-                    date: "2026-07-01T00:00:00Z".to_string(),
-                    track_id: Some("trk1".to_string()),
-                    track_topic: Some("Kubernetes".to_string()),
-                }],
-            }],
-            metadata: ReportMetadata {
-                generated_at: "2026-07-10T00:00:00Z".to_string(),
-                app_version: "0.1.0".to_string(),
-                pack_provenance: None,
-                verified_issuer: None,
-            },
-            issuer: None,
-            key_fingerprint: sig_mod::public_key_fingerprint(&key.verifying_key()),
-            payload_version: 1,
-        };
-
-        let canonical = learnforge_core::canonical_json::canonical_json_bytes(&payload).unwrap();
-        let sig = sig_mod::sign_payload(key, &canonical);
-        let envelope = ReportEnvelopeV1 {
-            payload,
-            signature_hex: hex::encode(sig.to_bytes()),
-            key_fingerprint: sig_mod::public_key_fingerprint(&key.verifying_key()),
-        };
-        // The exact serialization path export_report_json uses.
-        String::from_utf8(learnforge_core::canonical_json::canonical_json_bytes(&envelope).unwrap())
-            .unwrap()
-    }
-
-    /// (a) The exact bytes `export_report_json` writes verify valid=true
-    /// and populate report fields — the byte-identical guarantee (REP-02).
-    #[test]
-    fn verify_signature_accepts_exported_report_json_byte_identical() {
-        let key = SigningKey::generate(&mut OsRng);
-        let pem = key.verifying_key().to_public_key_pem(LineEnding::LF).unwrap();
-        let exported_json = build_signed_report_envelope_json(&key);
-
-        let result = verify_signature_inner(&pem, &exported_json);
-        assert!(
-            result.valid,
-            "the exact export_report_json bytes must verify valid=true"
-        );
-        assert_eq!(result.report_learner_name.as_deref(), Some("Ada"));
-        assert_eq!(result.report_scope_label.as_deref(), Some("Kubernetes"));
-        assert_eq!(result.report_capability_count, Some(1));
-        assert_eq!(
-            result.report_generated_at.as_deref(),
-            Some("2026-07-10T00:00:00Z")
-        );
-        assert_eq!(result.payload_version, 1);
-        assert!(result.error.is_none());
-        // Report fields populate; cert fields (learner/track/level) stay
-        // at their Default (empty) — the report branch does NOT force the
-        // report shape into cert fields.
-        assert_eq!(result.learner, "");
-        assert_eq!(result.track, "");
-        assert_eq!(result.level, "");
-    }
-
-    /// (b) Tampering with a capability pct in the report JSON fails
-    /// verification with `signature_mismatch`.
-    #[test]
-    fn verify_signature_rejects_tampered_report_envelope() {
-        let key = SigningKey::generate(&mut OsRng);
-        let pem = key.verifying_key().to_public_key_pem(LineEnding::LF).unwrap();
-        let exported_json = build_signed_report_envelope_json(&key);
-        // Flip the knowledge pct 0.8 -> 0.9 inside the payload (tamper).
-        let tampered = exported_json.replacen("0.8", "0.9", 1);
-        assert_ne!(tampered, exported_json, "tamper must actually change the bytes");
-
-        let result = verify_signature_inner(&pem, &tampered);
-        assert!(!result.valid, "tampered report envelope must NOT verify");
-        assert_eq!(result.error.as_deref(), Some("signature_mismatch"));
-    }
-
-    /// (c) Cert `<b64>.<hex>` payload verification is unregressed — the
-    /// report branch is ADDED before the cert path, not substituted for it.
-    #[test]
-    fn verify_signature_cert_payload_regression_unchanged() {
-        let key = SigningKey::generate(&mut OsRng);
-        let pem = key.verifying_key().to_public_key_pem(LineEnding::LF).unwrap();
-        let payload_b64 = build_signed_payload(&key, "Ada", "Kubernetes", "Associate");
-        let result = verify_signature_inner(&pem, &payload_b64);
-        assert!(result.valid, "genuine cert payload must still verify");
-        assert_eq!(result.learner, "Ada");
-        assert_eq!(result.track, "Kubernetes");
-        assert_eq!(result.level, "Associate");
-        // Report fields stay at None for a cert payload.
-        assert!(result.report_learner_name.is_none());
-        assert!(result.report_scope_label.is_none());
-        assert!(result.report_capability_count.is_none());
-    }
-
-    /// (d) Oversize report JSON is rejected with a size error, not processed.
-    #[test]
-    fn verify_signature_rejects_oversize_report_json() {
-        let key = SigningKey::generate(&mut OsRng);
-        let pem = key.verifying_key().to_public_key_pem(LineEnding::LF).unwrap();
-        // Build an oversize (but report-shaped) string: valid JSON object
-        // prefix containing the "capabilities" discriminator, padded past
-        // MAX_REPORT_JSON_LEN with a big filler string value so the
-        // report-shape sniff (`starts_with('{')` + contains
-        // `"capabilities"`) fires before the too-large check.
-        let filler = "a".repeat(MAX_REPORT_JSON_LEN + 1024);
-        let oversize = format!(r#"{{"capabilities":[],"padding":"{}"}}"#, filler);
-        assert!(oversize.len() > MAX_REPORT_JSON_LEN);
-
-        let result = verify_signature_inner(&pem, &oversize);
-        assert!(!result.valid, "oversize report JSON must be rejected");
-        assert_eq!(result.error.as_deref(), Some("report_json_too_large"));
     }
 
     // ── encode_qr_payload sanity ─────────────────────────────────────

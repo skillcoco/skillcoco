@@ -37,9 +37,6 @@ const ERROR_MAP: Record<string, string> = {
   local_public_key_unavailable:
     "No local signing key exists yet. Generate a certificate first or paste a public key override.",
   payload_unparseable: "Payload fields could not be parsed.",
-  // Phase 18 (18-06 / REP-02) — report-envelope error codes.
-  report_json_too_large: "Report JSON exceeds the 64 KB safety cap.",
-  report_payload_encoding_error: "Report payload could not be re-encoded for verification.",
 };
 
 function friendlyError(code: string | null): string {
@@ -186,13 +183,6 @@ export function SettingsVerifyCertSection() {
     result.keyFingerprint.length > 0 &&
     result.keyFingerprint !== localFingerprint;
 
-  // Phase 18 (18-06 / REP-02) — a report-shaped result carries
-  // reportLearnerName (populated only by the report-envelope verify
-  // branch; cert payloads leave it undefined). Used to pick the
-  // report-shaped render branch instead of the cert fields branch.
-  const isReportResult =
-    result !== null && result.reportLearnerName !== undefined;
-
   // ── Render ───────────────────────────────────────────────────────
 
   return (
@@ -305,70 +295,7 @@ export function SettingsVerifyCertSection() {
 
         {/* Result block */}
 
-        {/* Phase 18 (18-06 / REP-02) — report-shaped valid result. Parallel
-            branch to the cert branch below (NOT a replacement) — reuses the
-            exact valid-state border/color treatment (emerald-500/30) +
-            untrusted-signer amber warning verbatim. */}
-        {result && result.valid && isReportResult && (
-          <div
-            data-testid="verify-result-report-valid"
-            className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4"
-          >
-            <div className="flex items-center gap-2 text-sm font-medium text-emerald-500">
-              <CheckCircle2 size={16} />
-              Valid signature
-            </div>
-            <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-              <div className="flex gap-2">
-                <dt className="text-muted-foreground">Learner</dt>
-                <dd className="font-medium text-foreground">
-                  {result.reportLearnerName}
-                </dd>
-              </div>
-              <div className="flex gap-2">
-                <dt className="text-muted-foreground">Scope</dt>
-                <dd className="font-medium text-foreground">
-                  {result.reportScopeLabel}
-                </dd>
-              </div>
-              <div className="flex gap-2">
-                <dt className="text-muted-foreground">Capabilities</dt>
-                <dd className="font-medium text-foreground">
-                  {result.reportCapabilityCount}
-                </dd>
-              </div>
-              <div className="flex gap-2">
-                <dt className="text-muted-foreground">Generated</dt>
-                <dd className="font-medium text-foreground">
-                  {result.reportGeneratedAt}
-                </dd>
-              </div>
-              <div className="flex gap-2 sm:col-span-2">
-                <dt className="text-muted-foreground">Signer fingerprint</dt>
-                <dd className="font-mono font-medium text-foreground">
-                  {result.keyFingerprint}
-                </dd>
-              </div>
-            </dl>
-            {untrustedSigner && (
-              <div
-                role="alert"
-                className="mt-2 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2"
-              >
-                <AlertTriangle
-                  size={14}
-                  className="mt-0.5 shrink-0 text-amber-500"
-                />
-                <p className="text-xs leading-relaxed text-amber-400">
-                  Verifying against external key: {result.keyFingerprint}. This
-                  signer is not your local LearnForge install.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {result && result.valid && !isReportResult && (
+        {result && result.valid && (
           <div
             data-testid="verify-result-valid"
             className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4"

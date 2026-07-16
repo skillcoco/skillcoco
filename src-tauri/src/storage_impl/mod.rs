@@ -23,10 +23,6 @@
 //!   (Phase 7 Wave 8 — eighth application of the per-module storage-trait
 //!   recipe). `track_mastery_aggregate` method body delegates to the
 //!   [`threshold`] free fn (Wave 4 seam closed).
-//! - [`reports`] — `SqliteReportStore<'a>(&'a Connection)` (Phase 18-03 —
-//!   ninth application). Per-track `ReportStore` methods over
-//!   capability_tags/module_progress/quiz_attempts/lab_progress/achievements,
-//!   with D-03.4 title-fallback and Warning-3 evidence_class validation.
 //! - [`entitlements`] — `SqliteEntitlementStore<'a>(&'a Connection)`
 //!   (Phase 15-01/15-02 — tenth application). Plain inherent-impl (no
 //!   `learnforge-core` trait — entitlements is Rust-side only); D-05 CRUD
@@ -44,7 +40,6 @@ pub mod blocks;
 pub mod entitlements;
 pub mod microlearning;
 pub mod packs;
-pub mod reports;
 pub mod signing;
 pub mod sr;
 pub mod threshold;

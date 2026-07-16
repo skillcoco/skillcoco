@@ -13,10 +13,10 @@
 //!   (`commands::course_io`), records the entitlement row, and stamps
 //!   `learning_paths.pack_id` for attribution (D-08).
 //!
-//! Follows the exact `submit_evidence_report_impl` shim shape
-//! (`commands/reports.rs`): `_impl` fns take `&std::sync::Mutex<Database>`
-//! directly (test-driveable without a Tauri app), and no `MutexGuard` is
-//! ever held across a network `.await` (T-15-15).
+//! Follows the project's `_impl` shim shape: `_impl` fns take
+//! `&std::sync::Mutex<Database>` directly (test-driveable without a Tauri
+//! app), and no `MutexGuard` is ever held across a network `.await`
+//! (T-15-15).
 //!
 //! `import_course_impl` and the rest of the Step 3.5/Step 4 signature-check
 //! logic in `course_io.rs` are NOT modified by this file — this is a new
@@ -150,9 +150,8 @@ impl std::fmt::Debug for DownloadAndImportPackRequest {
 // ── redeem_license ──────────────────────────────────────────────────────
 
 /// Read an optional Hub base-URL override from the active learner's
-/// `preferences_json` (same storage surface `read_report_server_config`
-/// reads in `commands/reports.rs`). Falls back to the production Hub
-/// default when absent/malformed (Claude's Discretion per A2).
+/// `preferences_json`. Falls back to the production Hub default when
+/// absent/malformed (Claude's Discretion per A2).
 fn read_hub_url_config(conn: &rusqlite::Connection) -> String {
     const DEFAULT_HUB_URL: &str = "https://hub.learnforge.dev";
 

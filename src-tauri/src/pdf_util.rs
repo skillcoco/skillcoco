@@ -1,11 +1,9 @@
-//! Shared PDF text-rendering helper for BOTH the certificate renderer
-//! (`achievements::artifacts`) and the report renderer
-//! (`reports::artifacts`).
+//! PDF text-rendering helper for the certificate renderer
+//! (`achievements::artifacts`).
 //!
 //! Extracted from `achievements/artifacts.rs` (Phase 6) during Phase 18
-//! Plan 4 so the hard-won `push_line` fix — and its regression test — is
-//! shared instead of re-implemented (and potentially re-broken) by the
-//! new report PDF renderer.
+//! Plan 4 so the hard-won `push_line` fix — and its regression test — lives
+//! in one place.
 
 use printpdf::{Op, PdfFontHandle, Point, Pt, TextItem};
 use printpdf::Mm;

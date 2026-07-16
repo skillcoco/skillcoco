@@ -17,9 +17,7 @@
 use clap::{Parser, Subcommand};
 use ed25519_dalek::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey};
 use ed25519_dalek::SigningKey;
-use learnforge_core::canonical_json::canonical_json_bytes;
 use learnforge_core::pack_trust::{self, IssuerCert};
-use learnforge_core::reports::ReportEnvelopeV1;
 use learnforge_core::signing;
 use pkcs8::LineEnding;
 use rand::rngs::OsRng;
@@ -80,19 +78,6 @@ enum Command {
         /// Output path for the signed pack JSON.
         #[arg(long)]
         out: PathBuf,
-    },
-    /// Verify a signed skill-report JSON's signature (D-14 — team
-    /// aggregation tooling). Reuses `learnforge_core::signing::verify_payload`
-    /// — the SAME verify path the app's Verify panel uses — zero crypto
-    /// drift, zero second Ed25519 implementation.
-    VerifyReport {
-        /// Path to the report JSON file (the `ReportEnvelopeV1` shape
-        /// `export_report_json` writes).
-        #[arg(long)]
-        input: PathBuf,
-        /// Path to the signing public-key PEM to verify against.
-        #[arg(long)]
-        public_key: PathBuf,
     },
 }
 
@@ -194,52 +179,6 @@ fn issue_cert_inner(
     Ok(cert)
 }
 
-/// Machine-readable result of `verify-report`, printed to stdout as JSON.
-#[derive(serde::Serialize)]
-struct VerifyReportResult {
-    valid: bool,
-    #[serde(rename = "learnerName")]
-    learner_name: String,
-    #[serde(rename = "capabilityCount")]
-    capability_count: usize,
-    #[serde(rename = "keyFingerprint")]
-    key_fingerprint: String,
-}
-
-/// Verify a signed skill-report JSON file against a public-key PEM.
-///
-/// Deserializes the FIXED `ReportEnvelopeV1` shape 18-03's
-/// `export_report_json` emits (do NOT guess or re-parse an ad-hoc format),
-/// recomputes canonical bytes over `envelope.payload` via
-/// `canonical_json_bytes`, and calls `signing::verify_payload` — the SAME
-/// path the app's Verify panel uses. Returns the result regardless of
-/// validity (the caller decides the process exit code); only file I/O or
-/// JSON-parse failures raise `ForgeSignError`.
-fn verify_report_inner(
-    input: &Path,
-    public_key: &Path,
-) -> Result<VerifyReportResult, ForgeSignError> {
-    let report_text = std::fs::read_to_string(input)
-        .map_err(|e| ForgeSignError::Io(format!("read report {}: {e}", input.display())))?;
-    let envelope: ReportEnvelopeV1 = serde_json::from_str(&report_text)
-        .map_err(|e| ForgeSignError::Json(format!("parse report envelope: {e}")))?;
-
-    let pem = std::fs::read_to_string(public_key).map_err(|e| {
-        ForgeSignError::Io(format!("read public key {}: {e}", public_key.display()))
-    })?;
-
-    let canonical = canonical_json_bytes(&envelope.payload)
-        .map_err(|e| ForgeSignError::Json(format!("canonicalize report payload: {e}")))?;
-    let valid = signing::verify_payload(&pem, &canonical, &envelope.signature_hex);
-
-    Ok(VerifyReportResult {
-        valid,
-        learner_name: envelope.payload.learner_name.clone(),
-        capability_count: envelope.payload.capabilities.len(),
-        key_fingerprint: envelope.key_fingerprint,
-    })
-}
-
 /// Sign a pack JSON value with the issuer's private key + cert.
 fn sign_inner(
     issuer_key_path: &Path,
@@ -256,12 +195,10 @@ fn sign_inner(
     Ok(signed)
 }
 
-/// Result of `run()` — distinguishes a hard error (`Err`) from a
-/// successful-but-invalid verify-report result (`Ok(false)`), so `main()`
-/// can set the right process exit code for each case (0 / 1 / 1
-/// respectively) without conflating "the tool failed" with "the report
-/// failed verification".
-fn run() -> Result<bool, ForgeSignError> {
+/// Dispatch the parsed subcommand. Returns `Err` on any file I/O,
+/// key-encoding, JSON, or pack-trust failure; `main()` maps that to a
+/// non-zero exit code.
+fn run() -> Result<(), ForgeSignError> {
     let cli = Cli::parse();
     match cli.command {
         Command::KeygenRoot { out_dir } => {
@@ -272,7 +209,7 @@ fn run() -> Result<bool, ForgeSignError> {
                 PRIVATE_PEM,
                 PUBLIC_PEM
             );
-            Ok(true)
+            Ok(())
         }
         Command::IssueCert {
             root_key,
@@ -287,7 +224,7 @@ fn run() -> Result<bool, ForgeSignError> {
             std::fs::write(&out, json)
                 .map_err(|e| ForgeSignError::Io(format!("write cert {}: {e}", out.display())))?;
             println!("issuer cert written to {}", out.display());
-            Ok(true)
+            Ok(())
         }
         Command::Sign {
             issuer_key,
@@ -305,26 +242,14 @@ fn run() -> Result<bool, ForgeSignError> {
             std::fs::write(&out, out_json)
                 .map_err(|e| ForgeSignError::Io(format!("write signed pack {}: {e}", out.display())))?;
             println!("signed pack written to {}", out.display());
-            Ok(true)
-        }
-        Command::VerifyReport { input, public_key } => {
-            let result = verify_report_inner(&input, &public_key)?;
-            let valid = result.valid;
-            let json = serde_json::to_string(&result)
-                .map_err(|e| ForgeSignError::Json(format!("serialize verify-report result: {e}")))?;
-            println!("{json}");
-            Ok(valid)
+            Ok(())
         }
     }
 }
 
 fn main() {
-    match run() {
-        Ok(true) => {}
-        Ok(false) => std::process::exit(1),
-        Err(e) => {
-            eprintln!("forge-sign error: {e}");
-            std::process::exit(1);
-        }
+    if let Err(e) = run() {
+        eprintln!("forge-sign error: {e}");
+        std::process::exit(1);
     }
 }

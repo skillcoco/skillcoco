@@ -42,8 +42,6 @@ pub mod v013_section_video_granularity;
 pub mod v014_drop_module_video_unique_index;
 pub mod v015_learning_path_verified;
 pub mod v016_quiz_attempts;
-pub mod v017_skill_reports;
-pub mod v018_backfill_capability_tags;
 pub mod v019_exam_attempts;
 pub mod v020_entitlements;
 
@@ -139,16 +137,6 @@ fn registered_migrations() -> Vec<Migration> {
             up: v016_quiz_attempts::up,
         },
         Migration {
-            version: v017_skill_reports::VERSION,
-            name: v017_skill_reports::NAME,
-            up: v017_skill_reports::up,
-        },
-        Migration {
-            version: v018_backfill_capability_tags::VERSION,
-            name: v018_backfill_capability_tags::NAME,
-            up: v018_backfill_capability_tags::up,
-        },
-        Migration {
             version: v019_exam_attempts::VERSION,
             name: v019_exam_attempts::NAME,
             up: v019_exam_attempts::up,
@@ -237,7 +225,9 @@ mod tests {
 
     #[test]
     fn test_apply_migrations_records_latest_version() {
-        // Test 1: after apply_migrations on fresh DB, MAX(version) = 2 (v1 + v2)
+        // Test 1: after apply_migrations on fresh DB, MAX(version) reflects the
+        // highest registered version. v017/v018 were removed in the reports
+        // strip, leaving a version gap; MAX stays 20 (v020 entitlements).
         let conn = fresh_conn();
         apply_migrations(&conn).expect("apply_migrations must not fail on fresh DB");
         let version: i32 = conn
@@ -247,7 +237,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 20, "After all migrations, version must be 20 (v1..v15 + v16 quiz_attempts + v17 skill_reports + v18 backfill_capability_tags + v19 exam_attempts + v20 entitlements)");
+        assert_eq!(version, 20, "After all migrations, MAX(version) must be 20 (v1..v16 + v19 exam_attempts + v20 entitlements; v17/v18 removed, gap tolerated)");
     }
 
     #[test]
@@ -264,7 +254,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 20, "Idempotent: exactly twenty rows in schema_migrations (v1..v15 + v16 quiz_attempts + v17 skill_reports + v18 backfill_capability_tags + v19 exam_attempts + v20 entitlements)");
+        assert_eq!(count, 18, "Idempotent: exactly eighteen rows in schema_migrations (v1..v16 + v19 exam_attempts + v20 entitlements; v17/v18 removed in reports strip)");
     }
 
     #[test]
@@ -288,9 +278,10 @@ mod tests {
         apply_migrations(&conn).expect("apply_migrations must succeed when v1+v2 are already applied");
 
         let version = current_version(&conn).unwrap();
-        // v1 and v2 were pre-inserted; apply_migrations runs v3..v20.
+        // v1 and v2 were pre-inserted; apply_migrations runs the remaining
+        // registered migrations (v3..v16, v19, v20 — v17/v18 removed).
         // Max is now 20.
-        assert_eq!(version, 20, "current_version returns MAX(version) = 20 after v3..v20 applied + v20 entitlements");
+        assert_eq!(version, 20, "current_version returns MAX(version) = 20 after remaining migrations applied (v20 entitlements)");
     }
 
     #[test]
@@ -303,193 +294,8 @@ mod tests {
         assert_eq!(v, 0, "Fresh DB with empty schema_migrations must return version 0");
     }
 
-    // ── v018 backfill_capability_tags (CR-01 gap closure, 18-08) ──
-
-    /// Seed a module with a non-empty skills_json but ZERO capability_tags
-    /// rows (simulating a track generated before the 18-08 writer existed),
-    /// run v018::up(), and assert capability_tags now contains one row per
-    /// skills_json entry with correct module_id/track_id/learner_id/
-    /// tag_slug/tag_label.
-    #[test]
-    fn v018_backfills_capability_tags_from_existing_skills_json() {
-        let conn = fresh_conn();
-        apply_migrations(&conn).expect("apply base schema + v1..v17 first");
-
-        conn.execute(
-            "INSERT OR IGNORE INTO learner_profiles (id) VALUES ('lp-bf')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module) VALUES ('trk-bf', 'lp-bf', 'Kubernetes', 'devops')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO learning_paths (id, track_id) VALUES ('path-bf', 'trk-bf')",
-            [],
-        )
-        .unwrap();
-        let skills_json = serde_json::json!([
-            {"label": "Can configure RBAC policies", "slug": "can-configure-rbac-policies"},
-            {"label": "Can debug pod networking", "slug": "can-debug-pod-networking"},
-        ])
-        .to_string();
-        conn.execute(
-            "INSERT INTO modules (id, path_id, title, objectives_json, skills_json) VALUES ('mod-bf', 'path-bf', 'Pods and Nodes', '[]', ?1)",
-            rusqlite::params![skills_json],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO module_progress (id, module_id, learner_id) VALUES ('mp-bf', 'mod-bf', 'lp-bf')",
-            [],
-        )
-        .unwrap();
-
-        // Sanity: zero capability_tags rows before backfill.
-        let pre_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM capability_tags", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(pre_count, 0, "no capability_tags rows before v018 runs");
-
-        v018_backfill_capability_tags::up(&conn).expect("v018 up must succeed");
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT learner_id, track_id, module_id, tag_slug, tag_label FROM capability_tags ORDER BY tag_label",
-            )
-            .unwrap();
-        let rows: Vec<(String, String, String, String, String)> = stmt
-            .query_map([], |r| {
-                Ok((
-                    r.get(0)?,
-                    r.get(1)?,
-                    r.get(2)?,
-                    r.get(3)?,
-                    r.get(4)?,
-                ))
-            })
-            .unwrap()
-            .map(|r| r.unwrap())
-            .collect();
-
-        assert_eq!(rows.len(), 2, "one capability_tags row per skills_json entry");
-        assert_eq!(rows[0].0, "lp-bf");
-        assert_eq!(rows[0].1, "trk-bf");
-        assert_eq!(rows[0].2, "mod-bf");
-        assert_eq!(rows[0].3, "can-configure-rbac-policies");
-        assert_eq!(rows[0].4, "Can configure RBAC policies");
-        assert_eq!(rows[1].3, "can-debug-pod-networking");
-        assert_eq!(rows[1].4, "Can debug pod networking");
-    }
-
-    /// Idempotency: running v018::up() a second time must not increase the
-    /// capability_tags row count (NOT EXISTS guard).
-    #[test]
-    fn v018_backfill_is_idempotent() {
-        let conn = fresh_conn();
-        apply_migrations(&conn).expect("apply base schema + v1..v17 first");
-
-        conn.execute(
-            "INSERT OR IGNORE INTO learner_profiles (id) VALUES ('lp-idem')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module) VALUES ('trk-idem', 'lp-idem', 'Kubernetes', 'devops')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO learning_paths (id, track_id) VALUES ('path-idem', 'trk-idem')",
-            [],
-        )
-        .unwrap();
-        let skills_json = serde_json::json!([
-            {"label": "Can configure RBAC policies", "slug": "can-configure-rbac-policies"},
-        ])
-        .to_string();
-        conn.execute(
-            "INSERT INTO modules (id, path_id, title, objectives_json, skills_json) VALUES ('mod-idem', 'path-idem', 'Pods and Nodes', '[]', ?1)",
-            rusqlite::params![skills_json],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO module_progress (id, module_id, learner_id) VALUES ('mp-idem', 'mod-idem', 'lp-idem')",
-            [],
-        )
-        .unwrap();
-
-        v018_backfill_capability_tags::up(&conn).expect("first up must succeed");
-        let count_after_first: i64 = conn
-            .query_row("SELECT COUNT(*) FROM capability_tags", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(count_after_first, 1);
-
-        v018_backfill_capability_tags::up(&conn).expect("second up must succeed");
-        let count_after_second: i64 = conn
-            .query_row("SELECT COUNT(*) FROM capability_tags", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(
-            count_after_second, count_after_first,
-            "running v018 twice must not duplicate capability_tags rows"
-        );
-    }
-
-    /// Overlap with the 18-08 writer: if a capability_tags row already exists
-    /// for a (module_id, tag_slug, learner_id) — e.g. because the production
-    /// writer already inserted it for a freshly generated track — v018 must
-    /// not insert a duplicate.
-    #[test]
-    fn v018_backfill_skips_rows_already_written_by_production_writer() {
-        let conn = fresh_conn();
-        apply_migrations(&conn).expect("apply base schema + v1..v17 first");
-
-        conn.execute(
-            "INSERT OR IGNORE INTO learner_profiles (id) VALUES ('lp-ov')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO learning_tracks (id, learner_id, topic, domain_module) VALUES ('trk-ov', 'lp-ov', 'Kubernetes', 'devops')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO learning_paths (id, track_id) VALUES ('path-ov', 'trk-ov')",
-            [],
-        )
-        .unwrap();
-        let skills_json = serde_json::json!([
-            {"label": "Can configure RBAC policies", "slug": "can-configure-rbac-policies"},
-        ])
-        .to_string();
-        conn.execute(
-            "INSERT INTO modules (id, path_id, title, objectives_json, skills_json) VALUES ('mod-ov', 'path-ov', 'Pods and Nodes', '[]', ?1)",
-            rusqlite::params![skills_json],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO module_progress (id, module_id, learner_id) VALUES ('mp-ov', 'mod-ov', 'lp-ov')",
-            [],
-        )
-        .unwrap();
-        // Pre-insert the row as if the 18-08 writer already ran for this module.
-        conn.execute(
-            "INSERT INTO capability_tags (id, learner_id, track_id, module_id, tag_slug, tag_label, evidence_class) VALUES ('ct-existing', 'lp-ov', 'trk-ov', 'mod-ov', 'can-configure-rbac-policies', 'Can configure RBAC policies', 'module')",
-            [],
-        )
-        .unwrap();
-
-        v018_backfill_capability_tags::up(&conn).expect("up must succeed");
-
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM capability_tags WHERE module_id = 'mod-ov'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 1, "pre-existing writer row must not be duplicated by the backfill");
-    }
+    // v018 backfill_capability_tags tests (backfills_capability_tags_from_
+    // existing_skills_json / backfill_is_idempotent / backfill_skips_rows_
+    // already_written_by_production_writer) removed in the Phase 20 reports
+    // strip along with the v017/v018 migrations they exercised.
 }

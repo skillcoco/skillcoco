@@ -8,11 +8,9 @@ pub mod db;
 pub mod entitlements;
 pub mod labs;
 // Phase 18 Plan 4 — shared PDF text-rendering helper (`push_line`) used by
-// BOTH the certificate renderer (achievements::artifacts) and the report
-// renderer (reports::artifacts). Extracted so the printpdf Td-relative fix
-// (and its regression test) cannot be re-broken by a second copy.
+// the certificate renderer (achievements::artifacts). Extracted so the
+// printpdf Td-relative fix (and its regression test) lives in one place.
 pub mod pdf_util;
-pub mod reports;
 // Phase 7 Wave 2 (Plan 07-02) — rusqlite-backed impls of learnforge_core
 // per-module storage traits. The trait `impl BktStore for &Connection`
 // in storage_impl::bkt is a coherence requirement to live in src-tauri
@@ -404,13 +402,6 @@ pub fn run() {
             // Bundled starter packs (Phase 16 — Plan 01, LIB-04/LIB-02, D-12/D-13)
             commands::course_io::list_starter_packs,
             commands::course_io::start_starter_pack,
-            // Signed skill reports (Phase 18 — Plan 03)
-            commands::reports::assemble_skill_report,
-            commands::reports::export_report_json,
-            // Signed skill report PDF export (Phase 18 — Plan 04)
-            commands::reports::export_report_pdf,
-            // Org evidence submission (Phase 18 — Plan 06 / D-13)
-            commands::reports::submit_evidence_report,
             // Entitlement redeem + buyer-stamped pack download (Phase 15 — Plan 04)
             commands::entitlements::redeem_license,
             commands::entitlements::download_and_import_pack,

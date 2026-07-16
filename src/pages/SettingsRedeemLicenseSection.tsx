@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Gourav Shah (Initcron Systems Pvt. Ltd.)
 //
 // Phase 15 Plan 05 (D-01) — Settings section mounting RedeemLicenseFlow
-// (D-02). Follows SettingsReportServerSection's section-per-feature shape:
-// <section> wrapper + .glass card with an icon-chip header, matching the
-// Server icon treatment with KeyRound instead.
+// (D-02). Follows the section-per-feature shape used across Settings:
+// <section> wrapper + .glass card with an icon-chip header, using the
+// KeyRound icon.
 
 import { KeyRound } from "lucide-react";
 import { RedeemLicenseFlow } from "@/components/RedeemLicenseFlow";

@@ -6,6 +6,5 @@ pub mod entitlements;
 pub mod labs;
 pub mod learning;
 pub mod microlearning;
-pub mod reports;
 pub mod tracks;
 pub mod videos;

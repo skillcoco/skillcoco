@@ -5,8 +5,8 @@
 //
 // Standalone component (no required props) so Phase 16's Library view can
 // re-mount it verbatim. State is a discriminated union on `stage` — never
-// boolean-soup — mirroring SettingsReportServerSection's submitOutcome
-// union pattern. The confirm-stage dialog shell (role="dialog" aria-modal,
+// boolean-soup — a discriminated submitOutcome union pattern. The
+// confirm-stage dialog shell (role="dialog" aria-modal,
 // fixed inset-0 z-50 bg-background/60 backdrop-blur-sm) is lifted from
 // LabResetDialog.tsx, the one other confirm-dialog precedent in the
 // codebase, with Confirm styled bg-primary (additive action, not a delete).

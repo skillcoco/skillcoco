@@ -4,11 +4,9 @@
 //! Redeem-license request/response wire shapes + Hub POST call.
 //!
 //! Wave 0 (15-01): `call_redeem_endpoint` was a compiling `unimplemented!`
-//! stub. 15-03 fills the body following the `submit_evidence_report_impl`
-//! SSRF-scheme-check + typed-error-mapping pattern
-//! (`src-tauri/src/commands/reports.rs` lines 480-546, 15-PATTERNS.md).
-//! No DB access here — this is a pure service fn composed by the Wave 2 IPC
-//! layer.
+//! stub. 15-03 fills the body following the project's SSRF-scheme-check +
+//! typed-error-mapping pattern (15-PATTERNS.md). No DB access here — this
+//! is a pure service fn composed by the Wave 2 IPC layer.
 //!
 //! Wire shapes are camelCase over IPC/HTTP per the authoritative contract
 //! (`.planning/notes/entitlement-api-contract.md` "Redeem request/response").
@@ -30,10 +28,9 @@ struct RedeemErrorBody {
 }
 
 /// Pure status+body -> typed-error mapping, factored out of the network call
-/// so behavior tests can drive it directly with fixture JSON strings
-/// (mirrors how `reports.rs` isolates its parse/map logic). NEVER branches
-/// on HTTP status alone and NEVER substring-searches the body text — only
-/// the parsed error-code field decides the variant (T-15-09).
+/// so behavior tests can drive it directly with fixture JSON strings. NEVER
+/// branches on HTTP status alone and NEVER substring-searches the body text
+/// — only the parsed error-code field decides the variant (T-15-09).
 fn map_redeem_error(body: &str) -> RedeemLicenseError {
     let parsed: Result<RedeemErrorBody, _> = serde_json::from_str(body);
     let code = match parsed {

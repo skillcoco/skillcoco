@@ -13,17 +13,6 @@ const loadAchievementsMock = vi.fn().mockResolvedValue(undefined);
 const exportCertificateMock = vi.fn().mockResolvedValue({ saved: true, path: "/p.pdf" });
 const exportBadgeMock = vi.fn().mockResolvedValue({ saved: true, path: "/p.png" });
 
-// Phase 18 Plan 05 (Wave 3) — Achievements now mounts the "Export skill
-// report" primary button + ExportReportDialog. Mock the profile IPC so the
-// mount-effect resolves cleanly; the dialog itself is covered by
-// ExportReportDialog.test.tsx.
-vi.mock("@/lib/tauri-commands", () => ({
-  getOrCreateProfile: vi.fn().mockResolvedValue({
-    id: "lp-1",
-    displayName: "Ada Lovelace",
-  }),
-}));
-
 interface SliceShape {
   achievements: import("@/types/achievements").Achievement[];
   loadAchievements: typeof loadAchievementsMock;
@@ -150,16 +139,5 @@ describe("Achievements page — Phase 08.2 (Cert Simplification)", () => {
     renderAt();
 
     expect(loadAchievementsMock).toHaveBeenCalledTimes(1);
-  });
-
-  // Phase 18 Plan 05 (Wave 3) — export entry point.
-  it("renders a primary 'Export skill report' button in the page header", () => {
-    mockState = makeState({ achievements: [] });
-    renderAt();
-
-    const button = screen.getByTestId("export-skill-report-button");
-    expect(button).toBeInTheDocument();
-    expect(button.textContent).toContain("Export skill report");
-    expect(button.className).toContain("bg-primary");
   });
 });

@@ -2,10 +2,9 @@
 //
 // SettingsRedeemLicenseSection doesn't exist yet (15-04 builds it) — this
 // suite fails to resolve the import, which IS the RED state for this Wave 0
-// plan. Mirrors the section-per-feature pattern established by
-// SettingsReportServerSection.tsx (D-01) — mounts RedeemLicenseFlow (D-02)
-// inside a `<section>` wrapper with the "Redeem license" title
-// (15-UI-SPEC.md Copywriting Contract).
+// plan. Mirrors the section-per-feature pattern used across Settings —
+// mounts RedeemLicenseFlow (D-02) inside a `<section>` wrapper with the
+// "Redeem license" title (15-UI-SPEC.md Copywriting Contract).
 //
 // Mocking strategy mirrors SettingsCourseImportSection.test.tsx: only
 // `@/lib/tauri-commands` is mocked via vi.hoisted so the mock references

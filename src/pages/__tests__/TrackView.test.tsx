@@ -37,23 +37,10 @@ vi.mock("@/lib/tauri-commands", () => ({
   // Phase 19 Plan 06 — TrackView loads the per-module exam-flag map on
   // mount. Empty ⇒ no Start Exam button renders (fail-closed default).
   examBlocksForTrack: vi.fn().mockResolvedValue([]),
-  // Phase 18 Plan 05 (Wave 3) — ExportReportDialog identity pre-fill.
-  getOrCreateProfile: vi.fn().mockResolvedValue({
-    id: "lp-1",
-    displayName: "Ada Lovelace",
-  }),
   // Phase 15 Plan 06 (D-08) — buyer-attribution second line. Default: no
   // entitlement (most tracks are unlicensed) so existing suites don't need
   // to know about this IPC.
   getEntitlementForTrack: vi.fn().mockResolvedValue(null),
-}));
-
-// Phase 18 Plan 05 (Wave 3) — ExportReportDialog is mounted by TrackView but
-// exercised in its own test file; stub it here so TrackView tests stay
-// focused on the entry-point button + D-16 practical mastery display.
-vi.mock("@/pages/ExportReportDialog", () => ({
-  ExportReportDialog: (props: { open: boolean }) =>
-    props.open ? <div data-testid="export-report-dialog-stub" /> : null,
 }));
 
 // Plan 06-05 (Wave 4) — CertificationProgress also reads the
@@ -522,38 +509,6 @@ function makePathWithOneModule(): LearningPath {
     createdAt: "2026-06-15T00:00:00Z",
   };
 }
-
-describe("TrackView export entry point (Phase 18 Plan 05)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockStoreState.currentTrack = makeTrack();
-    mockStoreState.currentPath = makePath("");
-    mockStoreState.moduleProgress = [];
-    mockStoreState.isLoading = false;
-    mockStoreState.selectTrack = vi.fn().mockResolvedValue(undefined);
-    listTopicPacksAdminMock.mockResolvedValue([]);
-  });
-
-  it("renders a secondary 'Export skill report' button beside Export course", async () => {
-    renderTrackView();
-    const button = await screen.findByTestId("export-skill-report-button");
-    expect(button).toBeInTheDocument();
-    expect(button.textContent).toContain("Export skill report");
-    // Secondary (outline) styling — matches export-course-button tier, not primary fill.
-    expect(button.className).toContain("border-border");
-    expect(button.className).not.toContain("bg-primary");
-  });
-
-  it("opens the export dialog scoped to this track when clicked", async () => {
-    const user = userEvent.setup();
-    renderTrackView();
-    const button = await screen.findByTestId("export-skill-report-button");
-    await user.click(button);
-    expect(
-      await screen.findByTestId("export-report-dialog-stub"),
-    ).toBeInTheDocument();
-  });
-});
 
 describe("TrackView D-16 practical mastery display (Phase 18 Plan 05)", () => {
   beforeEach(() => {
