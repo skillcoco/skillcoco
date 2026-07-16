@@ -174,8 +174,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            count, 18,
-            "exactly 18 rows in schema_migrations after idempotent double-apply (v017/v018 removed in reports strip)"
+            count, 17,
+            "exactly 17 rows in schema_migrations after idempotent double-apply (v017/v018 removed in reports strip, v019 removed in exam strip)"
         );
     }
 }

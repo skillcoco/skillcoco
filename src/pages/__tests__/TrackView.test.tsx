@@ -34,9 +34,6 @@ vi.mock("@/lib/tauri-commands", () => ({
     nextLevel: "Associate",
     criteria: "Master 25% of modules",
   }),
-  // Phase 19 Plan 06 — TrackView loads the per-module exam-flag map on
-  // mount. Empty ⇒ no Start Exam button renders (fail-closed default).
-  examBlocksForTrack: vi.fn().mockResolvedValue([]),
   // Phase 15 Plan 06 (D-08) — buyer-attribution second line. Default: no
   // entitlement (most tracks are unlicensed) so existing suites don't need
   // to know about this IPC.

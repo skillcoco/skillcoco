@@ -42,7 +42,6 @@ pub mod v013_section_video_granularity;
 pub mod v014_drop_module_video_unique_index;
 pub mod v015_learning_path_verified;
 pub mod v016_quiz_attempts;
-pub mod v019_exam_attempts;
 pub mod v020_entitlements;
 
 /// A single schema migration.
@@ -137,11 +136,6 @@ fn registered_migrations() -> Vec<Migration> {
             up: v016_quiz_attempts::up,
         },
         Migration {
-            version: v019_exam_attempts::VERSION,
-            name: v019_exam_attempts::NAME,
-            up: v019_exam_attempts::up,
-        },
-        Migration {
             version: v020_entitlements::VERSION,
             name: v020_entitlements::NAME,
             up: v020_entitlements::up,
@@ -226,8 +220,9 @@ mod tests {
     #[test]
     fn test_apply_migrations_records_latest_version() {
         // Test 1: after apply_migrations on fresh DB, MAX(version) reflects the
-        // highest registered version. v017/v018 were removed in the reports
-        // strip, leaving a version gap; MAX stays 20 (v020 entitlements).
+        // highest registered version. v017/v018 (reports strip) and v019
+        // (exam-sim strip) were removed, leaving version gaps; MAX stays 20
+        // (v020 entitlements).
         let conn = fresh_conn();
         apply_migrations(&conn).expect("apply_migrations must not fail on fresh DB");
         let version: i32 = conn
@@ -237,7 +232,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 20, "After all migrations, MAX(version) must be 20 (v1..v16 + v19 exam_attempts + v20 entitlements; v17/v18 removed, gap tolerated)");
+        assert_eq!(version, 20, "After all migrations, MAX(version) must be 20 (v1..v16 + v20 entitlements; v17/v18/v19 removed, gaps tolerated)");
     }
 
     #[test]
@@ -254,7 +249,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 18, "Idempotent: exactly eighteen rows in schema_migrations (v1..v16 + v19 exam_attempts + v20 entitlements; v17/v18 removed in reports strip)");
+        assert_eq!(count, 17, "Idempotent: exactly seventeen rows in schema_migrations (v1..v16 + v20 entitlements; v17/v18 removed in reports strip, v19 removed in exam strip)");
     }
 
     #[test]
@@ -279,7 +274,7 @@ mod tests {
 
         let version = current_version(&conn).unwrap();
         // v1 and v2 were pre-inserted; apply_migrations runs the remaining
-        // registered migrations (v3..v16, v19, v20 — v17/v18 removed).
+        // registered migrations (v3..v16, v20 — v17/v18/v19 removed).
         // Max is now 20.
         assert_eq!(version, 20, "current_version returns MAX(version) = 20 after remaining migrations applied (v20 entitlements)");
     }

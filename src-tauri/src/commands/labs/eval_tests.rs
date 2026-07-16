@@ -487,8 +487,8 @@ async fn lab_check_step_passes_authenticated_state_to_ai_judge() {
 //
 // These tests drive the full handler flow through `lab_check_step_with` /
 // `lab_validate_milestone_with` taking `&AppState` (the test seam — Tauri
-// `State` cannot be constructed in unit tests; mirrors the `..._conn`
-// convention in exam.rs). RED until Task 3 lands the &AppState signature,
+// `State` cannot be constructed in unit tests; follows the `..._conn`
+// convention). RED until Task 3 lands the &AppState signature,
 // the unconditional history append, the milestone skip, and the new
 // `lab_validate_milestone_with` + `LabValidateMilestoneRequest` structs.
 

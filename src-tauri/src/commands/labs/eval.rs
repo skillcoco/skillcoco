@@ -56,7 +56,7 @@ pub async fn lab_check_step(
 ///
 /// Phase 19.3 — takes `&AppState` (not `tauri::State`) so unit tests can
 /// drive the FULL handler flow (append + grain dispatch + persist) against
-/// a synthetic AppState; mirrors exam.rs's `..._conn` test-seam convention.
+/// a synthetic AppState; follows the `..._conn` test-seam convention.
 pub(crate) async fn lab_check_step_with(
     request: LabCheckStepRequest,
     state: &AppState,
@@ -428,11 +428,11 @@ fn persist_outcome(
 
 /// Phase 19 (WR-06) — persist an ai_judge verdict into BOTH
 /// `metadata_json.$.ai_judge_verdicts."<step_index>"` (one slot per step,
-/// so multi-ai_judge exams keep every step's latest verdict for
-/// `exam::derive_step_verdicts`) AND the legacy single-slot
-/// `$.last_ai_judge` (backward compat — older rows/readers still work).
-/// The CASE seeds `$.ai_judge_verdicts` with `{}` when absent, since
-/// `json_set` cannot create intermediate objects.
+/// retaining every step's latest verdict) AND the legacy single-slot
+/// `$.last_ai_judge` that `lab_check_step` reads back (backward compat —
+/// older rows/readers still work). The CASE seeds `$.ai_judge_verdicts`
+/// with `{}` when absent, since `json_set` cannot create intermediate
+/// objects.
 pub(crate) fn persist_ai_judge_verdict(
     conn: &rusqlite::Connection,
     learner_id: &str,

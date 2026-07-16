@@ -17,7 +17,6 @@ import {
   Loader2,
   Crown,
   ShieldCheck,
-  Timer,
 } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { layoutDAG, DAG_NODE_WIDTH, DAG_NODE_HEIGHT } from "@/lib/dag-layout";
@@ -32,11 +31,9 @@ import {
 import {
   listTopicPacksAdmin,
   exportCourse,
-  examBlocksForTrack,
   getEntitlementForTrack,
   type EntitlementAttribution,
 } from "@/lib/tauri-commands";
-import { useExamStore } from "@/stores/useExamStore";
 import { save } from "@tauri-apps/plugin-dialog";
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
 import { BuyerAttributionLine } from "@/components/BuyerAttributionLine";
@@ -310,7 +307,6 @@ function ModuleDetailPanel({
   onClose,
   isOpenable,
   practicalMastery,
-  examBlockId,
 }: {
   module: PathModule;
   status: ModuleStatus;
@@ -321,19 +317,11 @@ function ModuleDetailPanel({
   /** D-16 — raw 0-1 practical mastery for this module, or undefined if no
    * progress row is loaded yet. */
   practicalMastery?: number;
-  /** Phase 19 (19-06) — backend-resolved exam block id for this module,
-   * from examBlocksForTrack. Absent ⇒ no Start Exam button (fail-closed,
-   * D-02); the id is never guessed client-side (T-19-12). */
-  examBlockId?: string;
 }) {
   const navigate = useNavigate();
   // Phase 10 Plan 03 (D-07): isOpenable overrides status-based lock in free mode.
   const isClickable = isOpenable !== undefined ? isOpenable : status !== "locked";
   const practical = formatPracticalMastery(practicalMastery ?? 0);
-  // Phase 19 (D-05 unlimited retakes) — "Retake Exam" once an attempt for
-  // this block exists in the session store; "Start Exam" otherwise.
-  const examAttempts = useExamStore((s) => s.attempts);
-  const hasExamAttempt = examBlockId ? examAttempts.has(examBlockId) : false;
 
   return (
     <div className="glass-strong rounded-xl border border-border p-6">
@@ -386,25 +374,6 @@ function ModuleDetailPanel({
               <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-400">
                 Not assessed
               </span>
-            )}
-            {/* Phase 19 (19-06) — per-module exam entry point. Rendered
-                ONLY when examBlocksForTrack resolved an exam-flagged block
-                for this module (fail-closed, mirrors isCourseExportable's
-                conditional-render gate). Navigates with the backend-
-                resolved blockId — never a guessed id (T-19-12). */}
-            {examBlockId && (
-              <button
-                type="button"
-                data-testid="start-exam-button"
-                title="Start a timed, scored exam for this module"
-                onClick={() =>
-                  navigate(`/track/${trackId}/exam/${examBlockId}`)
-                }
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Timer size={13} />
-                {hasExamAttempt ? "Retake Exam" : "Start Exam"}
-              </button>
             )}
           </div>
 
@@ -557,31 +526,6 @@ export function TrackView() {
       })
       .catch(() => {
         if (!cancelled) setEntitlement(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [trackId]);
-
-  // Phase 19 (19-06) — load the per-module exam-flag map once per track.
-  // Fail-closed: empty Map while in flight or on error ⇒ no Start Exam
-  // button renders anywhere (D-02). The blockId always comes from this
-  // backend-resolved map, never guessed client-side (T-19-12).
-  const [examBlockMap, setExamBlockMap] = useState<Map<string, string>>(
-    () => new Map(),
-  );
-  useEffect(() => {
-    setExamBlockMap(new Map());
-    if (!trackId) return;
-    let cancelled = false;
-    examBlocksForTrack({ trackId })
-      .then((refs) => {
-        if (cancelled) return;
-        setExamBlockMap(new Map(refs.map((r) => [r.moduleId, r.blockId])));
-      })
-      .catch(() => {
-        // Fail-closed — leave the map empty; no exam entry point renders.
-        if (!cancelled) setExamBlockMap(new Map());
       });
     return () => {
       cancelled = true;
@@ -1046,11 +990,6 @@ export function TrackView() {
           onClose={() => setSelectedModuleId(null)}
           isOpenable={effectiveOpenable(selectedStatus)}
           practicalMastery={progressMap.get(selectedModule.id)?.practicalMastery}
-          examBlockId={
-            examBlockMap.has(selectedModule.id)
-              ? examBlockMap.get(selectedModule.id)
-              : undefined
-          }
         />
       )}
     </div>

@@ -114,14 +114,13 @@ function makeLabBlock(payload: Partial<LabBlockPayload["spec"]> = {}): ModuleBlo
   };
 }
 
-function renderLabBlock(block = makeLabBlock(), examMode = false) {
+function renderLabBlock(block = makeLabBlock()) {
   return render(
     <MemoryRouter>
       <LabBlock
         block={block}
         learnerId="learner-1"
         trackId="trk-1"
-        examMode={examMode}
       />
     </MemoryRouter>,
   );
@@ -475,28 +474,6 @@ describe("LabBlock — Phase 03.1 Wave 0 (failing scaffolds)", () => {
         ).toBeEnabled();
       });
       expect(labStoreState.validateMilestone).toHaveBeenCalledTimes(1);
-    });
-
-    it("hides the Validate milestone button in examMode even for a milestone-grain step", async () => {
-      const milestoneBlock = makeLabBlock({
-        steps: [
-          {
-            id: "s1",
-            title: "List pods",
-            prompt: "Run `kubectl get pods`",
-            check: { kind: "command_regex" as const, pattern: "Running" },
-            hints: [],
-            grain: "milestone",
-          },
-        ],
-      });
-      renderLabBlock(milestoneBlock, true);
-      await waitFor(() => {
-        expect(screen.getByTestId("lab-block")).toBeInTheDocument();
-      });
-      expect(
-        screen.queryByRole("button", { name: /validate milestone/i }),
-      ).not.toBeInTheDocument();
     });
   });
 });

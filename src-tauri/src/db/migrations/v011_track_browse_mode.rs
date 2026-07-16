@@ -120,10 +120,10 @@ mod tests {
             |row| row.get(0),
         ).unwrap();
         // v012 + v013 + v014 were added in Phase 11; v015 added in Phase 14 (14-06);
-        // v016 added in Phase 18 (18-01); v019 added in Phase 19 (19-02); v020
-        // added in Phase 15 (15-02). v017/v018 were removed in the Phase 20
-        // reports strip — schema_migrations has 18 rows after full apply (MAX
-        // version stays 20; the gap is tolerated by the runner).
-        assert_eq!(count, 18, "exactly 18 rows in schema_migrations after idempotent double-apply (v017/v018 removed in reports strip)");
+        // v016 added in Phase 18 (18-01); v020 added in Phase 15 (15-02).
+        // v017/v018 were removed in the Phase 20 reports strip and v019 in the
+        // Phase 21 exam strip — schema_migrations has 17 rows after full apply
+        // (MAX version stays 20; the gaps are tolerated by the runner).
+        assert_eq!(count, 17, "exactly 17 rows in schema_migrations after idempotent double-apply (v017/v018 removed in reports strip, v019 removed in exam strip)");
     }
 }

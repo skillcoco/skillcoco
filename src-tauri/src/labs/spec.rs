@@ -293,9 +293,10 @@ pub fn validate_spec(spec: &LabSpec) -> Result<(), LabError> {
 
 /// Phase 19.3 (D-05) — author-time fail-closed gate: a spec cannot declare
 /// BOTH `exam:` metadata AND any milestone grain (lab-level or any step).
-/// Exams remain per-step grain only — see `exam_attempt_start_conn`'s
-/// mirror-image runtime gate (D-05, T-19-10/12 exam-integrity posture) for
-/// the belt-and-suspenders check at attempt-start.
+/// The `exam:` calibration field is retained on `LabSpec` (parsed from
+/// LAB.md frontmatter); the exam-simulator runtime was removed in the
+/// Phase 21 exam strip, so this author-time validation is the only
+/// remaining consumer of the exclusion rule.
 fn validate_milestone_exam_exclusion(spec: &LabSpec) -> Result<(), LabError> {
     if spec.exam.is_none() {
         return Ok(());
