@@ -5,7 +5,6 @@ node_modules/
 dist/
 src-tauri/target/
 target/
-pro/src-tauri-pro/target/
 # Next.js artifacts accidentally produced by tool wrappers (project is Vite, not Next)
 .next/
 next-env.d.ts
@@ -26,8 +25,13 @@ Thumbs.db
 
 # Tauri
 src-tauri/gen/
-pro/src-tauri-pro/gen/
-.planning/private/
+
+# Internal GSD planning workspace — not part of the OSS product
+.planning/
+
+# Scratch / working files
+scratchpad/
+out/
 
 # Python packaging build artifacts (scripts/ is now pip-installable)
 scripts/build/
