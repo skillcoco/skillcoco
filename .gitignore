@@ -33,6 +33,17 @@ src-tauri/gen/
 scratchpad/
 out/
 
+# Confidential / private — must never enter the public OSS repo
+# (enforced by .githooks/pre-commit + .github/workflows/secret-scan.yml)
+**/private/
+pro/
+_pro_placeholder/
+*.key
+id_rsa
+id_ed25519
+credentials
+credentials.*
+
 # Python packaging build artifacts (scripts/ is now pip-installable)
 scripts/build/
 scripts/*.egg-info/

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# SkillCoco OSS confidentiality guard.
+# Blocks commits that stage confidential/planning/secret material into the
+# public open-source repo. Enable with:  git config core.hooksPath .githooks
+set -euo pipefail
+
+# Paths that must never enter the OSS repo.
+BLOCKED_PATHS_REGEX='(^|/)\.planning/|(^|/)private/|^pro/|^_pro_placeholder/|(^|/)\.env($|\.)|\.pem$|\.key$|(^|/)id_(rsa|ed25519)($|\.)|(^|/)credentials(\.|$)'
+# Exceptions: public-key fixtures are allowed (they are not secrets).
+ALLOW_REGEX='root[-_]public\.pem$|root-public\.pem$'
+
+staged="$(git diff --cached --name-only --diff-filter=AM)"
+[ -z "$staged" ] && exit 0
+
+blocked=""
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  if echo "$f" | grep -Eq "$BLOCKED_PATHS_REGEX"; then
+    if echo "$f" | grep -Eq "$ALLOW_REGEX"; then continue; fi
+    blocked="$blocked  $f\n"
+  fi
+done <<< "$staged"
+
+# Content scan: obvious private-key material in staged blobs.
+keyhits="$(git diff --cached -U0 --diff-filter=AM | grep -E 'BEGIN (RSA |EC |OPENSSH |)PRIVATE KEY' || true)"
+
+if [ -n "$blocked" ] || [ -n "$keyhits" ]; then
+  echo "───────────────────────────────────────────────────────────"
+  echo "  COMMIT BLOCKED — confidential material detected"
+  echo "───────────────────────────────────────────────────────────"
+  [ -n "$blocked" ] && { echo "Confidential/planning paths staged:"; printf "$blocked"; }
+  [ -n "$keyhits" ] && echo "Private-key material found in staged changes."
+  echo
+  echo "This repo is the PUBLIC open-source core. Keep planning/business/"
+  echo "secret material out of it (see .gitignore + CONTRIBUTING.md)."
+  echo "If this is a legitimate exception, commit with --no-verify."
+  exit 1
+fi
+exit 0

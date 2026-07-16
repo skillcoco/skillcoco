@@ -53,7 +53,17 @@ future contributions. You only sign once.
 git clone https://github.com/skillcoco/skillcoco.git
 cd skillcoco
 pnpm install
+
+# Enable the confidentiality guard hook (blocks committing planning/
+# private/secret files into this public repo):
+git config core.hooksPath .githooks
 ```
+
+This is the **public open-source core**. Never commit planning docs,
+business/strategy material, secrets, or private keys here — `.gitignore`,
+the `.githooks/pre-commit` guard, and the `secret-scan` CI workflow enforce
+this, but the first line of defense is keeping such files out of the working
+tree entirely (they belong in separate private repos).
 
 ### Run in development mode
 
