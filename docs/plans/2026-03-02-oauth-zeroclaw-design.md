@@ -1,4 +1,4 @@
-# LearnForge OAuth via Zeroclaw Native
+# SkillCoco OAuth via Zeroclaw Native
 
 **Date:** 2026-03-02
 **Status:** Approved
@@ -10,7 +10,7 @@
 
 Two new Tauri commands:
 
-1. **`start_oauth_login(provider: "openai" | "gemini")`** — Calls zeroclaw's `build_authorize_url()` with PKCE, opens the system browser via Tauri shell, starts the loopback TCP listener in a background task. When the callback arrives, exchanges the code for tokens via zeroclaw, stores the token set in zeroclaw's `AuthProfilesStore` (encrypted), and copies the `oauth_token` to LearnForge's `AuthState` credentials.json.
+1. **`start_oauth_login(provider: "openai" | "gemini")`** — Calls zeroclaw's `build_authorize_url()` with PKCE, opens the system browser via Tauri shell, starts the loopback TCP listener in a background task. When the callback arrives, exchanges the code for tokens via zeroclaw, stores the token set in zeroclaw's `AuthProfilesStore` (encrypted), and copies the `oauth_token` to SkillCoco's `AuthState` credentials.json.
 
 2. **`check_oauth_status(provider: string)`** — Returns whether OAuth completed for that provider (checks if `oauth_token` is now stored in `AuthState`). Frontend polls this every 2 seconds after triggering login.
 
@@ -30,7 +30,7 @@ Anthropic stays BYOK-only (no OAuth available from Anthropic's side).
 
 Dual storage:
 - **zeroclaw's `auth-profiles.json`**: Encrypted at rest, handles token refresh with expiry tracking
-- **LearnForge's `credentials.json`**: References the oauth_token for `ai_request()` routing
+- **SkillCoco's `credentials.json`**: References the oauth_token for `ai_request()` routing
 
 When OAuth succeeds, write to both stores.
 
@@ -45,7 +45,7 @@ User clicks "Sign in with OpenAI"
   -> user authenticates in browser, redirected back
   -> zeroclaw receives callback, exchanges code for tokens
   -> tokens stored in zeroclaw AuthProfilesStore (encrypted)
-  -> oauth_token copied to LearnForge AuthState credentials.json
+  -> oauth_token copied to SkillCoco AuthState credentials.json
   -> frontend polls check_oauth_status, sees authenticated
   -> ai_request() uses oauth_token as bearer token
   -> zeroclaw auto-refreshes when token expires

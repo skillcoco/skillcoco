@@ -3,8 +3,8 @@ title: "What is Bayesian Knowledge Tracing? An accessible explainer."
 slug: bkt-explained
 date: 2026-06-17
 tags: [adaptive-learning, bkt, education, beginner-friendly]
-canonical_url: https://learnforge.dev/blog/bkt-explained
-author: LearnForge OSS contributors
+canonical_url: https://skillcoco.dev/blog/bkt-explained
+author: SkillCoco OSS contributors
 license: CC BY 4.0
 ---
 
@@ -61,7 +61,7 @@ of the world; one is a property of the learner. Here is what each one means in
 ordinary language.
 
 **P(L0) — starting knowledge.** Before you have answered a single question
-about a topic, what is the chance you already know it? In LearnForge we
+about a topic, what is the chance you already know it? In SkillCoco we
 default this to 0.3, which roughly says "most adult learners arrive with some
 vague prior exposure but cannot reliably answer questions yet." It is the
 mental model of someone who has heard the word *Kubernetes* in standup but
@@ -126,7 +126,7 @@ informative.
 The formal update equation is small — a few lines of arithmetic — but the
 *intuition* is the part that matters. If you want the math itself, with all
 the conditional probabilities laid out and the recurrence relation derived
-from first principles, see the [BKT whitepaper](../../learnforge-core/docs/BKT.md)
+from first principles, see the [BKT whitepaper](../../skillcoco-core/docs/BKT.md)
 in this repository. It is written for the engineer who wants to verify the
 implementation matches the literature.
 
@@ -158,14 +158,14 @@ is the mechanism that lets that distinction exist.
 
 ## Why this matters for the platform
 
-LearnForge uses BKT for per-module mastery estimation. Every exercise outcome
+SkillCoco uses BKT for per-module mastery estimation. Every exercise outcome
 — every correct or incorrect submission — feeds the BKT update for the
 relevant skill. The mastery estimate is then used in three places:
 
 1. **Module unlocking.** A downstream module unlocks when the prerequisite
    modules have mastery scores above a calibrated threshold. The threshold
    itself is a separate piece of the puzzle — see
-   [THRESHOLD.md](../../learnforge-core/docs/THRESHOLD.md) for the
+   [THRESHOLD.md](../../skillcoco-core/docs/THRESHOLD.md) for the
    calibration logic — but the *input* to that threshold is BKT mastery, not
    completion.
 
@@ -176,7 +176,7 @@ relevant skill. The mastery estimate is then used in three places:
    threshold.
 
 3. **Certification.** Track-level certifications (the signed Ed25519
-   certificates LearnForge issues for completed tracks) are awarded based on
+   certificates SkillCoco issues for completed tracks) are awarded based on
    aggregated BKT mastery across the modules in the track, not on the
    completion percentage. The certificate says something the recipient can
    actually defend.
@@ -187,10 +187,10 @@ you know and a learning platform that respects what you have clicked.
 
 ## Where this lives in the code
 
-BKT is implemented in [`learnforge_core::bkt`](../../learnforge-core/src/bkt.rs)
-as part of the `learnforge-core` Rust crate, which is published on crates.io
+BKT is implemented in [`skillcoco_core::bkt`](../../skillcoco-core/src/bkt.rs)
+as part of the `skillcoco-core` Rust crate, which is published on crates.io
 under the MIT license (algorithm docs CC BY 4.0). The crate compiles to both
-native Rust and WebAssembly, so any future LearnForge consumer — desktop
+native Rust and WebAssembly, so any future SkillCoco consumer — desktop
 app, web platform, embedded scoring engine — uses the same canonical
 implementation.
 
@@ -202,9 +202,9 @@ it is*, not in the arithmetic.
 ## Further reading
 
 - **The formal treatment** — [the BKT whitepaper in
-  learnforge-core](../../learnforge-core/docs/BKT.md). All the math, all the
+  skillcoco-core](../../skillcoco-core/docs/BKT.md). All the math, all the
   references, all the calibration notes.
-- **The companion algorithm** — [the SM-2 whitepaper](../../learnforge-core/docs/SM2.md)
+- **The companion algorithm** — [the SM-2 whitepaper](../../skillcoco-core/docs/SM2.md)
   on spaced repetition, which is what catches mastery decay over time.
 - **The original Corbett & Anderson 1995 paper** — the BKT whitepaper cites
   it in full. Thirty years old and still load-bearing.
@@ -218,4 +218,4 @@ about a learner's progress to themselves. Worth the investment.
 ---
 
 *This article is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-Reuse with attribution to LearnForge OSS contributors.*
+Reuse with attribution to SkillCoco OSS contributors.*

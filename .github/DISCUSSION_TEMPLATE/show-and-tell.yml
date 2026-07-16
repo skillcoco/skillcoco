@@ -7,11 +7,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        Share what you built with LearnForge. Skill packs, screenshots,
+        Share what you built with SkillCoco. Skill packs, screenshots,
         integrations, forks, blog posts -- all welcome.
 
         Self-promotion is fine. Spam is not. Mention how the work relates
-        to LearnForge so readers know why they should click.
+        to SkillCoco so readers know why they should click.
   - type: textarea
     id: what
     attributes:

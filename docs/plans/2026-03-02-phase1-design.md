@@ -1,4 +1,4 @@
-# LearnForge Phase 1 Design Document
+# SkillCoco Phase 1 Design Document
 
 **Date:** 2026-03-02
 **Status:** Approved

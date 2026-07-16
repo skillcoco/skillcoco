@@ -5,7 +5,7 @@
 #   NOTE: the sibling workflow `core-publish.yml` triggers on the
 #   distinct `core-v*.*.*` namespace — desktop releases here, crate
 #   publishes there. See docs/VERSIONING.md for the tag-ordering
-#   rule (O-8): when a release includes a learnforge-core API
+#   rule (O-8): when a release includes a skillcoco-core API
 #   change, push `core-vX.Y.Z` FIRST and confirm the new version
 #   is live on crates.io BEFORE pushing `vX.Y.Z` here.
 #
@@ -102,7 +102,7 @@ jobs:
           # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'LearnForge ${{ github.ref_name }}'
+          releaseName: 'SkillCoco ${{ github.ref_name }}'
           # Draft = true: maintainer reviews artifacts before publish.
           # Per locked O-7, release notes are curated — generateReleaseNotes
           # populates the PR-list scaffold; the maintainer edits the

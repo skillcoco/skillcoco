@@ -24,7 +24,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: What would you like LearnForge to do differently?
+      description: What would you like SkillCoco to do differently?
     validations:
       required: true
   - type: textarea
@@ -39,7 +39,7 @@ body:
     attributes:
       label: Scope
       options:
-        - learnforge-core crate
+        - skillcoco-core crate
         - desktop app
         - topic packs
         - docs

@@ -6,8 +6,7 @@
   (brand renamed from LearnForge, D-13, 2026-07-15). SkillCoco Pro, SkillCoco Hub,
   and SkillCoco Studio are commercial, private repos.
 - Coordination anchor: the private `skillcoco-hub` repo → `PLATFORM.md`. Cross-repo
-  contracts are the pack schema and the `skillcoco-core` crate (currently still
-  named `learnforge-core` in code; rename lands in the strip milestone); cross-repo
+  contracts are the pack schema and the `skillcoco-core` crate; cross-repo
   changes are decided there first.
 - **No feature-parity obligation with Pro.** OSS is allowed to be boring.
 - Planned background milestone "OSS-lite strip + open-core launch" (required before

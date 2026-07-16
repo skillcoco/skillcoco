@@ -67,13 +67,13 @@ describe("Phase 6 Certification IPC envelope (Rust param name = `request`)", () 
     saveMock.mockResolvedValueOnce("/tmp/cert.pdf");
     const path = await commands.exportCertificate(
       { achievementId: "ach-1" },
-      "learnforge-cert.pdf",
+      "skillcoco-cert.pdf",
     );
     expect(invokeMock).toHaveBeenCalledWith("export_certificate", {
       request: { achievementId: "ach-1" },
     });
     expect(saveMock).toHaveBeenCalledWith({
-      defaultPath: "learnforge-cert.pdf",
+      defaultPath: "skillcoco-cert.pdf",
       filters: [{ name: "PDF Certificate", extensions: ["pdf"] }],
     });
     expect(writeFileMock).toHaveBeenCalledWith(
@@ -88,7 +88,7 @@ describe("Phase 6 Certification IPC envelope (Rust param name = `request`)", () 
     saveMock.mockResolvedValueOnce(null);
     const path = await commands.exportCertificate(
       { achievementId: "ach-1" },
-      "learnforge-cert.pdf",
+      "skillcoco-cert.pdf",
     );
     expect(path).toBeNull();
     expect(writeFileMock).not.toHaveBeenCalled();
@@ -99,13 +99,13 @@ describe("Phase 6 Certification IPC envelope (Rust param name = `request`)", () 
     saveMock.mockResolvedValueOnce("/tmp/badge.png");
     const path = await commands.exportBadge(
       { achievementId: "ach-1" },
-      "learnforge-badge.png",
+      "skillcoco-badge.png",
     );
     expect(invokeMock).toHaveBeenCalledWith("export_badge", {
       request: { achievementId: "ach-1" },
     });
     expect(saveMock).toHaveBeenCalledWith({
-      defaultPath: "learnforge-badge.png",
+      defaultPath: "skillcoco-badge.png",
       filters: [{ name: "PNG Badge", extensions: ["png"] }],
     });
     expect(writeFileMock).toHaveBeenCalledWith(

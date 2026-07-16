@@ -31,9 +31,9 @@ pub mod auth;
 Run: `cd /Users/gshah/work/agentix/upstream/zeroclaw && cargo check 2>&1 | tail -10`
 Expected: Compiles (warnings OK, no errors)
 
-**Step 3: Verify LearnForge still compiles**
+**Step 3: Verify SkillCoco still compiles**
 
-Run: `cd /Users/gshah/work/apps/learnforge/learnforge/src-tauri && cargo check 2>&1 | tail -10`
+Run: `cd /Users/gshah/work/apps/skillcoco/skillcoco/src-tauri && cargo check 2>&1 | tail -10`
 Expected: Compiles
 
 **Step 4: Commit zeroclaw change**
@@ -152,7 +152,7 @@ async fn start_openai_oauth(
                 let client = reqwest::Client::new();
                 match openai_oauth::exchange_code_for_tokens(&client, &code, &pkce).await {
                     Ok(token_set) => {
-                        // Store the access token in LearnForge's AuthState
+                        // Store the access token in SkillCoco's AuthState
                         let token = token_set.access_token.clone();
                         let mut store = auth.store.lock().unwrap();
                         store.credentials.insert(
@@ -298,7 +298,7 @@ open = "5"
 
 **Step 6: Run Rust tests**
 
-Run: `cd /Users/gshah/work/apps/learnforge/learnforge/src-tauri && cargo test 2>&1 | tail -20`
+Run: `cd /Users/gshah/work/apps/skillcoco/skillcoco/src-tauri && cargo test 2>&1 | tail -20`
 Expected: All tests pass, compilation succeeds.
 
 **Step 7: Commit**
@@ -353,7 +353,7 @@ export async function checkOAuthStatus(provider: string): Promise<import("@/type
 
 **Step 3: Run tests**
 
-Run: `cd /Users/gshah/work/apps/learnforge/learnforge && npx vitest run 2>&1 | tail -20`
+Run: `cd /Users/gshah/work/apps/skillcoco/skillcoco && npx vitest run 2>&1 | tail -20`
 Expected: All tests pass.
 
 **Step 4: Commit**
@@ -455,7 +455,7 @@ Add `Loader2` to the existing lucide-react import if not already there (check li
 
 **Step 3: Run tests**
 
-Run: `cd /Users/gshah/work/apps/learnforge/learnforge && npx vitest run 2>&1 | tail -20`
+Run: `cd /Users/gshah/work/apps/skillcoco/skillcoco && npx vitest run 2>&1 | tail -20`
 Expected: All tests pass.
 
 **Step 4: Commit**
@@ -498,7 +498,7 @@ Also add the `PartialEq` derive to `AuthMethod` if not already there (it already
 
 **Step 2: Run Rust tests**
 
-Run: `cd /Users/gshah/work/apps/learnforge/learnforge/src-tauri && cargo test 2>&1 | tail -20`
+Run: `cd /Users/gshah/work/apps/skillcoco/skillcoco/src-tauri && cargo test 2>&1 | tail -20`
 Expected: All tests pass.
 
 **Step 3: Commit**
@@ -514,22 +514,22 @@ git commit -m "feat: handle OAuth bearer tokens in ai_request provider creation"
 
 **Step 1: Run all Rust tests**
 
-Run: `cd /Users/gshah/work/apps/learnforge/learnforge/src-tauri && cargo test`
+Run: `cd /Users/gshah/work/apps/skillcoco/skillcoco/src-tauri && cargo test`
 Expected: All tests pass (53+).
 
 **Step 2: Run all React tests**
 
-Run: `cd /Users/gshah/work/apps/learnforge/learnforge && npx vitest run`
+Run: `cd /Users/gshah/work/apps/skillcoco/skillcoco && npx vitest run`
 Expected: All tests pass (27+).
 
 **Step 3: Verify Rust compiles cleanly**
 
-Run: `cd /Users/gshah/work/apps/learnforge/learnforge/src-tauri && cargo check`
+Run: `cd /Users/gshah/work/apps/skillcoco/skillcoco/src-tauri && cargo check`
 Expected: No errors.
 
 **Step 4: Manual test**
 
-Run: `cd /Users/gshah/work/apps/learnforge/learnforge && pnpm tauri dev`
+Run: `cd /Users/gshah/work/apps/skillcoco/skillcoco && pnpm tauri dev`
 
 1. Open Settings
 2. Click "Sign in with OpenAI" on the OpenAI card

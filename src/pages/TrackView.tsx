@@ -592,7 +592,7 @@ export function TrackView() {
     setExportMessage(null);
     try {
       const savePath = await save({
-        filters: [{ name: "LearnForge Course", extensions: ["json"] }],
+        filters: [{ name: "SkillCoco Course", extensions: ["json"] }],
         defaultPath: `${currentTrack.topic.replace(/[^a-z0-9]/gi, "_")}.json`,
       });
       if (!savePath) {

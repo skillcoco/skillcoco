@@ -5,7 +5,7 @@
 
 This document describes how SkillCoco version numbers are assigned,
 how releases are cut, and the strict ordering rule between the
-`learnforge-core` crate publish and the desktop application release.
+`skillcoco-core` crate publish and the desktop application release.
 For per-release change history, see the `CHANGELOG.md` files
 referenced at the bottom of this document.
 
@@ -15,7 +15,7 @@ SkillCoco ships TWO artifacts that version independently:
 
 | Artifact                | Where it lives          | Tag namespace             | Bumped when                                                   |
 | ----------------------- | ----------------------- | ------------------------- | ------------------------------------------------------------- |
-| `learnforge-core` crate | crates.io               | `core-v{major}.{minor}.{patch}` | Any change to crate source, public API, or crate metadata |
+| `skillcoco-core` crate | crates.io               | `core-v{major}.{minor}.{patch}` | Any change to crate source, public API, or crate metadata |
 | SkillCoco desktop app  | GitHub Releases         | `v{major}.{minor}.{patch}`      | Any change to desktop app behaviour, UX, or bundled config |
 
 The desktop app *depends on* the crate. Per D-03c the desktop app's
@@ -49,7 +49,7 @@ Rust ecosystem treats 0.x crates.
 
 Concretely:
 
-- Removing a public function from `learnforge-core` → `0.X.0` minor.
+- Removing a public function from `skillcoco-core` → `0.X.0` minor.
 - Renaming a Tauri command consumed by the frontend → `0.X.0` minor.
 - Changing a default config value → `0.X.0` minor.
 - Fixing a typo in a doc comment → `0.x.Y` patch.
@@ -67,7 +67,7 @@ We will not tag 1.0.0 until ALL of the following are true:
 2. At least three external consumers exist (corporate, hobbyist, or
    academic) — verified via crates.io download stats + GitHub
    Discussions / issues / direct feedback.
-3. `learnforge-core` test coverage is ≥80% (line coverage as reported
+3. `skillcoco-core` test coverage is ≥80% (line coverage as reported
    by `cargo-tarpaulin`).
 4. The `wasm32-unknown-unknown` target compiles green on every CI
    matrix run (not just spot-checked).
@@ -91,25 +91,25 @@ changes between releases.
 
 ## Tag-ordering rule (locked O-8)
 
-When a release includes a change to `learnforge-core` (the crate
+When a release includes a change to `skillcoco-core` (the crate
 published to crates.io), the tags MUST be pushed in this order:
 
 1. Push `core-vX.Y.Z` first.
 2. Wait for `.github/workflows/core-publish.yml` to complete
    successfully (the GitHub Actions run finishes green, and the
    new version is visible on crates.io — verify with
-   `cargo search learnforge-core` or by visiting
-   `https://crates.io/crates/learnforge-core`).
+   `cargo search skillcoco-core` or by visiting
+   `https://crates.io/crates/skillcoco-core`).
 3. Only then push `vX.Y.Z` for the desktop release.
 
 **Rationale:** the desktop build defined by `.github/workflows/release.yml`
-depends on the published `learnforge-core` crate. If the desktop tag is
+depends on the published `skillcoco-core` crate. If the desktop tag is
 pushed first, the matrix builds may complete and even ship a draft
 release artifact that references a crate version that does not yet
 exist on crates.io — a state we then have to clean up manually.
 
 **Desktop-only releases:** if a release contains UX/asset fixes only
-(no change to the `learnforge-core` crate, no change to crate
+(no change to the `skillcoco-core` crate, no change to crate
 dependencies), only the `vX.Y.Z` tag is needed. The `core-vX.Y.Z`
 tag is skipped for that cycle.
 
@@ -160,7 +160,7 @@ post-release:
 ## Changelog locations
 
 - Desktop application: [`CHANGELOG.md`](../CHANGELOG.md) at repo root.
-- learnforge-core crate: [`learnforge-core/CHANGELOG.md`](../learnforge-core/CHANGELOG.md).
+- skillcoco-core crate: [`skillcoco-core/CHANGELOG.md`](../skillcoco-core/CHANGELOG.md).
 
 Per locked O-6, each crate maintains its own per-crate changelog.
 The top-level `CHANGELOG.md` covers the desktop app only.

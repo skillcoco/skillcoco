@@ -18,7 +18,7 @@
 //! abstracted via small per-module `Storage` traits (`BktStore`, `SrStore`,
 //! `BlockStore`, `PackStore`, `AchievementStore`, `MicrolearningStore`)
 //! that consumers implement against their DB of choice. The reference
-//! implementation in `learnforge`'s `src-tauri` uses `rusqlite`; web/WASM
+//! implementation in `skillcoco`'s `src-tauri` uses `rusqlite`; web/WASM
 //! consumers can implement against IndexedDB.
 //!
 //! ## Modules

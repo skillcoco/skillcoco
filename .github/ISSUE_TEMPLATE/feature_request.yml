@@ -1,7 +1,7 @@
 # Source: docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms
 # Created from scratch per R2 fix (Phase 03.2 D-07c claimed templates existed; verified absent).
 name: Feature request
-description: Suggest an enhancement to LearnForge.
+description: Suggest an enhancement to SkillCoco.
 title: "[Feature] "
 labels: ["enhancement", "needs-triage"]
 body:
@@ -27,7 +27,7 @@ body:
     id: solution
     attributes:
       label: Proposed solution
-      description: What should LearnForge do differently? Be concrete.
+      description: What should SkillCoco do differently? Be concrete.
     validations:
       required: true
   - type: textarea
@@ -42,7 +42,7 @@ body:
     attributes:
       label: Scope
       options:
-        - learnforge-core
+        - skillcoco-core
         - desktop app
         - topic packs
         - docs

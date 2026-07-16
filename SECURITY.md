@@ -1,7 +1,7 @@
 # Security Policy
 
 SkillCoco ships an open-source desktop application plus the
-`learnforge-core` Rust crate. This policy describes how to report a
+`skillcoco-core` Rust crate. This policy describes how to report a
 vulnerability in either component, what response you can expect, and
 how we coordinate disclosure.
 
@@ -17,7 +17,7 @@ releases.
 | 0.1.x   | supported          |
 | < 0.1   | not supported      |
 
-The same support window applies to both `learnforge-core` (crates.io)
+The same support window applies to both `skillcoco-core` (crates.io)
 and the SkillCoco desktop application (GitHub Releases). Their
 versions may diverge at the patch level per D-03c, but the supported
 minor track is shared.
@@ -44,7 +44,7 @@ Please include in your report:
 
 - A description of the issue and its security impact
 - Steps to reproduce (ideally a minimal proof-of-concept)
-- Affected versions (`learnforge-core` crate version, desktop app
+- Affected versions (`skillcoco-core` crate version, desktop app
   version, host OS where relevant)
 - Any known mitigations or workarounds
 - Whether you would like credit in the advisory (we default to
@@ -118,7 +118,7 @@ rest, eliminating that class of long-lived credential entirely.
 
 In scope for this policy:
 
-- `learnforge-core` crate (Rust library published to crates.io)
+- `skillcoco-core` crate (Rust library published to crates.io)
 - SkillCoco desktop application (Tauri 2, distributed via GitHub
   Releases on macOS, Linux, and Windows)
 - The `skillcoco/skillcoco` repository itself, including CI

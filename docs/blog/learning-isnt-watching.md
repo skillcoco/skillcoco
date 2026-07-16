@@ -3,8 +3,8 @@ title: "Learning isn't watching: why adaptive practice beats video courses"
 slug: learning-isnt-watching
 date: 2026-06-17
 tags: [adaptive-learning, opinion, microlearning, certification]
-canonical_url: https://learnforge.dev/blog/learning-isnt-watching
-author: LearnForge OSS contributors
+canonical_url: https://skillcoco.dev/blog/learning-isnt-watching
+author: SkillCoco OSS contributors
 license: CC BY 4.0
 ---
 
@@ -65,7 +65,7 @@ intervals that grow with each successful recall, so the work of remembering
 gets cheaper over time as the memory solidifies. A video course has no
 notion of when you are about to forget what; it has no per-item recall
 history; it cannot reschedule. Once you have watched a video, it is done
-with you. The [SM-2 whitepaper](../../learnforge-core/docs/SM2.md) in this
+with you. The [SM-2 whitepaper](../../skillcoco-core/docs/SM2.md) in this
 repository walks through how the algorithm works in detail.
 
 **It cannot unlock content based on demonstrated understanding.** A
@@ -76,8 +76,8 @@ the modules in a fixed order and hopes the learner internalizes the
 prerequisite chain along the way. An adaptive system can do something
 stronger: it can refuse to advance the learner to the next module until the
 prerequisites *measurably* clear a mastery threshold. The
-[microlearning whitepaper](../../learnforge-core/docs/MICROLEARNING.md)
-in this repository details how LearnForge picks the next item to work on at
+[microlearning whitepaper](../../skillcoco-core/docs/MICROLEARNING.md)
+in this repository details how SkillCoco picks the next item to work on at
 any moment, taking into account current mastery, decay since the last
 review, and the desirable-difficulty zone where learning happens most
 efficiently.
@@ -96,7 +96,7 @@ correct answers and fall on incorrect ones; it accommodates guessing and
 slipping as first-class phenomena rather than pretending they do not exist.
 
 (For the algorithmic details, the
-[BKT whitepaper](../../learnforge-core/docs/BKT.md) has the math. The
+[BKT whitepaper](../../skillcoco-core/docs/BKT.md) has the math. The
 short version is in our companion post,
 [bkt-explained.md](./bkt-explained.md).)
 
@@ -152,8 +152,8 @@ is that mode.
 
 ## Why we're betting on this
 
-LearnForge has an internal phrase we call the *Definition of Usable*: "a new
-user installs LearnForge, picks a topic, learns something real, and feels
+SkillCoco has an internal phrase we call the *Definition of Usable*: "a new
+user installs SkillCoco, picks a topic, learns something real, and feels
 mastery move — within 10 minutes, every time, without bugs."
 
 That phrase is doing two pieces of work. The first piece is the
@@ -184,15 +184,15 @@ problem here is that its certificates assert *attendance* rather than
 platform means the bearer watched the videos. It does not mean they can
 deploy a workload to a cluster without breaking it.
 
-LearnForge's Phase 6 certification surface issues Ed25519-signed
+SkillCoco's Phase 6 certification surface issues Ed25519-signed
 certificates for completed tracks. The signature is cryptographic. The
 payload includes the per-module mastery scores that earned the certificate.
 Anyone with the public key can verify that the certificate was issued by
-LearnForge to a specific learner for a specific track, and that the mastery
+SkillCoco to a specific learner for a specific track, and that the mastery
 evidence underwrites the issuance. See the
-[signing whitepaper](../../learnforge-core/docs/SIGNING.md) for the
+[signing whitepaper](../../skillcoco-core/docs/SIGNING.md) for the
 canonical-JSON and Ed25519 details, and the
-[threshold whitepaper](../../learnforge-core/docs/THRESHOLD.md) for how
+[threshold whitepaper](../../skillcoco-core/docs/THRESHOLD.md) for how
 mastery aggregates into the issuance decision.
 
 The result is a credential that does what credentials are supposed to do:
@@ -225,7 +225,7 @@ The shift is not "video bad, exercises good." The shift is from a paradigm
 that measures *what learners have seen* to one that measures *what learners
 can do*. Once you make that shift, everything downstream changes — the
 content shape, the platform's data model, the certificate semantics, even
-the dashboard. We are building LearnForge as one example of what an
+the dashboard. We are building SkillCoco as one example of what an
 adaptive system looks like when you build it from first principles, with the
 algorithms in the open and the verification surface auditable. There are
 other valid implementations of the same shift, and we hope to see more of
@@ -235,16 +235,16 @@ them. The industry needs them.
 
 - **[bkt-explained.md](./bkt-explained.md)** — the accessible BKT
   explainer for the mastery-estimation half of this argument.
-- **[the microlearning whitepaper](../../learnforge-core/docs/MICROLEARNING.md)**
+- **[the microlearning whitepaper](../../skillcoco-core/docs/MICROLEARNING.md)**
   — the selection-scoring formula, the desirable-difficulty literature,
   and the 0.3–0.7 zone rationale.
-- **[the SM-2 whitepaper](../../learnforge-core/docs/SM2.md)** — the
+- **[the SM-2 whitepaper](../../skillcoco-core/docs/SM2.md)** — the
   spaced-repetition algorithm that catches decay before it becomes
   forgetting.
-- **[the signing whitepaper](../../learnforge-core/docs/SIGNING.md)** —
+- **[the signing whitepaper](../../skillcoco-core/docs/SIGNING.md)** —
   how the certification surface works under the hood.
 
 ---
 
 *This article is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-Reuse with attribution to LearnForge OSS contributors.*
+Reuse with attribution to SkillCoco OSS contributors.*

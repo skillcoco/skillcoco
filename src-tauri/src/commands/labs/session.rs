@@ -25,13 +25,13 @@ pub const AI_JUDGE_DEFAULT_BUDGET: u32 = 5;
 
 /// OSC 133 init script — sourced inside the lab shell so the prompt-detect
 /// FSM can locate command boundaries deterministically. Bind-mounted into
-/// Docker containers at `/learnforge/init.sh`; sourced via `bash --init-file`
+/// Docker containers at `/skillcoco/init.sh`; sourced via `bash --init-file`
 /// for host bash and similar plumbing for host zsh (currently host shell uses
 /// the env-PS1 path in `labs::host_shell` — this constant is the canonical
 /// content materialized once at app startup so future Docker mode lifts it
 /// directly without re-deriving it from PS1 fragments).
 pub const OSC_133_INIT_SCRIPT: &str = "\
-# LearnForge OSC 133 prompt-boundary markers (Phase 03.1).
+# SkillCoco OSC 133 prompt-boundary markers (Phase 03.1).
 # Sourced at lab-session start; emits ESC ] 133 ; A/B/C/D BEL around the
 # prompt + command + output regions so labs::prompt_detect can locate
 # command boundaries without prompt heuristics.

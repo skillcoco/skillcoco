@@ -3,7 +3,7 @@
 //! Public surface:
 //! - `LabRuntime` / `LabSession` traits — hybrid Docker / host-shell isolation.
 //! - `LabError` — single error type for spec / eval / runtime / io failures.
-//! - `workspace_path()` — resolves `~/.learnforge/labs/<track>/<module>/` and
+//! - `workspace_path()` — resolves `~/.skillcoco/labs/<track>/<module>/` and
 //!   creates the directory tree (with traversal-attack guard).
 //! - `detect_runtime()` — picks Docker vs host shell from settings + probe.
 //! - `requires_docker_notice()` / `effective_runtime_with_warning()` — surface
@@ -124,7 +124,7 @@ fn is_safe_component(s: &str) -> bool {
 }
 
 /// Resolve the per-learner per-module workspace path under
-/// `~/.learnforge/labs/<track>/<module>/`. Creates the directory tree
+/// `~/.skillcoco/labs/<track>/<module>/`. Creates the directory tree
 /// idempotently. Rejects components that contain path separators or
 /// traversal sequences (`..`).
 pub fn workspace_path(track_id: &str, module_id: &str) -> Result<PathBuf, LabError> {
@@ -144,7 +144,7 @@ pub fn workspace_path(track_id: &str, module_id: &str) -> Result<PathBuf, LabErr
         LabError::Runtime("workspace_path: unable to resolve home directory".to_string())
     })?;
     let path = home
-        .join(".learnforge")
+        .join(".skillcoco")
         .join("labs")
         .join(track_id)
         .join(module_id);
@@ -212,15 +212,15 @@ pub async fn effective_runtime_with_warning(
 mod tests {
     use super::*;
 
-    /// LAB-07 / LAB-03 — workspace_path resolves to ~/.learnforge/labs/<track>/<module>/
+    /// LAB-07 / LAB-03 — workspace_path resolves to ~/.skillcoco/labs/<track>/<module>/
     /// and the directory exists after the call.
     #[test]
     fn workspace_path_resolution() {
         let p = workspace_path("track-1", "module-1")
             .expect("workspace_path must resolve");
         assert!(
-            p.ends_with(std::path::Path::new(".learnforge/labs/track-1/module-1")),
-            "workspace_path must end with .learnforge/labs/<track>/<module>, got {:?}",
+            p.ends_with(std::path::Path::new(".skillcoco/labs/track-1/module-1")),
+            "workspace_path must end with .skillcoco/labs/<track>/<module>, got {:?}",
             p
         );
         assert!(

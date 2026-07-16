@@ -1,12 +1,12 @@
 [package]
-name = "learnforge"
+name = "skillcoco"
 version = "0.1.0"
 description = "AI-powered adaptive learning desktop application"
 authors = ["School of DevOps & AI"]
 edition = "2021"
 
 [lib]
-name = "learnforge_lib"
+name = "skillcoco_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

@@ -1,4 +1,4 @@
-# LearnForge Phase 1 Implementation Plan
+# SkillCoco Phase 1 Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -1528,7 +1528,7 @@ git commit -m "feat: exercise components - Q&A, code challenges, fill-in-blank w
 
 **Step 1: Redesign sidebar to match prototype**
 
-- LearnForge logo at top
+- SkillCoco logo at top
 - Navigation section: Dashboard, Review (with due count badge), Analytics
 - Learning Tracks section: list with inline progress bars and percentages
 - "+ New Track" button at bottom

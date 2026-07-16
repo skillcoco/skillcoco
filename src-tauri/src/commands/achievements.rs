@@ -494,7 +494,7 @@ mod tests {
             track_topic: "Kubernetes".to_string(),
             issued_at: "2026-06-19T00:00:00Z".to_string(),
             key_fingerprint_short: "deadbeef".to_string(),
-            qr_payload: "learnforge-test-payload.deadbeef".to_string(),
+            qr_payload: "skillcoco-test-payload.deadbeef".to_string(),
         };
         let bytes = artifacts::render_badge_png(&badge_input).expect("png");
         assert!(!bytes.is_empty());

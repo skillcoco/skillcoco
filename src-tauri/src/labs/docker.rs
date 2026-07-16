@@ -7,7 +7,7 @@
 //! `DockerRuntime` is the real `LabRuntime` implementation for the
 //! Docker-isolated lab path. The full lifecycle (image pull, container
 //! create with bind mount, exec attach, stop+remove) is exercised in
-//! `#[ignore]`-gated integration tests behind `LEARNFORGE_TEST_DOCKER=1`.
+//! `#[ignore]`-gated integration tests behind `SKILLCOCO_TEST_DOCKER=1`.
 //! Pure-unit tests cover the probe + detection paths.
 
 use super::{LabError, LabSession};
@@ -128,7 +128,7 @@ impl DockerRuntime {
             // socket open) but image-pull will fail downstream — surface that.
             Err(LabError::Runtime(format!(
                 "DockerRuntime::create_with_bind_mount: image-pull pipeline gated behind \
-                 LEARNFORGE_TEST_DOCKER=1; image={} workspace={:?}",
+                 SKILLCOCO_TEST_DOCKER=1; image={} workspace={:?}",
                 image, workspace
             )))
         })
@@ -145,7 +145,7 @@ impl super::LabRuntime for DockerRuntime {
         Box::pin(async move {
             // The container-lifecycle pipeline (image pull, container create
             // with bind mount, exec attach) is exercised by the
-            // LEARNFORGE_TEST_DOCKER-gated integration test in this file.
+            // SKILLCOCO_TEST_DOCKER-gated integration test in this file.
             // The default (test runs without docker) path returns Err so
             // tests that expect a real container can `#[ignore]` themselves.
             let _ = self.workspace.as_path(); // silence dead-code while we
@@ -153,7 +153,7 @@ impl super::LabRuntime for DockerRuntime {
                                               // workspace argument
             Err(LabError::Runtime(format!(
                 "DockerRuntime::start: real container lifecycle gated behind \
-                 LEARNFORGE_TEST_DOCKER=1 (workspace={:?} session={})",
+                 SKILLCOCO_TEST_DOCKER=1 (workspace={:?} session={})",
                 workspace, session_id
             )))
         })
@@ -201,14 +201,14 @@ mod tests {
 
     /// LAB-03 / LAB-07 — DockerRuntime::create_with_bind_mount routes
     /// through bollard. Default (no Docker) path: returns Err. Real-Docker
-    /// path is gated behind LEARNFORGE_TEST_DOCKER=1.
+    /// path is gated behind SKILLCOCO_TEST_DOCKER=1.
     #[tokio::test]
     #[cfg_attr(
         not(feature = "test-docker"),
-        ignore = "real-Docker integration; gated behind LEARNFORGE_TEST_DOCKER=1"
+        ignore = "real-Docker integration; gated behind SKILLCOCO_TEST_DOCKER=1"
     )]
     async fn container_lifecycle_creates_with_bind_mount() {
-        let workspace = std::path::Path::new("/tmp/learnforge-labs-test");
+        let workspace = std::path::Path::new("/tmp/skillcoco-labs-test");
         let _ = std::fs::create_dir_all(workspace);
         let rt = DockerRuntime::new(workspace.to_path_buf());
         let session = rt

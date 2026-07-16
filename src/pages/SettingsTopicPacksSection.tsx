@@ -70,10 +70,10 @@ export function SettingsTopicPacksSection() {
     <section className="space-y-4">
       <h2 className="text-lg font-semibold text-foreground">Topic Packs</h2>
       <p className="text-xs text-muted-foreground">
-        Curated packs ship with LearnForge; drop your own under
+        Curated packs ship with SkillCoco; drop your own under
         {" "}
         <code className="rounded bg-secondary/40 px-1 py-0.5 text-[11px]">
-          ~/.learnforge/skills/
+          ~/.skillcoco/skills/
         </code>
         .
       </p>

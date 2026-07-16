@@ -33,8 +33,8 @@ Optional but recommended:
 
 ```bash
 # Clone
-gh repo clone skillcoco/skillcoco ~/work/apps/learnforge
-cd ~/work/apps/learnforge
+gh repo clone skillcoco/skillcoco ~/work/apps/skillcoco
+cd ~/work/apps/skillcoco
 
 # Install JS deps
 pnpm install
@@ -278,11 +278,11 @@ Standard test commands:
 cargo test --workspace
 
 # Specific crate:
-cargo test -p learnforge-core
-cargo test -p learnforge
+cargo test -p skillcoco-core
+cargo test -p skillcoco
 
 # Specific module:
-cargo test -p learnforge --lib achievements
+cargo test -p skillcoco --lib achievements
 
 # Frontend (Vitest):
 pnpm test --run
@@ -292,7 +292,7 @@ pnpm test --run src/path/to/specific.test.ts
 pnpm exec tsc --noEmit
 
 # Doc tests:
-cargo test --doc -p learnforge-core
+cargo test --doc -p skillcoco-core
 ```
 
 WASM tests (Phase 9+):
@@ -300,11 +300,11 @@ WASM tests (Phase 9+):
 ```bash
 # Use rustup-managed cargo for wasm32 target:
 PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH" \
-  cargo build --target wasm32-unknown-unknown -p learnforge-core --lib
+  cargo build --target wasm32-unknown-unknown -p skillcoco-core --lib
 ```
 
 Scoped to `--lib` since Phase 14 (14-RESEARCH Open Question 2, RESOLVED):
-`learnforge-core` now also declares the `forge-sign` `[[bin]]` (a
+`skillcoco-core` now also declares the `forge-sign` `[[bin]]` (a
 pack-signing CLI), which shares the crate's `[dependencies]` table but never
 runs on wasm32. `--lib` narrows this gate to exactly the library surface the
 app ships to wasm, making it immune to any future bin-only dependency while
@@ -367,14 +367,14 @@ gh pr create --title "fix: ..." --body "..."
 ```bash
 # Open the script:
 $EDITOR .planning/phases/<NN>-*/<NN>-ACCEPTANCE.md
-# Follow steps in a fresh terminal + fresh DB (delete ~/Library/Application Support/com.learnforge.app/learnforge.db if needed)
+# Follow steps in a fresh terminal + fresh DB (delete ~/Library/Application Support/com.skillcoco.app/skillcoco.db if needed)
 # After all steps pass, sign off in the doc + commit + open PR
 ```
 
-### Publishing a new `learnforge-core` release
+### Publishing a new `skillcoco-core` release
 
 ```bash
-# 1. bump version in learnforge-core/Cargo.toml + CHANGELOG.md
+# 1. bump version in skillcoco-core/Cargo.toml + CHANGELOG.md
 # 2. atomic commit
 # 3. tag:
 git tag core-v<X.Y.Z>
@@ -385,7 +385,7 @@ git push origin core-v<X.Y.Z>
 ### Publishing a new desktop release
 
 ```bash
-# IF the release includes a learnforge-core API change:
+# IF the release includes a skillcoco-core API change:
 # 1. publish core-v<X.Y.Z> FIRST (per O-8 tag ordering rule)
 # 2. wait for crates.io confirmation
 # 3. THEN tag the desktop release:

@@ -2,7 +2,7 @@
 //! `src-tauri/src/achievements/mod.rs` during Phase 7 Wave 8 (07-08).
 //!
 //! This is the **final** algorithmic move wave. After Wave 8, every
-//! algorithm in the LearnForge learning loop lives in `skillcoco-core`
+//! algorithm in the SkillCoco learning loop lives in `skillcoco-core`
 //! and the WASM build target compiles cleanly without `cargo` ever
 //! seeing a `rusqlite` / `printpdf` / `image` / `qrcode` / `tauri` line
 //! in the dependency graph.

@@ -42,12 +42,12 @@ use skillcoco_core::packs::PackStore;
 
 /// Env var that tests use to redirect the skills root to a tempdir.
 /// Production code never sets this — only `#[cfg(test)]` paths do.
-pub const SKILLS_DIR_OVERRIDE_ENV: &str = "LEARNFORGE_SKILLS_DIR_OVERRIDE";
+pub const SKILLS_DIR_OVERRIDE_ENV: &str = "SKILLCOCO_SKILLS_DIR_OVERRIDE";
 
 /// T-05-06: hard cap on individual pack.json size (5 MB) before reading.
 const MAX_PACK_BYTES: u64 = 5 * 1024 * 1024;
 
-/// Resolve the user-skills directory (`~/.learnforge/skills/`).
+/// Resolve the user-skills directory (`~/.skillcoco/skills/`).
 ///
 /// Returns `None` only when the home directory cannot be determined AND
 /// the test-override env var is unset. Honors [`SKILLS_DIR_OVERRIDE_ENV`]
@@ -56,7 +56,7 @@ pub fn skills_dir() -> Option<PathBuf> {
     if let Ok(override_dir) = std::env::var(SKILLS_DIR_OVERRIDE_ENV) {
         return Some(PathBuf::from(override_dir));
     }
-    dirs::home_dir().map(|h| h.join(".learnforge").join("skills"))
+    dirs::home_dir().map(|h| h.join(".skillcoco").join("skills"))
 }
 
 /// Idempotently create the skills directory. Returns `Some(path)` on
@@ -916,7 +916,7 @@ mod tests {
     /// GREEN — nonexistent path returns Err(Io), not a panic.
     #[test]
     fn imported_file_pack_source_nonexistent_returns_io_err() {
-        let src = ImportedFilePackSource::new("/tmp/__does_not_exist_learnforge_test__.json");
+        let src = ImportedFilePackSource::new("/tmp/__does_not_exist_skillcoco_test__.json");
         let result = src.read_file();
         assert!(result.is_err(), "nonexistent path must return Err");
         // Must be an Io error (not Schema)

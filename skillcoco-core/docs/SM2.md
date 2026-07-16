@@ -1,14 +1,14 @@
 # SuperMemo 2 (SM-2) Spaced Repetition
 
-> **Author:** LearnForge OSS contributors
+> **Author:** SkillCoco OSS contributors
 > **Date:** 2026-06-16
 > **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-> **Module:** [`learnforge_core::sm2`](../src/sm2.rs)
+> **Module:** [`skillcoco_core::sm2`](../src/sm2.rs)
 
 This whitepaper documents the SuperMemo 2 (SM-2) spaced repetition
-algorithm as implemented in `learnforge_core::sm2`. It is intended for
+algorithm as implemented in `skillcoco_core::sm2`. It is intended for
 engineers, learning scientists, and curious learners who want to
-understand exactly how LearnForge schedules card reviews against the
+understand exactly how SkillCoco schedules card reviews against the
 forgetting curve.
 
 The implementation is the canonical SM-2 algorithm published by Piotr
@@ -59,7 +59,7 @@ SM-2 is a closed-form algorithm that produces a per-card schedule based
 on these inputs. It is the foundation of SuperMemo (1985), Anki (2006),
 Mnemosyne, and many smaller systems.
 
-LearnForge uses SM-2 for **card-level spaced repetition** within each
+SkillCoco uses SM-2 for **card-level spaced repetition** within each
 module. Per-module mastery is tracked by
 [BKT](./BKT.md); per-card review scheduling is tracked by SM-2. Both
 algorithms inform the [microlearning](../src/microlearning.rs)
@@ -114,7 +114,7 @@ The cutoff is `q >= 3 ⇒ pass`. A quality of `3` is a boundary pass:
 the learner technically remembered, but only after notable struggle.
 Quality `< 3` triggers the failure-reset rule (§5.3).
 
-LearnForge's IPC layer surfaces this scale verbatim through the IPC
+SkillCoco's IPC layer surfaces this scale verbatim through the IPC
 JSON contract; the in-app UI maps it to plain-English buttons but the
 underlying numerical scale is what `sm2_calculate` sees.
 
@@ -136,9 +136,9 @@ These three numbers, plus the new quality, fully determine the next
 `(repetitions, ease_factor, interval)`. The algorithm is **stateless
 beyond the card row**.
 
-In LearnForge the row is persisted in the `sr_cards` SQLite table
+In SkillCoco the row is persisted in the `sr_cards` SQLite table
 (desktop) or an equivalent IndexedDB key (web). The `SrStore` trait in
-`learnforge-core` abstracts the storage so the algorithm itself stays
+`skillcoco-core` abstracts the storage so the algorithm itself stays
 pure.
 
 ---
@@ -254,7 +254,7 @@ will be `6 * 2.48 = 14.88` days, slightly shorter than the original
 
 ## 6. Implementation notes
 
-`learnforge_core::sm2::sm2_calculate` is a **pure function**: same
+`skillcoco_core::sm2::sm2_calculate` is a **pure function**: same
 `(quality, repetitions, ease_factor, interval)` → same output, no I/O,
 no allocation. This matters because:
 
@@ -295,9 +295,9 @@ retrievability) and is empirically more efficient than SM-2 on most
 benchmarks: roughly 20-30% fewer reviews for the same retention
 target on standard datasets.
 
-LearnForge ships SM-2 in Phase 7 for three reasons:
+SkillCoco ships SM-2 in Phase 7 for three reasons:
 
-1. **Migration cost.** The pre-Phase-7 LearnForge already used SM-2;
+1. **Migration cost.** The pre-Phase-7 SkillCoco already used SM-2;
    replacing it would require migrating every existing `sr_cards`
    row, retraining FSRS parameters per learner, and reconciling the
    different state vectors.
@@ -309,7 +309,7 @@ LearnForge ships SM-2 in Phase 7 for three reasons:
    per-learner parameter optimization; the standard `fsrs-rs` crate
    pulls `ndarray` and `optimize`, which complicate WASM builds.
 
-A future LearnForge release may switch to FSRS once per-learner
+A future SkillCoco release may switch to FSRS once per-learner
 calibration is available and the migration path is well-mapped. The
 trait surface (`SrStore`) was designed to be replaceable — the SM-2
 math is confined to `sm2.rs` and can be swapped without touching the
@@ -319,7 +319,7 @@ persistence layer.
 
 ## 8. Limitations
 
-The SM-2 algorithm as implemented in LearnForge has known
+The SM-2 algorithm as implemented in SkillCoco has known
 limitations.
 
 ### 8.1 Self-reported quality
@@ -347,7 +347,7 @@ conflates them.
 
 ### 8.4 Interval cap absence
 
-LearnForge does not cap the interval. A card reviewed perfectly six
+SkillCoco does not cap the interval. A card reviewed perfectly six
 times will reach an interval of ~94 days; ten perfect reviews and
 the interval exceeds five years. This is the canonical SM-2 behavior
 and is not necessarily wrong — well-mastered cards genuinely tolerate
@@ -359,7 +359,7 @@ cap to keep the deck visually reasonable.
 A card that the learner repeatedly fails (a "leech") will cycle
 through the failure-reset rule forever, losing ease each time. SM-2
 itself has no leech-detection; Anki added one later (cards that fail
-N times get flagged for review or suspension). LearnForge defers
+N times get flagged for review or suspension). SkillCoco defers
 leech-handling to higher layers.
 
 ---
@@ -391,7 +391,7 @@ leech-handling to higher layers.
 ## 10. Reproducing the worked examples
 
 ```rust,ignore
-use learnforge_core::sm2::sm2_calculate;
+use skillcoco_core::sm2::sm2_calculate;
 
 // Review 1 (q=5, fresh card, EF=2.5)
 let r = sm2_calculate(5, 0, 2.5, 0.0);
@@ -406,11 +406,11 @@ assert_eq!(r.interval, 1.0);
 assert!((r.ease_factor - 2.38).abs() < 1e-9);
 ```
 
-Run `cargo run -p learnforge-core --example sm2_schedule` to see the
+Run `cargo run -p skillcoco-core --example sm2_schedule` to see the
 interval trajectory printed for a longer review sequence.
 
 ---
 
 *This whitepaper is licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). You may
-reuse it with attribution to "LearnForge OSS contributors, 2026".*
+reuse it with attribution to "SkillCoco OSS contributors, 2026".*

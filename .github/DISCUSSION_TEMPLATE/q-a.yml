@@ -40,7 +40,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: LearnForge version
-      description: 'From Help -> About, or your `learnforge-core` crate version.'
+      label: SkillCoco version
+      description: 'From Help -> About, or your `skillcoco-core` crate version.'
     validations:
       required: false

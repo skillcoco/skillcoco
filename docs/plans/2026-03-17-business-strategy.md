@@ -1,4 +1,4 @@
-# LearnForge Business Strategy
+# SkillCoco Business Strategy
 
 **Version:** 1.0
 **Date:** 2026-03-17
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-LearnForge is an adaptive learning platform built on open-source learning science algorithms. The business model follows an open-core strategy: a free, MIT-licensed desktop application for individual learners, and a commercial cloud-hosted web application for corporate teams with multi-modal content, cohort management, analytics, and verifiable certifications.
+SkillCoco is an adaptive learning platform built on open-source learning science algorithms. The business model follows an open-core strategy: a free, MIT-licensed desktop application for individual learners, and a commercial cloud-hosted web application for corporate teams with multi-modal content, cohort management, analytics, and verifiable certifications.
 
 The platform's core innovation — combining Bayesian Knowledge Tracing, SM-2 Spaced Repetition, and AI-powered content generation in a unified adaptive mastery loop — is published as open-source to establish prior art, build credibility, and drive bottom-up adoption. Revenue comes from enterprise features that organizations need but individuals don't.
 
@@ -30,7 +30,7 @@ Every platform — Udemy, Coursera, LinkedIn Learning, Pluralsight — measures 
 
 ## The Solution
 
-LearnForge replaces "did they watch the video?" with "do they actually know this?" — and adapts accordingly.
+SkillCoco replaces "did they watch the video?" with "do they actually know this?" — and adapts accordingly.
 
 ### Core Innovations
 
@@ -57,7 +57,7 @@ Skill levels (L1/L2/L3) earned through BKT mastery thresholds, not completion pe
 
 ```
 ┌──────────────────────────────────┐  ┌──────────────────────────────────┐
-│     LearnForge Desktop (MIT)     │  │    LearnForge Web (Commercial)   │
+│     SkillCoco Desktop (MIT)     │  │    SkillCoco Web (Commercial)   │
 │                                  │  │                                  │
 │  Individual learners             │  │  Corporate / Enterprise          │
 │  Privacy-first, offline          │  │  Cloud-hosted, multi-tenant      │
@@ -77,7 +77,7 @@ Skill levels (L1/L2/L3) earned through BKT mastery thresholds, not completion pe
            └──────────┐    ┌─────────────────────┘
                       │    │
               ┌───────▼────▼────────┐
-              │  learnforge-core    │
+              │  skillcoco-core    │
               │  (Rust crate, MIT)  │
               │                     │
               │  - BKT algorithm    │
@@ -97,10 +97,10 @@ Skill levels (L1/L2/L3) earned through BKT mastery thresholds, not completion pe
 
 ### Key Architectural Decision: Shared Core
 
-The adaptive learning algorithms are extracted into `learnforge-core`, a standalone Rust crate (MIT licensed) consumed by both products:
+The adaptive learning algorithms are extracted into `skillcoco-core`, a standalone Rust crate (MIT licensed) consumed by both products:
 
-- **Desktop app**: Uses `learnforge-core` directly via Tauri
-- **Web app**: Uses `learnforge-core` via WASM (browser) or Axum/Actix-web server API
+- **Desktop app**: Uses `skillcoco-core` directly via Tauri
+- **Web app**: Uses `skillcoco-core` via WASM (browser) or Axum/Actix-web server API
 - **React frontend**: Shared between both apps — Tauri IPC calls swapped for REST/WebSocket in web version
 
 This means:
@@ -222,7 +222,7 @@ Micro-module (corporate, multi-modal):
 
 ### Competitive Landscape
 
-| Platform | Strength | Weakness | LearnForge Differentiator |
+| Platform | Strength | Weakness | SkillCoco Differentiator |
 |----------|----------|----------|--------------------------|
 | **Udemy Business** | Massive course library, enterprise adoption | Linear video, completion-based, no real mastery tracking | Verified mastery measurement, adaptive paths |
 | **Coursera** | University partnerships, certificates | Pre-recorded content, one-size-fits-all | On-demand content generation, personalized paths |
@@ -233,7 +233,7 @@ Micro-module (corporate, multi-modal):
 
 ### Positioning Statement
 
-LearnForge is the first open-source adaptive learning platform that measures what learners actually know — not what they've watched. For enterprises, it provides the only L&D solution where "course completion" means verified, retained skill mastery.
+SkillCoco is the first open-source adaptive learning platform that measures what learners actually know — not what they've watched. For enterprises, it provides the only L&D solution where "course completion" means verified, retained skill mastery.
 
 ---
 
@@ -243,7 +243,7 @@ LearnForge is the first open-source adaptive learning platform that measures wha
 
 **Goal:** Establish credibility, build community, create bottom-up awareness
 
-- Publish LearnForge under MIT + CC BY 4.0
+- Publish SkillCoco under MIT + CC BY 4.0
 - Write and publish algorithm documentation and innovation articles
 - Submit to Hacker News, Dev.to, Reddit (r/learnprogramming, r/devops, r/MachineLearning)
 - Present at meetups and conferences (DevOps Days, AI meetups)
@@ -316,7 +316,7 @@ Company renews + expands to more teams
 Engineers at company use free app personally
     |
     v
-They change jobs, bring LearnForge to new company
+They change jobs, bring SkillCoco to new company
     |
     (flywheel continues)
 ```
@@ -366,10 +366,10 @@ These are conservative estimates based on niche technical education (DevOps + AI
 | **Build trust** | Open-source = auditable algorithms. Enterprises trust what they can inspect. |
 | **Community contributions** | MIT is the most permissive, lowest-friction license for contributors. |
 | **Protect against competition** | Algorithms are open (hard to differentiate on). Enterprise features (cohorts, SSO, analytics, video) are the moat. |
-| **Enable partnerships** | Udemy, Coursera, or any platform can integrate LearnForge algorithms. We become the standard, not a competitor. |
+| **Enable partnerships** | Udemy, Coursera, or any platform can integrate SkillCoco algorithms. We become the standard, not a competitor. |
 
 ### What's MIT (Code)
-- All source code: desktop app, web companion, `learnforge-core` crate
+- All source code: desktop app, web companion, `skillcoco-core` crate
 - Algorithm implementations (BKT, SM-2, DAG engine)
 - Topic pack structures (community packs)
 
@@ -393,14 +393,14 @@ These are conservative estimates based on niche technical education (DevOps + AI
 ### Udemy
 
 **Current:** Applying for Content Innovation Fund ($2.5M total, requesting $100K)
-**Position:** LearnForge as the proven adaptive learning technology; pilot courses demonstrate the Adaptive Mastery Course format on Udemy's platform
-**Upside:** If successful, LearnForge becomes part of Udemy's innovation narrative for the Coursera merger. Could lead to deeper integration, acquisition interest, or ongoing partnership.
-**Protection:** Open-source licensing ensures LearnForge exists independently regardless of Udemy relationship.
+**Position:** SkillCoco as the proven adaptive learning technology; pilot courses demonstrate the Adaptive Mastery Course format on Udemy's platform
+**Upside:** If successful, SkillCoco becomes part of Udemy's innovation narrative for the Coursera merger. Could lead to deeper integration, acquisition interest, or ongoing partnership.
+**Protection:** Open-source licensing ensures SkillCoco exists independently regardless of Udemy relationship.
 
 ### Coursera-Udemy Merger
 
 **Context:** $2.5B merger closing H2 2026, driven by AI narrative
-**Opportunity:** Combined entity (270M learners) needs proof of AI-driven adaptive learning. LearnForge provides exactly this.
+**Opportunity:** Combined entity (270M learners) needs proof of AI-driven adaptive learning. SkillCoco provides exactly this.
 **Strategy:** Position as the reference implementation of adaptive learning that the merged entity could adopt or integrate.
 
 ### Open Source Community
@@ -456,7 +456,7 @@ These are conservative estimates based on niche technical education (DevOps + AI
 |-----------|----------|-----------------|
 | **v1.0 — Open Source Launch** | March-July 2026 | Complete adaptive loop, microlearning, certs, topic packs, web companion, algorithm docs |
 | **Udemy Fund Application** | April 17, 2026 | Application submitted with demo materials |
-| **v1.1 — Corporate Foundation** | Aug-Oct 2026 | Cohort management, gamification, leaderboards, `learnforge-core` extraction |
+| **v1.1 — Corporate Foundation** | Aug-Oct 2026 | Cohort management, gamification, leaderboards, `skillcoco-core` extraction |
 | **v2.0 — Commercial Launch** | Nov 2026 - Jan 2027 | Corporate web app, multi-modal content, SSO, analytics, first paying customers |
 | **v2.1 — Enterprise** | Q1 2027 | LMS integration, Credly certificates, advanced analytics, API |
 
@@ -476,7 +476,7 @@ These are conservative estimates based on niche technical education (DevOps + AI
 
 ## Summary
 
-LearnForge is positioned at the intersection of three massive trends:
+SkillCoco is positioned at the intersection of three massive trends:
 
 1. **AI-powered education** — $10B+ market growing 30%+ annually
 2. **Enterprise skills verification** — L&D teams need proof of mastery, not completion
@@ -488,7 +488,7 @@ The open-core model provides:
 - **Open-source algorithms** that establish credibility and prevent competitive lock-in
 - **Multi-modal content** that differentiates the paid tier
 
-With 370K+ existing Udemy students, enterprise relationships (Nasdaq, VW, NetApp), a working prototype, and alignment with Udemy's strategic direction, LearnForge is positioned to become the standard for adaptive technical education.
+With 370K+ existing Udemy students, enterprise relationships (Nasdaq, VW, NetApp), a working prototype, and alignment with Udemy's strategic direction, SkillCoco is positioned to become the standard for adaptive technical education.
 
 ---
 

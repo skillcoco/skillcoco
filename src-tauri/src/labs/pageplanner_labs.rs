@@ -103,7 +103,7 @@ pub fn apply_topic_pack_override(
 /// tracks have no pack root) and for an empty pack_id after the prefix.
 ///
 /// Reuses `topic_packs::loader::skills_dir()` rather than reimplementing the
-/// skills-dir/home-dir/env-override logic, so `LEARNFORGE_SKILLS_DIR_OVERRIDE`
+/// skills-dir/home-dir/env-override logic, so `SKILLCOCO_SKILLS_DIR_OVERRIDE`
 /// is honored identically to the pack loader (this is what makes it
 /// testable without touching the real home directory).
 ///
@@ -477,7 +477,7 @@ mod tests {
     );
 
     /// Serializes tests that mutate the process-wide
-    /// `LEARNFORGE_SKILLS_DIR_OVERRIDE` env var (mirrors
+    /// `SKILLCOCO_SKILLS_DIR_OVERRIDE` env var (mirrors
     /// `topic_packs::loader::ENV_LOCK`).
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 

@@ -453,15 +453,15 @@ mod tests {
         assert!(is_valid_scheme("HTTPS://localhost:11434"));
     }
 
-    // ── Network test (gated behind LEARNFORGE_TEST_OLLAMA=1) ─────────────────
+    // ── Network test (gated behind SKILLCOCO_TEST_OLLAMA=1) ─────────────────
     //
     // This test requires a live Ollama instance at http://localhost:11434.
     // It is SKIPPED by default so that `cargo test --lib` does NOT depend on
     // a running daemon. To run it:
-    //   LEARNFORGE_TEST_OLLAMA=1 cargo test --lib -- check_ollama_live
+    //   SKILLCOCO_TEST_OLLAMA=1 cargo test --lib -- check_ollama_live
     #[tokio::test]
     async fn check_ollama_live() {
-        if std::env::var("LEARNFORGE_TEST_OLLAMA").as_deref() != Ok("1") {
+        if std::env::var("SKILLCOCO_TEST_OLLAMA").as_deref() != Ok("1") {
             return; // skip
         }
         let dir = tempfile::tempdir().unwrap();

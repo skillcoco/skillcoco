@@ -101,7 +101,7 @@ pub struct PackEdge {
 pub enum PackSource {
     /// Compile-time-embedded bundled pack (lives in `topic-packs/<id>/`).
     Bundled,
-    /// Runtime-discovered skill pack (lives in `~/.learnforge/skills/<id>/`).
+    /// Runtime-discovered skill pack (lives in `~/.skillcoco/skills/<id>/`).
     Skill,
 }
 

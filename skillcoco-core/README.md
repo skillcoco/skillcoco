@@ -1,9 +1,9 @@
-# learnforge-core
+# skillcoco-core
 
 > Adaptive learning algorithms — BKT, SM-2, threshold, microlearning
 > selection, signing, packs — desktop/web/WASM portable.
 
-[![Crate](https://img.shields.io/badge/crates.io-0.1.0-orange)](https://crates.io/crates/learnforge-core)
+[![Crate](https://img.shields.io/badge/crates.io-0.1.0-orange)](https://crates.io/crates/skillcoco-core)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Whitepapers](https://img.shields.io/badge/whitepapers-CC%20BY%204.0-lightgrey)](./docs)
 
@@ -13,7 +13,7 @@
 
 This crate is published at `0.1.x`. **Breaking changes are allowed in any
 0.x release.** The public API stabilizes at `1.0.0`. Pin to a specific
-minor (`learnforge-core = "0.1"`) and read the [CHANGELOG](./CHANGELOG.md)
+minor (`skillcoco-core = "0.1"`) and read the [CHANGELOG](./CHANGELOG.md)
 before upgrading.
 
 We use [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format and
@@ -24,7 +24,7 @@ Launch) decides crates.io publish timing and the 1.0.0 commitment.
 
 ## What this is
 
-A focused Rust crate carved out of the LearnForge desktop app, packaging
+A focused Rust crate carved out of the SkillCoco desktop app, packaging
 the **adaptive learning primitives** as a publishable, WASM-portable
 library:
 
@@ -49,13 +49,13 @@ library:
 
 ## What this is NOT
 
-Explicit non-goals for `learnforge-core`:
+Explicit non-goals for `skillcoco-core`:
 
 - **Not a full LMS.** No user management, no enrollment, no analytics.
 - **Not a DB layer.** Persistence is abstracted via small per-module
   `Storage` traits (`BktStore`, `SrStore`, `BlockStore`, `PackStore`,
   `AchievementStore`, `MicrolearningStore`). Bring your own DB. The
-  reference impl in [`learnforge`'s `src-tauri`][lf-tauri] uses
+  reference impl in [`skillcoco`'s `src-tauri`][lf-tauri] uses
   `rusqlite`; web/WASM consumers can implement against IndexedDB.
 - **Not a Tauri framework.** Zero Tauri dependencies. The crate compiles
   to `wasm32-unknown-unknown`.
@@ -66,7 +66,7 @@ Explicit non-goals for `learnforge-core`:
 - **Not a hosted verifier.** The `verifier` module is a Phase 14 contract
   stub; the real implementation ships with the hosted verifier service.
 
-[lf-tauri]: https://github.com/agentixgarage/learnforge/tree/main/src-tauri
+[lf-tauri]: https://github.com/skillcoco/skillcoco/tree/main/src-tauri
 
 ## Architecture
 
@@ -80,7 +80,7 @@ Explicit non-goals for `learnforge-core`:
                                  │
                                  ▼ (sync, no async)
                 ┌─────────────────────────────────────────┐
-                │  learnforge-core                        │
+                │  skillcoco-core                        │
                 │  ┌──────┐ ┌──────┐ ┌─────────────┐      │
                 │  │ bkt  │ │ sm2  │ │ threshold   │      │
                 │  └──────┘ └──────┘ └─────────────┘      │
@@ -107,16 +107,16 @@ churn is minimal during migration. Mocking one trait for a unit test of
 (say) `bkt::update_mastery` does not force you to stub `PackStore` or
 `AchievementStore`.
 
-This mirrors LearnForge's existing `LabRuntime` + `LearnForgePlugin`
+This mirrors SkillCoco's existing `LabRuntime` + `SkillCocoPlugin`
 patterns (small focused traits, not god-objects).
 
 ## WASM portability
 
-`learnforge-core` is validated for `wasm32-unknown-unknown` at every
+`skillcoco-core` is validated for `wasm32-unknown-unknown` at every
 Phase 7 wave gate:
 
 ```bash
-cargo build --target wasm32-unknown-unknown -p learnforge-core
+cargo build --target wasm32-unknown-unknown -p skillcoco-core
 ```
 
 The crate's `[target.'cfg(target_arch = "wasm32")']` block in `Cargo.toml`
@@ -141,7 +141,7 @@ returns wall-clock time (not the Unix epoch) on `wasm32-unknown-unknown`.
 rustup target add wasm32-unknown-unknown
 
 # Build (release recommended; debug bloats heavily on wasm):
-cargo build --target wasm32-unknown-unknown -p learnforge-core --release
+cargo build --target wasm32-unknown-unknown -p skillcoco-core --release
 ```
 
 If you see linker errors mentioning `__getrandom_v03_custom_unimpl`,
@@ -168,16 +168,16 @@ Locally, run it with [wasm-pack](https://rustwasm.github.io/wasm-pack/):
 cargo install wasm-pack
 
 # Node runner (fastest — no browser required)
-wasm-pack test --node learnforge-core
+wasm-pack test --node skillcoco-core
 
 # OR browser-side (matches the run_in_browser configure)
-wasm-pack test --chrome --headless learnforge-core
+wasm-pack test --chrome --headless skillcoco-core
 ```
 
 Verify the test binary at least *compiles* on wasm32 without running it:
 
 ```bash
-cargo build --tests --target wasm32-unknown-unknown -p learnforge-core
+cargo build --tests --target wasm32-unknown-unknown -p skillcoco-core
 ```
 
 ## Algorithms
@@ -227,19 +227,19 @@ Runnable single-file demos live in [`examples/`](./examples/):
 ```bash
 # Bayesian Knowledge Tracing: print the mastery trajectory across a
 # synthetic observation sequence.
-cargo run -p learnforge-core --example bkt_update
+cargo run -p skillcoco-core --example bkt_update
 
 # SuperMemo 2: print the schedule across ten reviews, including one
 # deliberately-injected failure to show the reset rule.
-cargo run -p learnforge-core --example sm2_schedule
+cargo run -p skillcoco-core --example sm2_schedule
 
 # Ed25519 sign/verify against a canonical JSON payload, including a
 # tampered-payload negative case and a key-reorder byte-stability proof.
-cargo run -p learnforge-core --example verify_payload
+cargo run -p skillcoco-core --example verify_payload
 
 # Topic-pack JSON-schema validation against a minimal valid pack and a
 # deliberately-broken pack to show the error-list shape.
-cargo run -p learnforge-core --example pack_validate
+cargo run -p skillcoco-core --example pack_validate
 ```
 
 Each example is self-contained (no DB, no FS reads beyond the embedded
@@ -249,7 +249,7 @@ schema) and runs in well under a second.
 
 ```toml
 [dependencies]
-learnforge-core = "0.1"
+skillcoco-core = "0.1"
 ```
 
 The crate has no platform-conditional features at the consumer level;
@@ -258,7 +258,7 @@ the WASM target wiring is transparent.
 ## Quick example
 
 ```rust,ignore
-use learnforge_core::verifier;
+use skillcoco_core::verifier;
 
 // Phase 7 stub — the real verifier ships in Phase 14.
 let result = verifier::verify(b"<canonical-json-payload>");
@@ -271,7 +271,7 @@ assert_eq!(
 ```
 
 For runnable single-file demos see the [Examples](#examples) section
-above (or just run `cargo run -p learnforge-core --example bkt_update`).
+above (or just run `cargo run -p skillcoco-core --example bkt_update`).
 
 ## Versioning
 
@@ -286,17 +286,17 @@ above (or just run `cargo run -p learnforge-core --example bkt_update`).
 - **Code**: [MIT](./LICENSE).
 - **Whitepapers** (`docs/*.md`): MIT (same as the code).
 
-Matches the OSS LearnForge license constraint in `PROJECT.md`.
+Matches the OSS SkillCoco license constraint in `PROJECT.md`.
 
 ## Status
 
 **Phase 7 in flight (started 2026-06-16).** This is the publishable
-extraction of the adaptive engine from the LearnForge desktop binary.
+extraction of the adaptive engine from the SkillCoco desktop binary.
 Wave-by-wave migration is in progress; see the repository's
 `.planning/phases/07-core-extraction/` directory for the wave plans and
 summaries.
 
-Contributions are welcome via the LearnForge monorepo. See
-[CONTRIBUTING.md](https://github.com/agentixgarage/learnforge/blob/main/CONTRIBUTING.md)
-and [CLA.md](https://github.com/agentixgarage/learnforge/blob/main/CLA.md)
+Contributions are welcome via the SkillCoco monorepo. See
+[CONTRIBUTING.md](https://github.com/skillcoco/skillcoco/blob/main/CONTRIBUTING.md)
+and [CLA.md](https://github.com/skillcoco/skillcoco/blob/main/CLA.md)
 at the repo root.

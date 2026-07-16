@@ -1,16 +1,16 @@
 ---
-title: "Building LearnForge: a Tauri + Rust + open-core retrospective"
-slug: building-learnforge
+title: "Building SkillCoco: a Tauri + Rust + open-core retrospective"
+slug: building-skillcoco
 date: 2026-06-17
 tags: [tauri, rust, open-core, engineering, retrospective]
-canonical_url: https://learnforge.dev/blog/building-learnforge
-author: LearnForge OSS contributors
+canonical_url: https://skillcoco.dev/blog/building-skillcoco
+author: SkillCoco OSS contributors
 license: CC BY 4.0
 ---
 
-# Building LearnForge: a Tauri + Rust + open-core retrospective
+# Building SkillCoco: a Tauri + Rust + open-core retrospective
 
-This is the retrospective. We have shipped enough of LearnForge — through
+This is the retrospective. We have shipped enough of SkillCoco — through
 seven phases of planned work, a strategic mid-flight reorder, an open-core
 history carve-out, and a publishable Rust crate — that it is worth writing
 down what we have learned. Some of it generalizes. Some of it is specific
@@ -61,7 +61,7 @@ the choice.
 
 ## The open-core split (Phase 03.2)
 
-LearnForge has two products. The free desktop app — MIT licensed, GitHub
+SkillCoco has two products. The free desktop app — MIT licensed, GitHub
 public, the thing this blog post is about — is the one most people will
 ever see. The commercial Studio offering — proprietary, intended for
 corporate teams, cohort management, multi-modal content, hosted licensing —
@@ -78,7 +78,7 @@ ship Pro code from the public tree, and we never have.
 
 The technical mechanism that lets the two products share a codebase without
 leaking Pro code is the **plugin overlay**. The public repo defines a
-`LearnForgePlugin` trait in Rust and a `PluginSlot` mount point in React.
+`SkillCocoPlugin` trait in Rust and a `PluginSlot` mount point in React.
 The OSS build wires both to no-op identity implementations and ships
 exactly what you see on GitHub. The Studio build wires both to the
 proprietary `StudioPlugin` and `StudioPluginSlot` implementations, which
@@ -92,7 +92,7 @@ The lesson here was about *ordering*. We did not start with the open-core
 split. We started with a single-product codebase and added the split when
 we had enough surface area to know where the actual seams lived. If we had
 tried to design the plugin architecture up front, we would have gotten the
-shape of the trait wrong — the right number of methods on `LearnForgePlugin`,
+shape of the trait wrong — the right number of methods on `SkillCocoPlugin`,
 the right granularity for the slot system, the right boundary between
 "licensing logic" and "feature gating" — because the surface itself was
 not yet stable. Letting the codebase evolve until the seams were obvious,
@@ -102,10 +102,10 @@ The unsurprising surprise was how *little* code needed to move. The actual
 open-core extraction was a handful of files: a trait declaration, a stub
 implementation, a `LicenseValidator` interface, a few build-config
 adjustments. The carving of history was the larger operation. Most of
-LearnForge is OSS, has always been OSS, and will always be OSS. The Pro
+SkillCoco is OSS, has always been OSS, and will always be OSS. The Pro
 overlay is small by design and stays that way by discipline.
 
-## The learnforge-core extraction (Phase 7)
+## The skillcoco-core extraction (Phase 7)
 
 The next architectural surgery was Phase 7: extract the algorithm layer
 into a standalone Rust crate, publish it on crates.io, make it portable to
@@ -182,7 +182,7 @@ queue was a stub. We were about to put a Rust-crate-extraction phase on
 top of a foundation that did not actually work.
 
 So we stopped, wrote down a phrase — *the Definition of Usable* — that
-said: "a new user installs LearnForge, picks a topic, learns something
+said: "a new user installs SkillCoco, picks a topic, learns something
 real, and feels mastery move, within ten minutes, every time, without
 bugs," and we rebuilt the phase ordering around it. The architectural
 phases — Core Extraction, Web Platform — got pushed back. Path Quality and
@@ -228,14 +228,14 @@ abstraction in place and saved ourselves the eventual refactor. The cost
 of the abstraction is small; the cost of the refactor was substantial.
 
 **We would have written the strict-rustdoc gate earlier.** Phase 7 turned
-on `#![deny(missing_docs)]` for `learnforge-core` and we discovered an
+on `#![deny(missing_docs)]` for `skillcoco-core` and we discovered an
 enormous backlog of undocumented public items. Writing the docs as we went
 would have been cheaper than writing them all at the end. The "we'll add
 docs later" pattern is the documentation equivalent of "we'll write tests
 later." It is always more expensive.
 
 **We would have done the WASM-portability work earlier.** Compiling
-`learnforge-core` to `wasm32-unknown-unknown` exposed several
+`skillcoco-core` to `wasm32-unknown-unknown` exposed several
 non-portable dependency choices that we had to back out (`rusqlite`,
 `printpdf`, `image`). Establishing the WASM target as a build gate from
 Phase 1 would have prevented these from creeping in. As it was, we had to
@@ -247,16 +247,16 @@ much less interesting Rust crate in 2026).
 
 This is where we are at the moment of the 0.1.0 publish:
 
-- **Phase 8 — Publishing & Open Source Launch** (current). `learnforge-core`
+- **Phase 8 — Publishing & Open Source Launch** (current). `skillcoco-core`
   0.1.0 on crates.io, signed macOS binaries on GitHub Releases, three
-  whitepapers in `learnforge-core/docs/` (THRESHOLD, MICROLEARNING, SIGNING),
+  whitepapers in `skillcoco-core/docs/` (THRESHOLD, MICROLEARNING, SIGNING),
   the three launch articles you are currently in the middle of (BKT
   explainer, the opinion piece, this retrospective), `SECURITY.md`,
   GitHub Discussions, the versioning policy. Quality-first slow-burn. No
   Hacker News, no Reddit, no Lobsters. Save the big spotlight for v1.0.
 
 - **Phase 9 — Web Platform foundation**. The web app that consumes
-  `learnforge-core` via WASM. Same algorithms, different shell. The
+  `skillcoco-core` via WASM. Same algorithms, different shell. The
   certification verifier is the first surface that needs to ship there.
 
 - **Phase 11+ — Cohorts and corporate features**. The Studio overlay's
@@ -296,17 +296,17 @@ think there is a market for that. We are about to find out.
 
 ## Further reading
 
-- **[the BKT whitepaper](../../learnforge-core/docs/BKT.md)** — the mastery
+- **[the BKT whitepaper](../../skillcoco-core/docs/BKT.md)** — the mastery
   model that anchors the whole platform.
-- **[the SM-2 whitepaper](../../learnforge-core/docs/SM2.md)** — spaced
+- **[the SM-2 whitepaper](../../skillcoco-core/docs/SM2.md)** — spaced
   repetition.
-- **[the threshold whitepaper](../../learnforge-core/docs/THRESHOLD.md)**
+- **[the threshold whitepaper](../../skillcoco-core/docs/THRESHOLD.md)**
   — the certification-readiness predicate.
-- **[the microlearning whitepaper](../../learnforge-core/docs/MICROLEARNING.md)**
+- **[the microlearning whitepaper](../../skillcoco-core/docs/MICROLEARNING.md)**
   — selection scoring and desirable difficulty.
-- **[the signing whitepaper](../../learnforge-core/docs/SIGNING.md)** —
+- **[the signing whitepaper](../../skillcoco-core/docs/SIGNING.md)** —
   Ed25519 + canonical JSON certificate issuance.
-- **[the learnforge-core CHANGELOG](../../learnforge-core/CHANGELOG.md)** —
+- **[the skillcoco-core CHANGELOG](../../skillcoco-core/CHANGELOG.md)** —
   the per-wave commit history for the Phase 7 extraction.
 - **[PROJECT.md](../../.planning/PROJECT.md)** — the project north-star,
   the Definition of Usable, the 2026-05-03 strategic pivot.
@@ -314,4 +314,4 @@ think there is a market for that. We are about to find out.
 ---
 
 *This article is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-Reuse with attribution to LearnForge OSS contributors.*
+Reuse with attribution to SkillCoco OSS contributors.*

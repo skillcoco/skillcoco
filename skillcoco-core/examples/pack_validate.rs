@@ -21,7 +21,7 @@ fn main() {
     let valid = json!({
         "id": "demo-pack",
         "title": "Demo Pack",
-        "description": "A minimal pack that satisfies the LearnForge schema.",
+        "description": "A minimal pack that satisfies the SkillCoco schema.",
         "domain_module": "programming",
         "modules": [
             {

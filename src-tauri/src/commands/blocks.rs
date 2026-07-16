@@ -2775,7 +2775,7 @@ pub(crate) mod tests {
     // ── Phase 19.1 (PACKLAB-03/04) — pack-supplied LAB.md wiring ──────────
     //
     // Serializes tests that mutate the process-wide
-    // `LEARNFORGE_SKILLS_DIR_OVERRIDE` env var (mirrors
+    // `SKILLCOCO_SKILLS_DIR_OVERRIDE` env var (mirrors
     // `topic_packs::loader::ENV_LOCK` / `pageplanner_labs::tests::ENV_LOCK`).
     static PACKLAB_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

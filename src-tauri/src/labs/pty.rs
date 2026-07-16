@@ -14,7 +14,7 @@
 //! - `PtyHandle::write_bytes`, `PtyHandle::resize_to`, `PtyHandle::kill`.
 //!
 //! Real-PTY round-trip tests against a live shell are gated behind
-//! `LEARNFORGE_TEST_PTY=1` because some CI runners forbid PTY allocation.
+//! `SKILLCOCO_TEST_PTY=1` because some CI runners forbid PTY allocation.
 
 use super::LabError;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -179,7 +179,7 @@ mod tests {
     /// LAB-02 — write_bytes round-trips into the PTY child without error.
     /// Spawns a real PTY against a no-op shell command; the test asserts
     /// the write call returns Ok rather than capturing the exact echoed
-    /// bytes (echo round-trip is the LEARNFORGE_TEST_PTY-gated test).
+    /// bytes (echo round-trip is the SKILLCOCO_TEST_PTY-gated test).
     #[tokio::test]
     async fn pty_write_round_trip() {
         let handle = PtyHandle::spawn("session-write").expect("spawn must succeed");
@@ -210,12 +210,12 @@ mod tests {
 
     /// LAB-02 — pty_read_loop emits Tauri events on
     /// `lab://stdout/<session_id>` for each byte chunk. Real-PTY echo
-    /// round-trip; gated behind LEARNFORGE_TEST_PTY=1 because some CI
+    /// round-trip; gated behind SKILLCOCO_TEST_PTY=1 because some CI
     /// runners forbid PTY allocation.
     #[tokio::test]
     #[cfg_attr(
         not(feature = "test-pty"),
-        ignore = "real-PTY echo round-trip; gated behind LEARNFORGE_TEST_PTY=1"
+        ignore = "real-PTY echo round-trip; gated behind SKILLCOCO_TEST_PTY=1"
     )]
     async fn pty_read_loop_emits_lab_stdout_event() {
         let mut cmd = CommandBuilder::new("sh");

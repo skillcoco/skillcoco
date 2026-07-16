@@ -62,7 +62,7 @@ export interface CertGate {
  * Compute the Completion-certificate gate status for a track. This is the
  * "more than finishing" signal: the certificate requires 100% of modules
  * mastered AND average mastery >= CERT_AVG_GATE (plus practical labs, gated
- * separately backend-side). Mirrors learnforge-core::threshold — avg is taken
+ * separately backend-side). Mirrors skillcoco-core::threshold — avg is taken
  * across ALL modules with missing mastery counted as 0.
  */
 export function computeCertGate(

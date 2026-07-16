@@ -168,9 +168,9 @@ is replaced:
 
 ```bash
 # Validate Apple's notarization stapler is attached + Gatekeeper accepts
-spctl --assess --type execute --verbose=4 path/to/LearnForge.app
+spctl --assess --type execute --verbose=4 path/to/SkillCoco.app
 
-# Should print: "path/to/LearnForge.app: accepted, source=Notarized Developer ID"
+# Should print: "path/to/SkillCoco.app: accepted, source=Notarized Developer ID"
 ```
 
 4. If notarization fails, check the `xcrun notarytool log <submission-id>`

@@ -2,7 +2,7 @@
 
 ## Why we're pivoting
 
-LearnForge has 18 planned phases across 3 milestones, but no phase is complete and
+SkillCoco has 18 planned phases across 3 milestones, but no phase is complete and
 the app is not usable end-to-end. Per the PROJECT.md "Known issues" audit:
 
 - Exercise scores don't update BKT mastery
@@ -11,14 +11,14 @@ the app is not usable end-to-end. Per the PROJECT.md "Known issues" audit:
 - ReviewSession UI is a stub
 - Dashboard shows placeholder counts
 
-A learner can install LearnForge, onboard, and look at a path, but cannot
+A learner can install SkillCoco, onboard, and look at a path, but cannot
 actually learn. We've been adding new features on top of a broken loop. This
 document corrects course toward a usable-first roadmap and incorporates
 high-leverage patterns from DeepTutor (HKUDS, Apache 2.0).
 
 ## New goal (gate)
 
-**A new user installs LearnForge, picks a topic, learns something real, and
+**A new user installs SkillCoco, picks a topic, learns something real, and
 feels mastery move — within 10 minutes, every time, without bugs.**
 
 Every phase from Phase 1 onward must produce a learner-facing improvement.
@@ -60,7 +60,7 @@ Architectural phases without learner value are pushed back.
 inspiration for several upgrades. Patterns are reimplemented in Rust; verbatim
 copies are the exception and are attributed per the licensing section below.
 
-| Pattern | LearnForge home | Approach |
+| Pattern | SkillCoco home | Approach |
 |---|---|---|
 | Two-file Memory (PROFILE.md + SUMMARY.md, LLM-rewritten with `NO_CHANGE` sentinel) | Phase 2 | Reimplement in Rust |
 | YAML PromptManager (singleton + cache + language fallback) | Phase 2 | Reimplement in Rust |
@@ -74,14 +74,14 @@ copies are the exception and are attributed per the licensing section below.
 
 - **Book Engine as a whole** — too coupled to LlamaIndex + their RAG. Lift the
   staged-pipeline pattern only.
-- **TutorBots** — persistent autonomous tutors. Out of LearnForge v1.0 scope.
+- **TutorBots** — persistent autonomous tutors. Out of SkillCoco v1.0 scope.
 - **AI Co-Writer, Math Animator (Manim), Visualize** — not learner-facing
   enough to justify the dependency footprint.
 - **WebSocket /api/v1/ws protocol** — Tauri IPC already handles our needs.
 
 ## Licensing & attribution
 
-DeepTutor is Apache 2.0. LearnForge desktop is MIT. Apache 2.0 → MIT is
+DeepTutor is Apache 2.0. SkillCoco desktop is MIT. Apache 2.0 → MIT is
 compatible *if* required notices are preserved. Three categories:
 
 1. **Patterns / architecture / ideas** — not copyrightable. Reimplement in

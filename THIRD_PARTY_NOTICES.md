@@ -1,8 +1,8 @@
 # Third-Party Notices
 
-LearnForge is licensed under the MIT License. This file lists third-party
+SkillCoco is licensed under the MIT License. This file lists third-party
 software whose code, prompts, or design patterns have influenced or been
-incorporated into LearnForge, along with the required attribution.
+incorporated into SkillCoco, along with the required attribution.
 
 For each entry below:
 
@@ -133,4 +133,4 @@ When you add or modify code derived from a third-party source:
 2. Add or update the entry in this file.
 3. If the upstream license text isn't already present, add it under
    `licenses/<UPSTREAM>-<LICENSE>.txt`.
-4. Prefer reimplementation over copying — it keeps LearnForge cleanly MIT.
+4. Prefer reimplementation over copying — it keeps SkillCoco cleanly MIT.

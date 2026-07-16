@@ -8,8 +8,8 @@
 //   check_unlock_modules() — LOOP-02
 //   generate_sr_cards_for_module() — LOOP-03
 
-use learnforge_lib::commands::learning::{apply_mastery_update, check_unlock_modules, generate_sr_cards_for_module};
-use learnforge_lib::db::Database;
+use skillcoco_lib::commands::learning::{apply_mastery_update, check_unlock_modules, generate_sr_cards_for_module};
+use skillcoco_lib::db::Database;
 use rusqlite::params;
 use tempfile::TempDir;
 

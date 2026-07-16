@@ -1,4 +1,4 @@
-/// SQL schema for LearnForge's SQLite database.
+/// SQL schema for SkillCoco's SQLite database.
 /// All tables are created idempotently with IF NOT EXISTS.
 pub const CREATE_TABLES: &str = r#"
 -- Learner profile (single user for desktop app)

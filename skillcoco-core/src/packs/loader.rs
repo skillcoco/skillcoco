@@ -79,7 +79,7 @@ pub static BUNDLED_PACKS: Dir<'_> =
 /// - **T-05-06 (5 MB cap):** reject any pack.json whose size exceeds 5 MB
 ///   BEFORE allocating a `Vec<u8>` to hold the body.
 pub trait PackSource {
-    /// Resolve the runtime skills root (e.g. `~/.learnforge/skills/`).
+    /// Resolve the runtime skills root (e.g. `~/.skillcoco/skills/`).
     ///
     /// Returns `Ok(None)` when the platform has no concept of a skills
     /// directory (WASM / sandboxed contexts). Implementations MAY also

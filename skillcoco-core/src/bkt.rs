@@ -20,7 +20,7 @@
 //!
 //! BKT itself is pure math (no I/O). Persistence of `mastery_level` lives
 //! behind the [`BktStore`] trait — host crates implement it against their
-//! datastore (rusqlite in `learnforge`'s `src-tauri`, IndexedDB on the web,
+//! datastore (rusqlite in `skillcoco`'s `src-tauri`, IndexedDB on the web,
 //! etc.). The trait lives next to the algorithm per the per-module storage
 //! pattern (decision A3 / Pattern 1 from `07-RESEARCH.md`).
 //!

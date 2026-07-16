@@ -168,7 +168,7 @@ pub struct AppState {
 /// `.invoke_handler` on the builder it receives — that call is the
 /// caller's responsibility in `run()`.
 /// register_commands is for setup/plugin/state additions only.
-pub trait LearnForgePlugin: Send + Sync {
+pub trait SkillCocoPlugin: Send + Sync {
     /// Stable identifier for the plugin (logging, diagnostics).
     fn plugin_name(&self) -> &'static str;
 
@@ -188,7 +188,7 @@ pub trait LearnForgePlugin: Send + Sync {
 /// stub shape.
 pub struct NoopPlugin;
 
-impl LearnForgePlugin for NoopPlugin {
+impl SkillCocoPlugin for NoopPlugin {
     fn plugin_name(&self) -> &'static str {
         "noop"
     }
@@ -228,7 +228,7 @@ pub fn build_app() -> tauri::Builder<tauri::Wry> {
             std::fs::create_dir_all(&app_dir).expect("Failed to create app data dir");
 
             // Database
-            let db_path = app_dir.join("learnforge.db");
+            let db_path = app_dir.join("skillcoco.db");
             let database = Database::new(&db_path).expect("Failed to initialize database");
 
             // Phase 5 — load topic packs (bundled + skills) AFTER migrations
@@ -285,7 +285,7 @@ pub fn build_app() -> tauri::Builder<tauri::Wry> {
                 .expect("Failed to write OSC 133 init script");
             }
 
-            log::info!("LearnForge initialized with DB at {:?}", db_path);
+            log::info!("SkillCoco initialized with DB at {:?}", db_path);
             Ok(())
         })
 }
@@ -415,7 +415,7 @@ mod build_app_tests {
     #[test]
     fn noop_plugin_is_object_safe() {
         // Object-safety check — must be possible to store plugins as Box<dyn>.
-        let plugins: Vec<Box<dyn LearnForgePlugin>> = vec![Box::new(NoopPlugin)];
+        let plugins: Vec<Box<dyn SkillCocoPlugin>> = vec![Box::new(NoopPlugin)];
         assert_eq!(plugins.len(), 1);
         assert_eq!(plugins[0].plugin_name(), "noop");
     }

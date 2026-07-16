@@ -93,7 +93,7 @@
 | Agentic AI Engineering | Building & Deploying AI Agent Systems | Vivian Aranha (1M+ enrollments) | 10x supply/demand gap, 25% wage premium |
 
 **Already Validated:**
-LearnForge — our adaptive learning platform — implements BKT, SM-2, and AI-powered adaptive paths as working software. The algorithms are proven. This grant brings them to Udemy.
+SkillCoco — our adaptive learning platform — implements BKT, SM-2, and AI-powered adaptive paths as working software. The algorithms are proven. This grant brings them to Udemy.
 
 ---
 
@@ -305,11 +305,11 @@ Research shows that without spaced review, learners forget ~80% of material with
 
 ---
 
-## 5. LearnForge — Existing Technology Summary
+## 5. SkillCoco — Existing Technology Summary
 
-### What Is LearnForge?
+### What Is SkillCoco?
 
-LearnForge is an adaptive learning platform we've built that implements the exact algorithms proposed in this application:
+SkillCoco is an adaptive learning platform we've built that implements the exact algorithms proposed in this application:
 
 **Implemented and validated:**
 - Bayesian Knowledge Tracing for real-time mastery modeling
@@ -334,8 +334,8 @@ This is not a theoretical application. Every algorithm, every adaptive mechanism
 ## Materials Checklist
 
 - [ ] Convert Section 1 (One-Page Overview) to designed PDF
-- [ ] Get LearnForge screenshots (mastery tracking UI, DAG visualization, assessment flow)
-- [ ] Record 2-minute demo video of LearnForge adaptive flow (optional but powerful)
+- [ ] Get SkillCoco screenshots (mastery tracking UI, DAG visualization, assessment flow)
+- [ ] Record 2-minute demo video of SkillCoco adaptive flow (optional but powerful)
 - [ ] Convert Section 3 (Skill Tree) to professional diagram
 - [ ] Convert Section 4 (Algorithm Summary) to designed one-pager
 - [ ] Gather links: Gourav's LinkedIn article, Vivian's Udemy courses, School of DevOps

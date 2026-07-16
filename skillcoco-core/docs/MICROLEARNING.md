@@ -1,14 +1,14 @@
 # Microlearning — Daily-Challenge Selection Scoring
 
-> **Author:** LearnForge OSS contributors
+> **Author:** SkillCoco OSS contributors
 > **Date:** 2026-06-17
 > **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-> **Module:** [`learnforge_core::microlearning`](../src/microlearning.rs)
+> **Module:** [`skillcoco_core::microlearning`](../src/microlearning.rs)
 
 This whitepaper documents the daily-challenge selection algorithm as
-implemented in `learnforge_core::microlearning`. It is intended for
+implemented in `skillcoco_core::microlearning`. It is intended for
 engineers, learning scientists, and curious learners who want to
-understand exactly how LearnForge picks "the best next interaction" for
+understand exactly how SkillCoco picks "the best next interaction" for
 a learner on a given day — combining BKT mastery estimates, SM-2 review
 schedules, recency penalties, and a deliberately-chosen mastery "zone"
 that targets desirable difficulty.
@@ -18,14 +18,14 @@ per-card [SM-2 algorithm](./SM2.md). Both produce scalar state on a
 single module or card; the microlearning selector aggregates the two
 signals (plus time decay and recency exclusion) into a per-block score
 and picks the highest-scoring block as the day's challenge. The result
-appears in the LearnForge UI as the "Daily Challenge" card on the
+appears in the SkillCoco UI as the "Daily Challenge" card on the
 learner home screen.
 
 ---
 
 ## 1. Abstract
 
-LearnForge tracks per-module mastery (BKT) and per-card review schedules
+SkillCoco tracks per-module mastery (BKT) and per-card review schedules
 (SM-2) on a continuous basis. Both signals are useful for adaptive
 instruction, but neither answers the single concrete UX question "what
 should the learner do **today**, in five-to-ten minutes, that is
@@ -40,7 +40,7 @@ calibration constants (`0.3-0.7` mastery zone, `48h` recency window,
 `3.0-day` decay half-life, `W_DECAY=1.0` / `W_SR_DUE=1.2` /
 `W_RECENCY=-100.0`) are grounded in cognitive-science literature on
 desirable difficulty and spacing, in the BKT mastery threshold from
-Phase 7, and in empirical UX testing on the LearnForge daily-challenge
+Phase 7, and in empirical UX testing on the SkillCoco daily-challenge
 flow.
 
 ---
@@ -154,7 +154,7 @@ pub const DECAY_DAYS_CAP_MULT: f64 = 5.0;
 
 The constants are `pub const`, not env vars or config-file keys, so the
 calibration is part of the published API. Changing them is a minor
-version bump per [LearnForge versioning policy](../../CHANGELOG.md).
+version bump per [SkillCoco versioning policy](../../CHANGELOG.md).
 
 ### 3.3 The selection score (per block)
 
@@ -304,7 +304,7 @@ Tests pin a fixed `now` and assert the exact block id.
 
 ---
 
-## 4. Calibration in LearnForge
+## 4. Calibration in SkillCoco
 
 ### 4.1 Why the `0.3-0.7` mastery zone?
 
@@ -340,7 +340,7 @@ learner already knows; above it, the learner gets stuck. Targeting
 the ZPD is one of the most-replicated findings in educational
 intervention research.
 
-The BKT mastery interval `[0.3, 0.7)` is the LearnForge operational
+The BKT mastery interval `[0.3, 0.7)` is the SkillCoco operational
 proxy for the ZPD. A learner with mastery `0.45` on a module has
 seen the introductory material (so `m > 0.3`), has gotten some
 questions right and some wrong (so `m < 0.7`), and is in the band
@@ -350,7 +350,7 @@ learning value.
 This is the same "desirable difficulty" framing as
 **Bjork & Bjork (2011)**: items that are *neither* trivially easy
 *nor* unsolvably hard maximize encoding and retrieval strength.
-The LearnForge zone is one operational instantiation of that
+The SkillCoco zone is one operational instantiation of that
 framing, calibrated against the specific scale of the BKT model.
 
 ### 4.3 Why the `48h` recency window?
@@ -364,7 +364,7 @@ choice comes from three constraints:
    24 hours is too soon — the trace is still strong. Re-showing at
    72 hours is allowable. 48 hours is the midpoint of the
    "just-shown" tail of the forgetting curve.
-2. **The daily-challenge cadence.** LearnForge expects roughly one
+2. **The daily-challenge cadence.** SkillCoco expects roughly one
    daily challenge per learner per day. A 48-hour window therefore
    excludes exactly *the previous two daily challenges' blocks*
    from the next selection. This produces a visible rotation
@@ -470,7 +470,7 @@ algorithm to choose between them on other dimensions.
 
 ### 5.1 Purity, determinism, WASM portability
 
-`learnforge_core::microlearning::select_daily_challenge` is a **pure
+`skillcoco_core::microlearning::select_daily_challenge` is a **pure
 function** in the strictest sense (modulo the `&S: MicrolearningStore`
 trait calls, which the test suite stubs deterministically):
 
@@ -505,12 +505,12 @@ into memory.
 `MicrolearningError::Backend(String)` stringifies the underlying
 storage error at the trust boundary. `rusqlite::Error` (or
 `idb::Error`, etc.) never leaks into the public surface of
-`learnforge-core` (T-07-05 mitigation). This matches the
+`skillcoco-core` (T-07-05 mitigation). This matches the
 `BktError` / `SrError` pattern.
 
 The downside is that callers cannot programmatically pattern-match
 on specific storage failure modes; the upside is that the public
-surface of `learnforge-core` stays free of storage-implementation
+surface of `skillcoco-core` stays free of storage-implementation
 detail and the crate compiles on any target the trait can be
 implemented for.
 
@@ -633,21 +633,21 @@ from track B if B has staler modules. This was acceptable in Phase
 
 ## 7. References
 
-- **Phase 4 D-03 / D-05 (LearnForge):** Daily-challenge selection
+- **Phase 4 D-03 / D-05 (SkillCoco):** Daily-challenge selection
   scoring formula + 0.3-0.7 zone + 48h recency window + decay
   half-life calibration. See `.planning/ROADMAP.md` §Phase 4:
   Adaptive Practice.
-- **Phase 4 A5 lock (LearnForge):** Clock injection via parameter
+- **Phase 4 A5 lock (SkillCoco):** Clock injection via parameter
   (`now: DateTime<Utc>`) to avoid Unix-epoch trap on WASM.
-- **Phase 4 Q5 lock (LearnForge):** Tuning constants are `const`,
+- **Phase 4 Q5 lock (SkillCoco):** Tuning constants are `const`,
   not env vars or config keys — calibration is part of the
   published API.
-- **Phase 4 Q6 lock (LearnForge):** Recency window measured against
+- **Phase 4 Q6 lock (SkillCoco):** Recency window measured against
   `daily_challenges` history only, not the broader module-progress
   views.
-- **Phase 7 Wave 4 / 07-04 (LearnForge):** Move from
+- **Phase 7 Wave 4 / 07-04 (SkillCoco):** Move from
   `src-tauri/src/learning/microlearning_selection.rs` into
-  `learnforge-core`, behind the `MicrolearningStore` trait. See
+  `skillcoco-core`, behind the `MicrolearningStore` trait. See
   `.planning/phases/07-core-extraction/07-04-SUMMARY.md`.
 - **Vygotsky, L. S. (1978).** *Mind in Society: The Development of
   Higher Psychological Processes.* Harvard University Press. The
@@ -677,11 +677,11 @@ from track B if B has staler modules. This was acceptable in Phase
 - **Wozniak, P. A. (1990).** Optimization of repetition spacing
   in the course of learning — see [SM2.md](./SM2.md) for the SR
   scheduler the SR-due signal is sourced from.
-- **LearnForge whitepaper:** [BKT](./BKT.md) — per-module mastery
+- **SkillCoco whitepaper:** [BKT](./BKT.md) — per-module mastery
   model the candidate filter consumes.
-- **LearnForge whitepaper:** [SM2](./SM2.md) — per-card SR
+- **SkillCoco whitepaper:** [SM2](./SM2.md) — per-card SR
   scheduler whose `next_review` timestamps drive `W_SR_DUE`.
-- **LearnForge whitepaper:** [THRESHOLD](./THRESHOLD.md) — the
+- **SkillCoco whitepaper:** [THRESHOLD](./THRESHOLD.md) — the
   track-level certification ladder that mastery dynamics
   ultimately feed.
 
@@ -691,12 +691,12 @@ from track B if B has staler modules. This was acceptable in Phase
 
 ```rust,ignore
 use chrono::{TimeZone, Utc};
-use learnforge_core::microlearning::{select_daily_challenge, /* ... */};
+use skillcoco_core::microlearning::{select_daily_challenge, /* ... */};
 
 let now = Utc.with_ymd_and_hms(2026, 6, 16, 12, 0, 0).unwrap();
 
 // (Stub implementation of `MicrolearningStore` omitted for brevity;
-// see `learnforge-core/src/microlearning.rs` tests for a complete
+// see `skillcoco-core/src/microlearning.rs` tests for a complete
 // runnable example.)
 let result = select_daily_challenge(&store, "learner-1", now).unwrap();
 
@@ -706,7 +706,7 @@ assert_eq!(cand.block_id, "blk-pods-1");
 assert!((cand.score - 3.0).abs() < 1e-9);
 ```
 
-The pure-store tests in `learnforge-core/src/microlearning.rs` (10
+The pure-store tests in `skillcoco-core/src/microlearning.rs` (10
 tests covering empty store, BKT-zone candidate, no-blocks exclusion,
 recency penalty, SR-due preference, ordering tie-break,
 all-recently-seen fallback, clock injection, decay-signal cap, and
@@ -717,4 +717,4 @@ algorithm.
 
 *This whitepaper is licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). You may
-reuse it with attribution to "LearnForge OSS contributors, 2026".*
+reuse it with attribution to "SkillCoco OSS contributors, 2026".*

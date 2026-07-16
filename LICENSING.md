@@ -12,7 +12,7 @@ desktop app under the MIT license. Commercial SkillCoco products
 
 | What | License |
 |------|---------|
-| All source code (`src/`, `src-tauri/`, `learnforge-core/`) | **MIT** (`LICENSE`) |
+| All source code (`src/`, `src-tauri/`, `skillcoco-core/`) | **MIT** (`LICENSE`) |
 | Topic pack format, schema, loader, and bundled packs | **MIT** |
 | Third-party attributions | `THIRD_PARTY_NOTICES.md` |
 
@@ -24,7 +24,7 @@ without modification — as long as you include the copyright notice.
 
 ## Algorithm Whitepapers
 
-The algorithm whitepapers in `learnforge-core/docs/` (BKT.md, SM2.md,
+The algorithm whitepapers in `skillcoco-core/docs/` (BKT.md, SM2.md,
 THRESHOLD.md, MICROLEARNING.md, SIGNING.md, and any future additions)
 are MIT licensed, same as the code — use, republish, adapt, or
 translate them freely with the copyright notice.

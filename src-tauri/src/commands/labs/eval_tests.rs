@@ -565,7 +565,7 @@ fn eval_test_app_state() -> Arc<AppState> {
             skillcoco_core::packs::PackRegistry::default(),
         )),
         signing_key: Arc::new(std::sync::Mutex::new(None)),
-        signing_key_path: std::path::PathBuf::from("/tmp/learnforge-eval-tests-keys"),
+        signing_key_path: std::path::PathBuf::from("/tmp/skillcoco-eval-tests-keys"),
     })
 }
 

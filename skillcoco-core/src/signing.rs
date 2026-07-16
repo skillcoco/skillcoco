@@ -7,7 +7,7 @@
 //! [`SigningKeyStore`] trait. The FS-backed key lifecycle
 //! (`get_or_init_key`, `read_public_pem`, 0o600 file mode) STAYS in
 //! `src-tauri/src/storage_impl/signing.rs` as the [`SigningKeyStore`] impl
-//! ([`FsKeyStore`](https://github.com/agentixgarage/learnforge)) — D-03
+//! ([`FsKeyStore`](https://github.com/skillcoco/skillcoco)) — D-03
 //! amendment + Pitfall 4 (FS-backed key loading is not WASM-portable).
 //!
 //! ## Invariants preserved from Phase 6
@@ -42,7 +42,7 @@
 //! use rand::rngs::OsRng;
 //!
 //! let key = SigningKey::generate(&mut OsRng);
-//! let payload = b"learnforge-doctest-payload";
+//! let payload = b"skillcoco-doctest-payload";
 //!
 //! let sig = sign_payload(&key, payload);
 //! let sig_hex = hex::encode(sig.to_bytes());
@@ -162,7 +162,7 @@ pub fn fingerprint_from_public_pem(pem: &str) -> Result<String, SigningError> {
 /// WASM-portable; only the pure string template lives here.
 pub fn share_text(level: &str, track: &str, key_fingerprint: &str, payload_b64: &str) -> String {
     format!(
-        "I just earned {} in {} on LearnForge. Verify with key fingerprint {}: {}",
+        "I just earned {} in {} on SkillCoco. Verify with key fingerprint {}: {}",
         level, track, key_fingerprint, payload_b64
     )
 }
@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn sign_verify_roundtrip() {
         let key = ephemeral_key();
-        let payload = b"learnforge-test-payload";
+        let payload = b"skillcoco-test-payload";
         let sig = sign_payload(&key, payload);
         let sig_hex = hex::encode(sig.to_bytes());
         let pub_pem = key
@@ -220,7 +220,7 @@ mod tests {
 
         assert!(verify_payload(&pub_pem, payload, &sig_hex), "real verify");
         assert!(
-            !verify_payload(&pub_pem, b"learnforge-test-paylo!d", &sig_hex),
+            !verify_payload(&pub_pem, b"skillcoco-test-paylo!d", &sig_hex),
             "tampered payload"
         );
         let mut tampered_sig = sig_hex.clone();
@@ -333,7 +333,7 @@ mod tests {
         let s = share_text("Professional", "Kubernetes Fundamentals", "a1b2c3d4", "QUJD");
         assert_eq!(
             s,
-            "I just earned Professional in Kubernetes Fundamentals on LearnForge. \
+            "I just earned Professional in Kubernetes Fundamentals on SkillCoco. \
              Verify with key fingerprint a1b2c3d4: QUJD"
                 .replace("             ", "")
         );

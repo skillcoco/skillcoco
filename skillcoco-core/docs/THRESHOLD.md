@@ -1,14 +1,14 @@
 # Achievement Thresholds — Track-Level Skill-Tier Certification
 
-> **Author:** LearnForge OSS contributors
+> **Author:** SkillCoco OSS contributors
 > **Date:** 2026-06-17
 > **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-> **Module:** [`learnforge_core::threshold`](../src/threshold.rs)
+> **Module:** [`skillcoco_core::threshold`](../src/threshold.rs)
 
 This whitepaper documents the track-level achievement-threshold predicates
-as implemented in `learnforge_core::threshold`. It is intended for
+as implemented in `skillcoco_core::threshold`. It is intended for
 engineers, learning scientists, instructional designers, and curious
-learners who want to understand how LearnForge aggregates per-module BKT
+learners who want to understand how SkillCoco aggregates per-module BKT
 mastery into the three track-level skill tiers — Associate, Practitioner,
 and Professional — and why the specific thresholds (`25%`, `60%`, `100%
 + 0.85 avg + practical labs`) were chosen.
@@ -18,13 +18,13 @@ model](./BKT.md): BKT estimates per-module mastery as a probability in
 `[0, 1]`; threshold predicates aggregate those probabilities across a
 track and decide whether the learner has crossed any new skill tier on
 the most recent update. The result is the certification ladder that
-appears in the LearnForge UI as Associate → Practitioner → Professional.
+appears in the SkillCoco UI as Associate → Practitioner → Professional.
 
 ---
 
 ## 1. Abstract
 
-LearnForge tracks per-module mastery as a continuous probability via
+SkillCoco tracks per-module mastery as a continuous probability via
 BKT, but **learners** and **employers** want a discrete, comparable,
 verifiable label — "I am a Kubernetes Practitioner" carries different
 weight than "I am 67.3% through the Kubernetes track." This whitepaper
@@ -123,7 +123,7 @@ SQL aggregate function over `module_progress` joined with `modules`,
 that learner's active track and passes the result through the pure
 predicates documented here.
 
-The pure-logic split (algorithm in `learnforge-core`, SQL aggregate in
+The pure-logic split (algorithm in `skillcoco-core`, SQL aggregate in
 the storage crate) lets the algorithm compile to WASM unchanged: web
 consumers implement the aggregate function over IndexedDB or any other
 backend without touching the threshold predicates.
@@ -184,7 +184,7 @@ genuine ceiling that requires sustained effort across the full track.
 ### 3.3 The transition function — `which_level_just_crossed`
 
 The threshold predicates answer "which level(s) is the learner at
-**now**." For certificate issuance LearnForge needs a related answer:
+**now**." For certificate issuance SkillCoco needs a related answer:
 "which level (if any) did the learner just **cross** with this update?"
 
 ```rust,ignore
@@ -244,7 +244,7 @@ in prior sessions.
 Every per-module mastery comparison uses the project-wide
 [`MASTERY_THRESHOLD`](./BKT.md) (`0.7`). This is intentional: a single
 constant means the threshold layer never disagrees with the BKT layer
-about what "mastered" means. If a future LearnForge release calibrates
+about what "mastered" means. If a future SkillCoco release calibrates
 the project-wide mastery threshold downward (`0.65`, say), the
 threshold predicates automatically pick up the new value and all
 certificate ladders adjust consistently.
@@ -257,7 +257,7 @@ per kind, one threshold).
 
 ---
 
-## 4. Calibration in LearnForge
+## 4. Calibration in SkillCoco
 
 ### 4.1 Why `25%`, `60%`, `100%`?
 
@@ -272,7 +272,7 @@ three reasons:
    (`50% → 60%` ≈ `1.2 modules`).
 2. **Cohort match.** Several adjacent industry certifications use
    roughly the same shape (AWS Cloud Practitioner / Associate /
-   Professional ladders; CKA / CKAD / CKS for Kubernetes). LearnForge
+   Professional ladders; CKA / CKAD / CKS for Kubernetes). SkillCoco
    is not trying to replicate any one of them, but the tier-count
    choice (three named tiers, not five or seven) and the
    spacing-of-the-tiers feel matches industry expectations.
@@ -310,7 +310,7 @@ The specific value `0.85` was chosen by:
 
 ### 4.3 Why a separate practical-lab gate for Professional?
 
-LearnForge has a long-standing assumption that **practical** competence
+SkillCoco has a long-standing assumption that **practical** competence
 (running real commands, debugging real failures, building real
 artifacts) is different from **declarative** knowledge (knowing what
 a Pod is, knowing the syntax of a Dockerfile). The per-module BKT
@@ -368,7 +368,7 @@ The implementation handles a small set of edge cases explicitly:
 
 ### 5.1 Purity, determinism, WASM portability
 
-`learnforge_core::threshold::{which_level_just_crossed, levels_met,
+`skillcoco_core::threshold::{which_level_just_crossed, levels_met,
 is_professional, ratio}` are **pure functions** in the strictest sense:
 same `TrackAggregate` input → same output, no I/O, no allocation
 beyond the small `Vec<&'static str>` returned by `levels_met`.
@@ -376,7 +376,7 @@ beyond the small `Vec<&'static str>` returned by `levels_met`.
 This matters because:
 
 1. **Tests are deterministic** without time injection. The unit
-   tests in `learnforge-core/src/threshold.rs` (`associate_at_25_percent`,
+   tests in `skillcoco-core/src/threshold.rs` (`associate_at_25_percent`,
    `practitioner_at_60_percent`, `professional_requires_avg_and_labs`,
    etc.) construct `TrackAggregate` values directly and assert
    specific tier returns.
@@ -393,7 +393,7 @@ This matters because:
 The threshold module deliberately omits the SQL aggregate that
 computes `TrackAggregate` from `module_progress`. That aggregate lives
 in `src-tauri/src/storage_impl/threshold.rs` (desktop, rusqlite). The
-seam matches the BKT / SR pattern: pure algorithm in `learnforge-core`,
+seam matches the BKT / SR pattern: pure algorithm in `skillcoco-core`,
 storage details in the adapter crate.
 
 A future Phase 8 step promotes the aggregate to an
@@ -501,12 +501,12 @@ cohort/corporate use case, where employers may want a
 
 ## 7. References
 
-- **Phase 6 D-02 (LearnForge):** Threshold-formula derivation and
+- **Phase 6 D-02 (SkillCoco):** Threshold-formula derivation and
   calibration rationale; original three-tier design notes at
   `.planning/ROADMAP.md` §Phase 6: Certification.
-- **Phase 6 R4 (LearnForge):** Certificates as historical record;
+- **Phase 6 R4 (SkillCoco):** Certificates as historical record;
   mastery decay does not revoke an issued cert.
-- **Phase 6 A9 (LearnForge):** `mastery_level` is the live high-water
+- **Phase 6 A9 (SkillCoco):** `mastery_level` is the live high-water
   mark; achievements row preserves the snapshot.
 - **Bloom, B. S. (1968).** *Learning for Mastery.* Evaluation Comment,
   1(2), 1-12. The original mastery-learning theory — `> 90%` of
@@ -525,22 +525,22 @@ cohort/corporate use case, where employers may want a
   learning. *Assessment in Education*, 5(1), 7-74. Foundational
   work on formative-vs-summative assessment; informs the
   certificate-as-snapshot view in §4.4 / §6.1.
-- **LearnForge whitepaper:** [BKT](./BKT.md) — per-module mastery
+- **SkillCoco whitepaper:** [BKT](./BKT.md) — per-module mastery
   estimation model the threshold layer consumes.
-- **LearnForge whitepaper:** [MICROLEARNING](./MICROLEARNING.md) —
+- **SkillCoco whitepaper:** [MICROLEARNING](./MICROLEARNING.md) —
   daily-challenge selection algorithm that depends on the same
   per-module mastery values; relevant for understanding decay
   dynamics (§6.1).
-- **LearnForge whitepaper:** [SIGNING](./SIGNING.md) — Ed25519 +
+- **SkillCoco whitepaper:** [SIGNING](./SIGNING.md) — Ed25519 +
   canonical JSON pipeline that signs the resulting certificates so
-  they remain verifiable across LearnForge versions.
+  they remain verifiable across SkillCoco versions.
 
 ---
 
 ## 8. Reproducing the worked examples
 
 ```rust,ignore
-use learnforge_core::threshold::{
+use skillcoco_core::threshold::{
     TrackAggregate, levels_met, which_level_just_crossed,
 };
 
@@ -585,7 +585,7 @@ assert_eq!(
 );
 ```
 
-The unit tests in `learnforge-core/src/threshold.rs` exercise each
+The unit tests in `skillcoco-core/src/threshold.rs` exercise each
 edge case from §4.4 and serve as the executable specification for
 the predicates.
 
@@ -593,4 +593,4 @@ the predicates.
 
 *This whitepaper is licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). You may
-reuse it with attribution to "LearnForge OSS contributors, 2026".*
+reuse it with attribution to "SkillCoco OSS contributors, 2026".*

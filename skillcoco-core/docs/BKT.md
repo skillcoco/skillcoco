@@ -1,14 +1,14 @@
 # Bayesian Knowledge Tracing (BKT)
 
-> **Author:** LearnForge OSS contributors
+> **Author:** SkillCoco OSS contributors
 > **Date:** 2026-06-16
 > **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-> **Module:** [`learnforge_core::bkt`](../src/bkt.rs)
+> **Module:** [`skillcoco_core::bkt`](../src/bkt.rs)
 
 This whitepaper documents the Bayesian Knowledge Tracing (BKT) model as
-implemented in `learnforge-core::bkt`. It is intended for engineers,
+implemented in `skillcoco-core::bkt`. It is intended for engineers,
 learning scientists, and curious learners who want to understand exactly
-how LearnForge estimates per-skill mastery from a stream of correct /
+how SkillCoco estimates per-skill mastery from a stream of correct /
 incorrect observations.
 
 The implementation is the canonical four-parameter BKT model first
@@ -44,9 +44,9 @@ naturally with adaptive instruction policies: gate further content at a
 threshold, surface review when mastery decays, drive spaced-repetition
 schedules, and compute course-level competency without lossy rounding.
 
-LearnForge uses BKT for **per-module mastery estimation**. The track-
+SkillCoco uses BKT for **per-module mastery estimation**. The track-
 level skill-tier predicates (Associate / Practitioner / Professional)
-live in [`learnforge_core::threshold`](../src/threshold.rs) and aggregate
+live in [`skillcoco_core::threshold`](../src/threshold.rs) and aggregate
 per-module mastery into track-level certification readiness.
 
 ---
@@ -71,7 +71,7 @@ The probability the learner has mastered the skill **before** any
 observation. Equivalent to the initial belief that the learner already
 knows the material upon first encountering it.
 
-LearnForge default: **0.3**. This reflects the empirical reality that
+SkillCoco default: **0.3**. This reflects the empirical reality that
 adult learners enrolling in a technical course often bring partial prior
 exposure — they have heard of Docker, they have a vague idea what a
 Kubernetes pod is — but cannot reliably answer questions on the topic.
@@ -85,7 +85,7 @@ The probability that an unmastered learner becomes mastered between
 observations `n` and `n+1`. Captured per observation — so a learner who
 sees one question gets one chance to learn.
 
-LearnForge default: **0.1**. This conservative value reflects that one
+SkillCoco default: **0.1**. This conservative value reflects that one
 question (read-and-respond) provides limited learning signal. Combined
 with a `P(L_0) = 0.3`, it takes roughly five to seven correct
 observations to drive posterior mastery from `0.3` to the
@@ -98,7 +98,7 @@ Models the fact that multiple-choice questions have non-zero floor
 probability and that contextual reasoning can sometimes produce a
 correct answer without underlying mastery.
 
-LearnForge default: **0.2**. Calibrated against the mix of four-option
+SkillCoco default: **0.2**. Calibrated against the mix of four-option
 MCQs (P(G) ≈ 0.25 floor) and short-form / typed-answer questions
 (P(G) ≈ 0.1 floor). The blended `0.2` averages the two modalities and
 matches the common BKT calibration in the literature.
@@ -109,7 +109,7 @@ The probability that a **mastered** learner answers incorrectly. Models
 fatigue, typos, ambiguous question wording, and the noise floor of human
 performance on any task.
 
-LearnForge default: **0.1**. Per-skill calibration is possible (a
+SkillCoco default: **0.1**. Per-skill calibration is possible (a
 notoriously ambiguous question set could justify a higher slip rate)
 but Phase 7 ships a uniform default.
 
@@ -150,7 +150,7 @@ gave them a chance to. The result is clamped to `[0, 1]` (numerically
 the operations cannot exceed `1` but defensive clamping protects against
 floating-point drift).
 
-The Rust implementation is `learnforge_core::bkt::update_mastery`:
+The Rust implementation is `skillcoco_core::bkt::update_mastery`:
 
 ```rust,ignore
 pub fn update_mastery(params: &BKTParams, prior: f64, is_correct: bool) -> f64 {
@@ -208,7 +208,7 @@ the standard knob if this proves too aggressive in production.
 
 ## 4. Determinism and implementation notes
 
-`learnforge_core::bkt::update_mastery` is a **pure function**: same
+`skillcoco_core::bkt::update_mastery` is a **pure function**: same
 `(params, prior, is_correct)` → same output, no I/O, no allocation
 beyond the returned `f64`. This matters because:
 
@@ -232,7 +232,7 @@ without ever touching a database.
 
 ## 5. Mastery threshold
 
-LearnForge defines a single, project-wide mastery threshold:
+SkillCoco defines a single, project-wide mastery threshold:
 
 ```rust,ignore
 pub const MASTERY_THRESHOLD: f64 = 0.7;
@@ -242,11 +242,11 @@ Modules with `BKT(m) >= 0.7` are considered **mastered**. This value
 appears in three places:
 
 1. The prerequisite gate
-   ([`learnforge_core::path::all_prerequisites_mastered`](../src/path.rs)).
+   ([`skillcoco_core::path::all_prerequisites_mastered`](../src/path.rs)).
 2. The track-level skill-tier predicates
-   ([`learnforge_core::threshold`](../src/threshold.rs)).
+   ([`skillcoco_core::threshold`](../src/threshold.rs)).
 3. Microlearning candidate selection
-   ([`learnforge_core::microlearning`](../src/microlearning.rs)) treats
+   ([`skillcoco_core::microlearning`](../src/microlearning.rs)) treats
    modules with mastery in the band `[BKT_LOWER, BKT_UPPER)` (a strict
    subset of `[0, 0.7)`) as the prime daily-challenge candidates.
 
@@ -281,7 +281,7 @@ between observations. In real learning, knowledge does fade: a learner
 who hasn't seen Kubernetes for six months will not remember service
 discovery as well as they did the day they passed the module quiz.
 
-LearnForge handles decay **outside** the core BKT model, in the
+SkillCoco handles decay **outside** the core BKT model, in the
 [microlearning selection algorithm](../src/microlearning.rs). The
 selector applies a **logarithmic decay penalty** to a module's
 last-observed mastery, computed against the time since the last BKT
@@ -306,7 +306,7 @@ faithful to its literature.
 
 ## 7. Limitations
 
-The four-parameter BKT model in LearnForge has known limitations.
+The four-parameter BKT model in SkillCoco has known limitations.
 Documenting them here so consumers can decide whether to extend the
 model or migrate to a successor.
 
@@ -314,9 +314,9 @@ model or migrate to a successor.
 
 The model treats each module as a single, independent skill. Real
 curricula have skill **dependencies** (Kubernetes services depend on
-Kubernetes pods, which depend on container basics). LearnForge models
+Kubernetes pods, which depend on container basics). SkillCoco models
 the dependency graph at the **path level** (see
-[`learnforge_core::path`](../src/path.rs)) and gates prerequisite
+[`skillcoco_core::path`](../src/path.rs)) and gates prerequisite
 mastery accordingly, but the BKT model itself does not propagate
 mastery across the DAG.
 
@@ -326,7 +326,7 @@ The model uses uniform `P(G)` and `P(S)` per skill regardless of the
 specific question. A multi-step lab task and a quick multiple-choice
 question are treated as having identical guess / slip probabilities.
 Item-Response-Theory (IRT) extensions to BKT exist (e.g.
-Knowledge-Tracing-with-Item-Difficulty); LearnForge defers these to a
+Knowledge-Tracing-with-Item-Difficulty); SkillCoco defers these to a
 future phase.
 
 ### 7.3 No individualization
@@ -334,13 +334,13 @@ future phase.
 The parameters are global per skill, not per learner. Empirical research
 on individualized BKT (e.g. learner-specific `P(L_0)`) shows
 improvements but requires substantially more data per learner than a
-typical LearnForge enrollment provides at Phase 7.
+typical SkillCoco enrollment provides at Phase 7.
 
 ### 7.4 No conjugate prior
 
 Some BKT variants treat the four parameters as random variables with a
 Beta-Bernoulli conjugate prior and update them as well as the latent
-state. LearnForge ships a fixed-parameter model for simplicity and
+state. SkillCoco ships a fixed-parameter model for simplicity and
 auditability; switching to a Bayesian-parameter variant is a clean
 future extension because the trait surface (`BktStore`) need not
 change.
@@ -350,7 +350,7 @@ change.
 As discussed in §6, the model has no built-in forgetting. The
 microlearning decay term is a pragmatic workaround. A formal
 forgetting-aware extension (e.g. "Deep Knowledge Tracing" with LSTM
-memory cells) is excluded from `learnforge-core` because it would
+memory cells) is excluded from `skillcoco-core` because it would
 introduce a heavy ML dependency that breaks the WASM portability
 guarantee.
 
@@ -379,7 +379,7 @@ guarantee.
 ## 9. Reproducing the worked examples
 
 ```rust,ignore
-use learnforge_core::bkt::{update_mastery, BKTParams, MASTERY_THRESHOLD};
+use skillcoco_core::bkt::{update_mastery, BKTParams, MASTERY_THRESHOLD};
 
 let params = BKTParams::default();
 assert!((params.p_know - 0.3).abs() < 1e-9);
@@ -398,11 +398,11 @@ let m4 = update_mastery(&params, 0.7, false);
 assert!((m4 - 0.3032).abs() < 1e-3);
 ```
 
-Run `cargo run -p learnforge-core --example bkt_update` to see the
+Run `cargo run -p skillcoco-core --example bkt_update` to see the
 trajectory printed for a longer observation sequence.
 
 ---
 
 *This whitepaper is licensed under
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). You may
-reuse it with attribution to "LearnForge OSS contributors, 2026".*
+reuse it with attribution to "SkillCoco OSS contributors, 2026".*

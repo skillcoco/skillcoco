@@ -30,7 +30,7 @@ export function LibraryImportSection() {
     try {
       filePath = await openFileDialog({
         multiple: false,
-        filters: [{ name: "LearnForge Course", extensions: ["json"] }],
+        filters: [{ name: "SkillCoco Course", extensions: ["json"] }],
       });
     } catch (err) {
       setState({
@@ -79,7 +79,7 @@ export function LibraryImportSection() {
       <div className="flex-1">
         <p className="text-sm font-medium text-foreground">Import course file</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Import a LearnForge .json course file to create a new track. Each
+          Import a SkillCoco .json course file to create a new track. Each
           import creates a fresh independent copy.
         </p>
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nickkuk/nickkuk.github.io/refs/heads/master/tauri-v2.json",
-  "productName": "LearnForge",
+  "productName": "SkillCoco",
   "version": "0.1.0",
-  "identifier": "com.learnforge.app",
+  "identifier": "com.skillcoco.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "LearnForge",
+        "title": "SkillCoco",
         "width": 1280,
         "height": 800,
         "resizable": true,

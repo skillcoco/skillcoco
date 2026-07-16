@@ -22,7 +22,7 @@ Adaptive Mastery Courses: AI-Powered Technical Learning with Intelligent Mastery
 ## 11. Executive Summary
 > In 3-5 sentences, describe what you want to build and what makes it meaningfully different.
 
-We're creating a new adaptive course format for technical education that replaces linear video sequences with mastery-gated learning loops, powered by Udemy's AI features and proven learning science. Using Role Play for scenario-based technical assessment, Labs for hands-on practice with AI evaluation, and research-backed algorithms (Bayesian Knowledge Tracing for mastery measurement, SM-2 for spaced review scheduling), each learner follows a personalized path that adapts to their demonstrated understanding — not just their viewing history. We'll pilot this format with two high-demand courses — Agentic DevOps and Agentic AI Engineering — then publish a replicable Instructor Playbook so any technical instructor can adopt this format. We've already built and validated the adaptive learning algorithms in LearnForge, a working adaptive learning platform, and now want to bring this innovation to Udemy's 270 million learners.
+We're creating a new adaptive course format for technical education that replaces linear video sequences with mastery-gated learning loops, powered by Udemy's AI features and proven learning science. Using Role Play for scenario-based technical assessment, Labs for hands-on practice with AI evaluation, and research-backed algorithms (Bayesian Knowledge Tracing for mastery measurement, SM-2 for spaced review scheduling), each learner follows a personalized path that adapts to their demonstrated understanding — not just their viewing history. We'll pilot this format with two high-demand courses — Agentic DevOps and Agentic AI Engineering — then publish a replicable Instructor Playbook so any technical instructor can adopt this format. We've already built and validated the adaptive learning algorithms in SkillCoco, a working adaptive learning platform, and now want to bring this innovation to Udemy's 270 million learners.
 
 ---
 
@@ -51,7 +51,7 @@ Both Agentic DevOps and Agentic AI Engineering are inherently non-linear and han
 Every learner's experience differs based on three inputs: their assessed starting point (via entry Role Play), their demonstrated mastery on each skill branch (via BKT algorithm), and their retention patterns over time (via SM-2 scheduling). Learners who demonstrate mastery skip ahead. Those who struggle receive targeted reinforcement.
 
 **What excites us:**
-We've already built and validated these algorithms in LearnForge, an adaptive learning platform we developed with Bayesian Knowledge Tracing, SM-2 spaced repetition, and AI-powered DAG-based learning paths. Seeing learners progress through genuinely adaptive paths — where the course reshapes itself around their actual understanding — is transformative. This is what online education should feel like, and Udemy's platform features make it possible at scale.
+We've already built and validated these algorithms in SkillCoco, an adaptive learning platform we developed with Bayesian Knowledge Tracing, SM-2 spaced repetition, and AI-powered DAG-based learning paths. Seeing learners progress through genuinely adaptive paths — where the course reshapes itself around their actual understanding — is transformative. This is what online education should feel like, and Udemy's platform features make it possible at scale.
 
 ---
 
@@ -73,7 +73,7 @@ Both audiences are working professionals learning self-paced, often through Udem
 - [x] Industry trends/job demands
 - [x] Gap in existing Udemy content
 - [x] Educational research
-- [x] Other - Write In: "Working adaptive learning platform (LearnForge) with validated algorithms already built"
+- [x] Other - Write In: "Working adaptive learning platform (SkillCoco) with validated algorithms already built"
 
 ---
 
@@ -134,7 +134,7 @@ AI accelerates course creation in three ways. First, generating scenario variati
 AI is central to three learner-facing capabilities. Role Play delivers personalized scenario-based assessment where learners practice real technical conversations and troubleshooting — the AI adapts its responses based on the learner's answers, creating a dynamic dialogue rather than a static quiz. Lab exercises receive AI-powered evaluation that assesses not just correctness but approach quality, providing targeted feedback ("Your agent is running, but it lacks proper error boundaries — here's why that matters in production"). The mastery tracking system uses AI to synthesize signals from multiple activities into a coherent understanding of what each learner knows and to recommend personalized next steps.
 
 **What learning benefit AI enables that traditional approaches cannot:**
-True adaptive personalization at scale is impossible without AI. No human instructor can create unique learning paths for thousands of concurrent learners, evaluate their hands-on work in real time, and schedule scientifically-timed reviews for each individual. AI makes the "adaptive mastery loop" possible — the continuous cycle of assess, learn, practice, verify, and reinforce that responds to each learner's actual understanding. We've proven this works in LearnForge, our adaptive learning platform that implements these exact algorithms. This grant brings that validated intelligence to Udemy's platform and its 270 million learners.
+True adaptive personalization at scale is impossible without AI. No human instructor can create unique learning paths for thousands of concurrent learners, evaluate their hands-on work in real time, and schedule scientifically-timed reviews for each individual. AI makes the "adaptive mastery loop" possible — the continuous cycle of assess, learn, practice, verify, and reinforce that responds to each learner's actual understanding. We've proven this works in SkillCoco, our adaptive learning platform that implements these exact algorithms. This grant brings that validated intelligence to Udemy's platform and its 270 million learners.
 
 ---
 
@@ -170,20 +170,20 @@ Four channels: First, direct announcements to our existing 370,000+ Udemy studen
 
 The core learning experience uses existing Udemy capabilities: Role Play for scenario-based assessments and adaptive conversations, Labs for hands-on practice, and structured course sections for content delivery. Course structure, video, quizzes, and all standard features work as-is.
 
-What extends beyond current Udemy capabilities is the adaptive mastery tracking layer — the Bayesian Knowledge Tracing algorithm that models what each learner truly knows, and the SM-2 spaced repetition algorithm that schedules optimal review timing. These are not theoretical — we've already built and validated both algorithms in LearnForge, our adaptive learning platform. LearnForge implements BKT mastery tracking, SM-2 spaced repetition, AI-powered DAG-based learning paths, and on-demand content personalization as a fully functional system.
+What extends beyond current Udemy capabilities is the adaptive mastery tracking layer — the Bayesian Knowledge Tracing algorithm that models what each learner truly knows, and the SM-2 spaced repetition algorithm that schedules optimal review timing. These are not theoretical — we've already built and validated both algorithms in SkillCoco, our adaptive learning platform. SkillCoco implements BKT mastery tracking, SM-2 spaced repetition, AI-powered DAG-based learning paths, and on-demand content personalization as a fully functional system.
 
 For the pilot courses, we'll implement mastery tracking as a companion web tool that supplements the Udemy course experience — learners complete activities on Udemy, and the companion tool provides the adaptive intelligence layer (mastery visualization, review scheduling, path recommendations). This follows the fund's stated openness to "independently building and testing a prototype" of capabilities Udemy doesn't currently offer.
 
-This companion tool is designed as a proof-of-concept for native Udemy platform integration, with fully documented algorithms and clear integration patterns. The underlying technology already exists in LearnForge — we're adapting it to work with Udemy's platform, not building from scratch.
+This companion tool is designed as a proof-of-concept for native Udemy platform integration, with fully documented algorithms and clear integration patterns. The underlying technology already exists in SkillCoco — we're adapting it to work with Udemy's platform, not building from scratch.
 
 ---
 
 ## 23. What Needs to Go Right?
 > Most important factors that will determine whether this project succeeds.
 
-1. **Role Play must work for technical assessment, not just soft skills.** Current Role Play adoption is overwhelmingly business communication and sales scenarios. We need to validate that it effectively supports technical troubleshooting dialogues with the same quality of adaptive conversation. Our LearnForge prototype confirms AI-driven technical assessment works — the key is mapping this to Udemy's Role Play engine. Early testing with the platform team would accelerate this.
+1. **Role Play must work for technical assessment, not just soft skills.** Current Role Play adoption is overwhelmingly business communication and sales scenarios. We need to validate that it effectively supports technical troubleshooting dialogues with the same quality of adaptive conversation. Our SkillCoco prototype confirms AI-driven technical assessment works — the key is mapping this to Udemy's Role Play engine. Early testing with the platform team would accelerate this.
 
-2. **The mastery algorithms must produce genuinely actionable signals from Udemy learner interactions.** Bayesian Knowledge Tracing is well-proven in educational research and in our LearnForge implementation, but it needs to produce accurate mastery profiles from Udemy-specific inputs (Lab scores, Role Play evaluations, quiz results). We mitigate this through extensive beta testing with a 100+ learner cohort before public launch, with algorithm tuning based on real data.
+2. **The mastery algorithms must produce genuinely actionable signals from Udemy learner interactions.** Bayesian Knowledge Tracing is well-proven in educational research and in our SkillCoco implementation, but it needs to produce accurate mastery profiles from Udemy-specific inputs (Lab scores, Role Play evaluations, quiz results). We mitigate this through extensive beta testing with a 100+ learner cohort before public launch, with algorithm tuning based on real data.
 
 3. **The format must be practically replicable by other instructors.** The innovation's largest impact comes from adoption across the instructor community. The Instructor Playbook must be clear enough that non-technical instructors can apply the format without building custom tools. We'll validate this by having 3-5 external instructors attempt to apply the format during development.
 
@@ -192,11 +192,11 @@ This companion tool is designed as a proof-of-concept for native Udemy platform 
 ## 24. Your Qualifications
 > Why are you well positioned to execute this innovation?
 
-**Gourav Shah** brings 17+ years in DevOps, Cloud, and Platform Engineering. As founder of School of DevOps and Agentix Garage, he's trained engineers at Nasdaq, Volkswagen, NetApp, and numerous other enterprises. With 270,000+ Udemy students across 15+ courses and 7+ years as a premium Udemy instructor, he deeply understands both the technical domain and the Udemy learner journey. His article "The Dawn of Agentic DevOps" captured the industry shift he'll be teaching. He holds Linux Foundation certifications and has built LearnForge — the adaptive learning platform whose algorithms power this proposal. He knows exactly where learners get stuck, which concepts need reinforcement, and how to design non-linear skill progressions from observing 270,000+ students.
+**Gourav Shah** brings 17+ years in DevOps, Cloud, and Platform Engineering. As founder of School of DevOps and Agentix Garage, he's trained engineers at Nasdaq, Volkswagen, NetApp, and numerous other enterprises. With 270,000+ Udemy students across 15+ courses and 7+ years as a premium Udemy instructor, he deeply understands both the technical domain and the Udemy learner journey. His article "The Dawn of Agentic DevOps" captured the industry shift he'll be teaching. He holds Linux Foundation certifications and has built SkillCoco — the adaptive learning platform whose algorithms power this proposal. He knows exactly where learners get stuck, which concepts need reinforcement, and how to design non-linear skill progressions from observing 270,000+ students.
 
 **Vivian Aranha** is a Data & AI Specialist at IBM and CEO of School of AI, with nearly 20 years in the tech industry, 8+ years specializing in AI, ML, and deep learning, and 1,000,000+ Udemy enrollments. He holds an Executive Certification from MIT Sloan School of Management and a Master's from The George Washington University. His Udemy course "Mastering Agentic Design Patterns" and his Maven "AI Engineer Complete Bootcamp" demonstrate deep expertise in exactly the agentic AI domain this proposal covers. He brings the AI architecture and adaptive system expertise, combined with proven ability to teach complex concepts at massive scale.
 
-**Together**, we combine deep domain expertise in both piloted topics, AI engineering capability, massive Udemy platform experience (370,000+ students combined), and a working adaptive learning platform (LearnForge) that already implements the exact algorithms this proposal uses. We've already built, tested, and validated Bayesian Knowledge Tracing, SM-2 spaced repetition, and AI-powered adaptive path generation. This isn't a theoretical proposal — the learning science is implemented, and we're bringing it to Udemy.
+**Together**, we combine deep domain expertise in both piloted topics, AI engineering capability, massive Udemy platform experience (370,000+ students combined), and a working adaptive learning platform (SkillCoco) that already implements the exact algorithms this proposal uses. We've already built, tested, and validated Bayesian Knowledge Tracing, SM-2 spaced repetition, and AI-powered adaptive path generation. This isn't a theoretical proposal — the learning science is implemented, and we're bringing it to Udemy.
 
 ---
 
@@ -224,7 +224,7 @@ $100,000
 
 **Tools, software, and infrastructure: $18,000**
 - Cloud infrastructure for Kubernetes and AI Lab environments
-- Companion mastery tracking tool — adapting LearnForge's algorithms for Udemy integration
+- Companion mastery tracking tool — adapting SkillCoco's algorithms for Udemy integration
 - AI API costs for scenario generation, evaluation, and testing during development
 - Development tooling, hosting, and CI/CD for the companion prototype
 
@@ -244,11 +244,11 @@ $100,000
 ## 27. Why Is This Funding Important?
 > How the grant enables or expands this innovation.
 
-We've already invested significant time and resources building LearnForge — an adaptive learning platform that implements the exact mastery tracking, spaced repetition, and adaptive path algorithms this proposal brings to Udemy. The core technology is proven and working.
+We've already invested significant time and resources building SkillCoco — an adaptive learning platform that implements the exact mastery tracking, spaced repetition, and adaptive path algorithms this proposal brings to Udemy. The core technology is proven and working.
 
 This grant enables us to go full-time on adapting that technology for Udemy's platform and creating two flagship courses that demonstrate its impact. Specifically:
 
-First, adapting LearnForge's adaptive engine for Udemy. Building the companion tool that bridges our validated algorithms (BKT, SM-2, adaptive DAG paths) with Udemy's Role Play, Labs, and course infrastructure requires dedicated development — translating a standalone system into something that enhances Udemy's platform.
+First, adapting SkillCoco's adaptive engine for Udemy. Building the companion tool that bridges our validated algorithms (BKT, SM-2, adaptive DAG paths) with Udemy's Role Play, Labs, and course infrastructure requires dedicated development — translating a standalone system into something that enhances Udemy's platform.
 
 Second, creating two complete adaptive courses in the hottest enterprise skill domains. Each course requires 3-4x the design work of a traditional course — non-linear skill trees, 60+ Role Play scenarios, mastery-gated Lab exercises, and spaced review architecture. This is a full-time commitment for both instructors.
 
@@ -265,8 +265,8 @@ This grant transforms proven technology into a platform-wide innovation.
 [See companion document: docs/plans/2026-03-17-udemy-fund-optional-materials.md]
 
 Suggested links to include:
-- LearnForge prototype demo / repository
-- LearnForge design documentation and algorithm specifications
+- SkillCoco prototype demo / repository
+- SkillCoco design documentation and algorithm specifications
 - Gourav's "The Dawn of Agentic DevOps" article
 - Vivian's "Mastering Agentic Design Patterns" Udemy course
 - School of DevOps website / credentials
@@ -279,7 +279,7 @@ Suggested links to include:
 
 Suggested uploads:
 - One-page "Adaptive Mastery Format" visual overview (to be created)
-- LearnForge prototype screenshots showing mastery tracking
+- SkillCoco prototype screenshots showing mastery tracking
 - Sample Role Play scenario scripts for Agentic DevOps
 - Adaptive path (DAG) diagram showing skill tree structure
 - Plain-language summary of BKT and SM-2 algorithms
@@ -291,7 +291,7 @@ Suggested uploads:
 | Question | Selection |
 |----------|-----------|
 | Q9. Project Type | Hybrid approach |
-| Q14. Evidence of Demand | Student feedback, Industry trends, Gap in existing content, Educational research, Other: "Working adaptive learning platform (LearnForge)" |
+| Q14. Evidence of Demand | Student feedback, Industry trends, Gap in existing content, Educational research, Other: "Working adaptive learning platform (SkillCoco)" |
 | Q17. Will AI Be Used? | Yes - both |
 | Q21. Estimated Timeline | 3-5 months |
 
@@ -299,11 +299,11 @@ Suggested uploads:
 
 ## Strategic Notes (DO NOT INCLUDE IN APPLICATION)
 
-### LearnForge Positioning Strategy
-- LearnForge is mentioned as "a working adaptive learning platform" — established technology, not a prototype sketch
+### SkillCoco Positioning Strategy
+- SkillCoco is mentioned as "a working adaptive learning platform" — established technology, not a prototype sketch
 - Demonstrates we have real IP (algorithms, architecture, implementation) not just ideas
 - Framed as: "we want to bring this TO Udemy" — implies it exists independently and could go elsewhere
-- The companion tool is described as "adapting LearnForge's algorithms for Udemy integration" — signals that Udemy gets access to something valuable
+- The companion tool is described as "adapting SkillCoco's algorithms for Udemy integration" — signals that Udemy gets access to something valuable
 - The grant essentially buys Udemy first access to this innovation on their platform
 - If they see competitive potential, the conversation naturally evolves toward deeper partnership/acquisition
 

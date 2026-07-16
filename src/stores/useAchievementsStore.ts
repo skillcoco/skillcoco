@@ -92,7 +92,7 @@ function suggestedFilename(
   const slug = slugify(a.trackTopic || a.trackId);
   const date = isoToCompactDate(a.issuedAt);
   const kind = ext === "pdf" ? "certificate" : "badge";
-  return `learnforge-${kind}-${slug}-${date}.${ext}`;
+  return `skillcoco-${kind}-${slug}-${date}.${ext}`;
 }
 
 /// Picks the highest-tier achievement (Completion > Professional >

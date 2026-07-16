@@ -124,9 +124,9 @@ All code in this repository is MIT licensed — the adaptive engine, the pack
 format, and the desktop app. See the [Open core](#open-core) section above for
 how this repository relates to the commercial SkillCoco products.
 
-The core Rust crate (currently named `learnforge-core` in code; renaming to
+The core Rust crate (currently named `skillcoco-core` in code; renaming to
 `skillcoco-core` before its first crates.io publish) carries the learning-science
-algorithms and pack format. The backend exposes a `LearnForgePlugin` trait for
+algorithms and pack format. The backend exposes a `SkillCocoPlugin` trait for
 community extensions (backend-only internal seam; no API-stability promise yet).
 
 See [`LICENSING.md`](LICENSING.md) for the license summary.

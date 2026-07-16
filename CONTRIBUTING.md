@@ -51,7 +51,7 @@ future contributions. You only sign once.
 
 ```bash
 git clone https://github.com/skillcoco/skillcoco.git
-cd learnforge
+cd skillcoco
 pnpm install
 ```
 
@@ -85,7 +85,7 @@ Uses Vitest. All tests run without a real browser.
 ### Backend (Rust)
 
 ```bash
-cargo test -p learnforge
+cargo test -p skillcoco
 ```
 
 Or from the `src-tauri` subdirectory:
@@ -183,7 +183,7 @@ non-obvious reasoning.
 
 1. Fork the repository and create a branch from `main`.
 2. Make your changes following the TDD and code-style rules above.
-3. Run `pnpm test` and `cargo test -p learnforge` — both must pass before you
+3. Run `pnpm test` and `cargo test -p skillcoco` — both must pass before you
    open a PR.
 4. Open a pull request with a clear description of *why* the change is needed,
    not just what it does.

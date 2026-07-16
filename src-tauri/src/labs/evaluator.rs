@@ -391,7 +391,7 @@ mod tests {
             last_command: "kubectl apply -f pod.yaml",
             last_output,
             last_exit_code: exit,
-            workspace: Path::new("/tmp/learnforge-eval-test"),
+            workspace: Path::new("/tmp/skillcoco-eval-test"),
             ai_authenticated: true,
             ai_budget_remaining: 5,
             history: None,

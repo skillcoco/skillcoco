@@ -236,7 +236,7 @@ export function TopicPicker({ onPick, onCustomTopic }: TopicPickerProps) {
                 <p className="text-xs text-muted-foreground">
                   Drop a pack.json under{" "}
                   <code className="rounded bg-secondary/40 px-1 py-0.5 text-[11px]">
-                    ~/.learnforge/skills/
+                    ~/.skillcoco/skills/
                   </code>{" "}
                   to add your own template.
                 </p>

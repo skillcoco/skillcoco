@@ -16,7 +16,7 @@ skillcoco/skillcoco   ← single public repo (MIT)
 ├── SECURITY.md
 ├── CHANGELOG.md
 ├── docs/                ← project documentation
-├── learnforge-core/     ← MIT — Rust crate, published to crates.io
+├── skillcoco-core/     ← MIT — Rust crate, published to crates.io
 ├── src/                 ← MIT — OSS desktop React frontend
 ├── src-tauri/           ← MIT — OSS desktop Tauri 2 backend
 ├── topic-packs/         ← MIT — bundled pack content + JSON schema
@@ -72,7 +72,7 @@ without re-cloning. Use them for:
 ### Current worktree layout
 
 ```
-/Users/gshah/work/apps/learnforge/         ← main worktree (branch: main)
+/Users/gshah/work/apps/skillcoco/         ← main worktree (branch: main)
    └── .git/                               ← actual .git directory
        └── worktrees/
            └── agent-* (GSD executor worktrees, pruned after each wave)
@@ -82,7 +82,7 @@ without re-cloning. Use them for:
 
 ```bash
 # From the main repo directory:
-cd /Users/gshah/work/apps/learnforge
+cd /Users/gshah/work/apps/skillcoco
 
 # Create a worktree on a new branch:
 git worktree add -b feature/new-thing ../gsd-workspaces/new-thing
@@ -114,7 +114,7 @@ git branch -D <stale-branch>       # delete the orphan branch
 
 | Command | Binary | Description |
 |---------|--------|-------------|
-| `pnpm tauri dev` | `learnforge` | Dev build — hot-reload frontend + Rust recompile |
+| `pnpm tauri dev` | `skillcoco` | Dev build — hot-reload frontend + Rust recompile |
 | `pnpm build` | OSS bundle | Production frontend static output |
 | `cargo tauri build` | macOS .dmg / Win .msi / Linux .AppImage | Signed release binary |
 
@@ -122,7 +122,7 @@ git branch -D <stale-branch>       # delete the orphan branch
 
 Two artifacts ship from this repo:
 
-1. **`learnforge-core` Rust crate** to crates.io
+1. **`skillcoco-core` Rust crate** to crates.io
    - Tag: `core-v{major}.{minor}.{patch}`
    - Triggers: `.github/workflows/core-publish.yml`
    - Distribution: crates.io + docs.rs

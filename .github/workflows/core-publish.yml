@@ -7,16 +7,16 @@
 #
 # BOOTSTRAP CAVEAT (per locked O-5 / RESEARCH Pitfall 3):
 #   Trusted Publishing requires the crate to ALREADY EXIST on crates.io
-#   before the OIDC config can be added. The FIRST `learnforge-core`
+#   before the OIDC config can be added. The FIRST `skillcoco-core`
 #   publish must be done MANUALLY from a maintainer's authenticated
 #   machine:
 #
-#     cd learnforge-core
+#     cd skillcoco-core
 #     cargo login                # paste personal API token
 #     cargo publish --dry-run    # validate
 #     cargo publish              # real upload
-#     # Then in crates.io UI → learnforge-core → Settings → Trusted
-#     # Publishers, add: owner=agentixgarage, repo=learnforge,
+#     # Then in crates.io UI → skillcoco-core → Settings → Trusted
+#     # Publishers, add: owner=skillcoco, repo=skillcoco,
 #     # workflow=core-publish.yml, environment=release. Revoke the
 #     # personal token afterwards.
 #
@@ -25,7 +25,7 @@
 #
 #   If this workflow fires on the very first `core-v0.1.0` tag BEFORE
 #   the manual bootstrap above is done, the publish step will fail
-#   with "crate `learnforge-core` does not exist." That failure is
+#   with "crate `skillcoco-core` does not exist." That failure is
 #   loud-but-harmless (no partial state on crates.io): re-run after
 #   the manual bootstrap completes. This is intentional per
 #   planner R-new-03 (no skip guard — failure is the signal).
@@ -34,7 +34,7 @@
 # secret at rest: the workflow exchanges an OIDC token for a
 # short-lived (30-min) registry token via the rust-lang action.
 
-name: Publish learnforge-core to crates.io
+name: Publish skillcoco-core to crates.io
 
 on:
   push:
@@ -60,11 +60,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       # Tag-vs-manifest version guard. Prevents accidentally pushing
-      # `core-v0.2.0` while learnforge-core/Cargo.toml still says
+      # `core-v0.2.0` while skillcoco-core/Cargo.toml still says
       # 0.1.0 (would publish 0.1.0 as 0.2.0, an unrecoverable error).
       - name: Validate tag matches Cargo.toml version
         run: |
-          VERSION=$(grep '^version' learnforge-core/Cargo.toml | head -1 | cut -d'"' -f2)
+          VERSION=$(grep '^version' skillcoco-core/Cargo.toml | head -1 | cut -d'"' -f2)
           TAG="${GITHUB_REF_NAME#core-v}"
           if [ "$VERSION" != "$TAG" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $VERSION"
@@ -76,7 +76,7 @@ jobs:
       # path dependencies, license-file issues) BEFORE the real publish.
       # Phase 7 already proved this passes for 0.1.0.
       - name: Cargo publish dry-run
-        run: cargo publish --dry-run -p learnforge-core
+        run: cargo publish --dry-run -p skillcoco-core
 
       # OIDC token exchange — pinned to v1 (latest 1.0.5 as of 2026-06-16).
       - name: Mint crates.io token via OIDC
@@ -86,4 +86,4 @@ jobs:
       - name: Publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: cargo publish -p learnforge-core
+        run: cargo publish -p skillcoco-core

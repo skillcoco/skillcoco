@@ -141,7 +141,7 @@ describe("useAchievementsStore — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
     expect(exportCertificateCmd).toHaveBeenCalledTimes(1);
     const [reqArg, filenameArg] = vi.mocked(exportCertificateCmd).mock.calls[0];
     expect(reqArg).toEqual({ achievementId: "cert-1" });
-    expect(filenameArg).toMatch(/^learnforge-certificate-kubernetes-fundamentals-20260616\.pdf$/);
+    expect(filenameArg).toMatch(/^skillcoco-certificate-kubernetes-fundamentals-20260616\.pdf$/);
     expect(result).toEqual({ saved: true, path: "/tmp/cert.pdf" });
   });
 
@@ -184,7 +184,7 @@ describe("useAchievementsStore — Phase 6 Plan 06-04 (Wave 3 GREEN)", () => {
     const [reqArg, filenameArg] = vi.mocked(exportBadgeCmd).mock.calls[0];
     expect(reqArg).toEqual({ achievementId: "badge-1" });
     // slugified track topic: "devops-tooling"
-    expect(filenameArg).toMatch(/^learnforge-badge-devops-tooling-20260616\.png$/);
+    expect(filenameArg).toMatch(/^skillcoco-badge-devops-tooling-20260616\.png$/);
     expect(result).toEqual({ saved: true, path: "/tmp/badge.png" });
   });
 

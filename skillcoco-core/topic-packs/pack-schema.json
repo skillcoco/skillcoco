@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://learnforge.dev/schemas/pack-schema-v1.json",
-  "title": "LearnForge Topic Pack",
-  "description": "Schema for LearnForge topic packs (D-02, Draft 2020-12). Pack-level additionalProperties is true (Q7 lock) to keep evolving fields non-breaking. Per-module strings carry maxLength caps as R1 prompt-injection mitigation.",
+  "$id": "https://skillcoco.dev/schemas/pack-schema-v1.json",
+  "title": "SkillCoco Topic Pack",
+  "description": "Schema for SkillCoco topic packs (D-02, Draft 2020-12). Pack-level additionalProperties is true (Q7 lock) to keep evolving fields non-breaking. Per-module strings carry maxLength caps as R1 prompt-injection mitigation.",
   "type": "object",
   "required": ["id", "title", "description", "domain_module", "modules"],
   "additionalProperties": true,

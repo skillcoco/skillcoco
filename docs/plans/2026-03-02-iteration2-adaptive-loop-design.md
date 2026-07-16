@@ -1,4 +1,4 @@
-# LearnForge Iteration 2: Close the Adaptive Loop
+# SkillCoco Iteration 2: Close the Adaptive Loop
 
 **Date:** 2026-03-02
 **Status:** Draft

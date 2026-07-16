@@ -1,6 +1,6 @@
 //! # Schema Migrations Framework
 //!
-//! Version-gated, idempotent migration runner for LearnForge's SQLite database.
+//! Version-gated, idempotent migration runner for SkillCoco's SQLite database.
 //!
 //! ## How to add a new migration
 //!

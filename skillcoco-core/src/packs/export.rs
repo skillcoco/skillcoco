@@ -290,7 +290,7 @@ mod tests {
             slug: "lab-02".to_string(),
             title: "Lab 2".to_string(),
             requires_docker: true,
-            image: Some("docker.io/learnforge/lab:latest".to_string()),
+            image: Some("docker.io/skillcoco/lab:latest".to_string()),
             steps: vec![],
         };
 
@@ -302,7 +302,7 @@ mod tests {
 
         let json_some = serde_json::to_string(&lab_some).expect("serialize Some lab");
         assert!(
-            json_some.contains("\"image\":\"docker.io/learnforge/lab:latest\""),
+            json_some.contains("\"image\":\"docker.io/skillcoco/lab:latest\""),
             "image: Some(str) must serialize as string; got: {json_some}"
         );
 
@@ -316,7 +316,7 @@ mod tests {
             serde_json::from_str(&json_some).expect("deserialize Some lab");
         assert_eq!(
             back_some.image.as_deref(),
-            Some("docker.io/learnforge/lab:latest")
+            Some("docker.io/skillcoco/lab:latest")
         );
     }
 

@@ -16,7 +16,7 @@ maintenance since 2026-07-10.
 
 ## The contract between the products
 
-**Pack schema compatibility** (`learnforge-core/topic-packs/pack-schema.json`).
+**Pack schema compatibility** (`skillcoco-core/topic-packs/pack-schema.json`).
 Studio exports licensed course packs; this app imports them. Any schema
 change here must keep externally produced packs (including
 `licensed:{pack_id}|{licensor}` provenance) importable. That is the only

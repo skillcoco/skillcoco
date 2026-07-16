@@ -111,7 +111,7 @@ export async function setTopicPackEnabled(
   return invoke("set_topic_pack_enabled", { request });
 }
 
-/// Re-scan `~/.learnforge/skills/` — Q6 skills-only (bundled packs are
+/// Re-scan `~/.skillcoco/skills/` — Q6 skills-only (bundled packs are
 /// compile-time frozen). Wave 3 Settings "Reload" button calls this.
 export async function reloadSkills(): Promise<void> {
   return invoke("reload_skills");
