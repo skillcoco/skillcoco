@@ -160,9 +160,9 @@ export function ConceptualQA({ exercise, onComplete }: ConceptualQAProps) {
 
           {/* Misconceptions */}
           {result.misconceptions.length > 0 && (
-            <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-4">
+            <div className="rounded-lg border border-warning/30 bg-warning/10 p-4">
               <div className="mb-2 flex items-center gap-2">
-                <AlertTriangle size={16} className="text-orange-500" />
+                <AlertTriangle size={16} className="text-warning" />
                 <h4 className="text-sm font-semibold text-foreground">Misconceptions to Address</h4>
               </div>
               <ul className="ml-5 list-disc space-y-1 text-sm text-foreground/80">

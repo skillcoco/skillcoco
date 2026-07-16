@@ -1012,6 +1012,41 @@ export function Settings() {
           )}
         </div>
       </section>
+
+      {/* ── About / SkillCoco family ── */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold text-foreground">About</h2>
+
+        <div className="glass rounded-xl p-5">
+          <div className="flex items-start gap-3">
+            <img src="/coco.svg" alt="" aria-hidden="true" className="h-10 w-10 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-foreground">
+                Skill<span className="text-primary">Coco</span>
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  open-source core
+                </span>
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The MIT-licensed adaptive learning engine, pack format, terminal
+                labs, and BYOK AI tutor. SkillCoco Pro, Hub, and Studio build a
+                richer lab environment, certificates, and authoring on top of it.
+              </p>
+              <button
+                onClick={() =>
+                  import("@tauri-apps/plugin-shell")
+                    .then(({ open }) => open("https://skillcoco.com"))
+                    .catch(() => window.open("https://skillcoco.com", "_blank"))
+                }
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+              >
+                Explore the SkillCoco family
+                <ExternalLink size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

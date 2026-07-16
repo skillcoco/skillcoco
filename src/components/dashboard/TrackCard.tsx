@@ -129,7 +129,7 @@ export function TrackCard({
             <div>
               <div className="flex items-center justify-center gap-0.5 text-sm font-semibold text-foreground">
                 {streakDays}
-                <Flame size={12} className="text-orange-400" />
+                <Flame size={12} className="text-accent" />
               </div>
               <div className="text-[10px] text-muted-foreground">Streak</div>
             </div>

@@ -8,7 +8,7 @@ export function BottomBar() {
     <div className="flex h-10 items-center justify-between border-t border-border bg-card px-6 text-xs text-muted-foreground">
       <div className="flex items-center gap-4">
         <span className="flex items-center gap-1.5">
-          <Flame size={14} className="text-orange-500" />
+          <Flame size={14} className="text-accent" />
           <span>0 day streak</span>
         </span>
         <span className="flex items-center gap-1.5">

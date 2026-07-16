@@ -1,0 +1,37 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SkillCoco coconut mascot">
+  <defs>
+    <radialGradient id="husk" cx="42%" cy="34%" r="72%">
+      <stop offset="0%" stop-color="#A5673A"/>
+      <stop offset="55%" stop-color="#8A4F26"/>
+      <stop offset="100%" stop-color="#5E3417"/>
+    </radialGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6FC46A"/>
+      <stop offset="100%" stop-color="#3F9B44"/>
+    </linearGradient>
+  </defs>
+
+  <!-- sprout: a learning shoot growing from the coconut -->
+  <path d="M256 168 C256 120 256 96 256 78" stroke="#4A9E48" stroke-width="14" stroke-linecap="round"/>
+  <path d="M256 120 C214 118 176 92 168 54 C214 46 252 74 256 116 Z" fill="url(#leaf)"/>
+  <path d="M256 104 C298 100 336 70 346 34 C300 28 262 58 256 100 Z" fill="url(#leaf)"/>
+
+  <!-- coconut body -->
+  <circle cx="256" cy="316" r="156" fill="url(#husk)"/>
+  <!-- soft top highlight -->
+  <ellipse cx="212" cy="250" rx="70" ry="46" fill="#FFFFFF" opacity="0.14"/>
+  <!-- husk fiber strokes -->
+  <path d="M150 250 C176 300 176 372 138 420" stroke="#4E2C13" stroke-width="8" stroke-linecap="round" opacity="0.35" fill="none"/>
+  <path d="M362 250 C336 300 336 372 374 420" stroke="#4E2C13" stroke-width="8" stroke-linecap="round" opacity="0.35" fill="none"/>
+
+  <!-- mango cheeks -->
+  <circle cx="188" cy="352" r="24" fill="#F2942A" opacity="0.55"/>
+  <circle cx="324" cy="352" r="24" fill="#F2942A" opacity="0.55"/>
+
+  <!-- friendly face (the coconut's three pores as eyes + smile) -->
+  <circle cx="214" cy="312" r="15" fill="#2B1A0E"/>
+  <circle cx="298" cy="312" r="15" fill="#2B1A0E"/>
+  <circle cx="219" cy="307" r="5" fill="#FBF3E4"/>
+  <circle cx="303" cy="307" r="5" fill="#FBF3E4"/>
+  <path d="M212 356 C236 380 276 380 300 356" stroke="#2B1A0E" stroke-width="12" stroke-linecap="round" fill="none"/>
+</svg>

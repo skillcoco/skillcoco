@@ -200,7 +200,7 @@ export function ReviewSession() {
               <div className="mt-6 grid grid-cols-4 gap-2">
                 {([
                   { quality: 1 as const, label: "Again", color: "text-red-500", desc: "Forgot" },
-                  { quality: 3 as const, label: "Hard", color: "text-orange-500", desc: "Struggled" },
+                  { quality: 3 as const, label: "Hard", color: "text-warning", desc: "Struggled" },
                   { quality: 4 as const, label: "Good", color: "text-emerald-500", desc: "Recalled" },
                   { quality: 5 as const, label: "Easy", color: "text-blue-500", desc: "Instant" },
                 ]).map(({ quality, label, color, desc }) => (

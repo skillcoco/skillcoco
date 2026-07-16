@@ -32,13 +32,21 @@ the adaptive learning engine (BKT + SM-2 + microlearning), the open pack format,
 lessons, video, quizzes, gamification, and the AI tutor (bring your own key or run
 local models) — is MIT licensed and always will be.
 
-Commercial products by Initcron Systems build on top of it:
+Commercial products by Initcron Systems build on top of it — explore them at
+**[skillcoco.com](https://skillcoco.com)**:
 
-- **SkillCoco Pro** — the integrated learning environment: embedded terminal + IDE,
-  validated and graded hands-on labs, interactive simulators, exam simulators.
-- **SkillCoco Hub** — course licensing, verifiable certificates, progress sync,
-  and cohort reporting for educators and corporate teams.
-- **SkillCoco Studio** — course authoring and AI enrichment for educators.
+- **[SkillCoco Pro](https://skillcoco.com)** — the integrated learning environment:
+  embedded terminal + IDE, validated and graded hands-on labs, interactive
+  simulators, and timed exam simulators.
+- **[SkillCoco Hub](https://skillcoco.com)** — course licensing, verifiable
+  certificates, progress sync, and cohort reporting for educators and corporate teams.
+- **[SkillCoco Studio](https://skillcoco.com)** — course authoring and AI enrichment
+  for educators.
+
+The open-source core you're looking at ships the full adaptive engine **and
+buildable, runnable terminal labs** — you can author and take hands-on labs and
+courses (Linux, Docker, Kubernetes, anything) entirely in the OSS app. Pro layers
+on the richer graded lab environment, simulators, and exam mode.
 
 Contributions here improve the open core. See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
@@ -71,7 +79,7 @@ Contributions here improve the open core. See [CONTRIBUTING.md](./CONTRIBUTING.m
 
 SkillCoco implements Corbett & Anderson's 1994 **Bayesian Knowledge Tracing** algorithm — the same model that powers Carnegie Mellon's Cognitive Tutors. Every quiz answer and flashcard response updates a per-skill posterior probability of mastery. Modules unlock only when the learner *demonstrates* understanding. There is no "did they watch the video?" proxy.
 
-Source: [`src-tauri/src/learning/adaptive.rs`](src-tauri/src/learning/adaptive.rs)
+Source: [`skillcoco-core/src/bkt.rs`](skillcoco-core/src/bkt.rs)
 
 ### 2. AI-judged hands-on lab steps with rubrics
 
@@ -81,7 +89,7 @@ Terminal labs are evaluated in three layers: regex/exit-code checks (instant, de
 
 When a module is mastered, **SM-2 flashcard reviews** are auto-generated and scheduled at scientifically-optimal intervals based on Wozniak's 1990 forgetting-curve model. Reviews are not optional: the dashboard surfaces the SR queue alongside new content. Mastery doesn't mean "learned once."
 
-Source: [`src-tauri/src/learning/spaced_repetition.rs`](src-tauri/src/learning/spaced_repetition.rs)
+Source: [`skillcoco-core/src/sm2.rs`](skillcoco-core/src/sm2.rs)
 
 ### 4. Local-first desktop, offline-capable
 
@@ -114,7 +122,7 @@ pnpm tauri dev
 
 ## Architecture
 
-SkillCoco is a Tauri 2 desktop application: a Rust backend (`src-tauri`) communicating with a React 18 + Vite frontend over a type-checked camelCase IPC contract. The Rust backend embeds SQLite (via `rusqlite`, WAL mode), RuVector (in-process vector + graph DB), and all learning-science algorithms. The frontend renders the adaptive UI, the embedded PTY terminal (xterm.js v5 + `portable-pty`), and the AI Tutor sidebar. All state transitions are event-sourced through versioned, idempotent migrations (`v001`–`v006`). Docker is used for isolated lab sandboxes when available, with a host-shell fallback.
+SkillCoco is a Tauri 2 desktop application: a Rust backend (`src-tauri`) communicating with a React 18 + Vite frontend over a type-checked camelCase IPC contract. The Rust backend embeds SQLite (via `rusqlite`, WAL mode), RuVector (in-process vector + graph DB), and all learning-science algorithms. The frontend renders the adaptive UI, the embedded PTY terminal (xterm.js v5 + `portable-pty`), and the AI Tutor sidebar. All state transitions are event-sourced through versioned, idempotent migrations (`v001`–`v016`). Docker is used for isolated lab sandboxes when available, with a host-shell fallback.
 
 ---
 
@@ -124,10 +132,9 @@ All code in this repository is MIT licensed — the adaptive engine, the pack
 format, and the desktop app. See the [Open core](#open-core) section above for
 how this repository relates to the commercial SkillCoco products.
 
-The core Rust crate (currently named `skillcoco-core` in code; renaming to
-`skillcoco-core` before its first crates.io publish) carries the learning-science
-algorithms and pack format. The backend exposes a `SkillCocoPlugin` trait for
-community extensions (backend-only internal seam; no API-stability promise yet).
+The core Rust crate `skillcoco-core` carries the learning-science algorithms and
+pack format. The backend exposes a `SkillCocoPlugin` trait for community extensions
+(backend-only internal seam; no API-stability promise yet).
 
 See [`LICENSING.md`](LICENSING.md) for the license summary.
 

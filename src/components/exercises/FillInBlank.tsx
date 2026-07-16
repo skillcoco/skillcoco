@@ -92,7 +92,7 @@ export function FillInBlank({ exercise, onComplete }: FillInBlankProps) {
         <div className="glass rounded-lg p-5">
           <p className="text-sm leading-7 text-foreground/90">{exercise.prompt}</p>
         </div>
-        <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-4 text-sm">
+        <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">
           <p className="font-medium text-foreground">No blanks were generated for this exercise.</p>
           <p className="mt-1 text-muted-foreground">
             The AI didn't produce a usable fill-in-the-blank template. You can
@@ -198,14 +198,14 @@ export function FillInBlank({ exercise, onComplete }: FillInBlankProps) {
             correctCount === totalBlanks
               ? "border-green-500/30 bg-green-500/10"
               : correctCount > 0
-                ? "border-orange-500/30 bg-orange-500/10"
+                ? "border-warning/30 bg-warning/10"
                 : "border-red-500/30 bg-red-500/10"
           )}
         >
           {correctCount === totalBlanks ? (
             <CheckCircle2 size={20} className="text-green-500" />
           ) : (
-            <XCircle size={20} className={correctCount > 0 ? "text-orange-500" : "text-red-500"} />
+            <XCircle size={20} className={correctCount > 0 ? "text-warning" : "text-red-500"} />
           )}
           <p className="text-sm font-medium text-foreground">
             {correctCount} of {totalBlanks} correct

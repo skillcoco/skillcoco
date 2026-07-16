@@ -229,7 +229,7 @@ function ModuleNavItem({
           "mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
           isActive && "bg-primary text-primary-foreground",
           !isActive && row.status === "completed" && "bg-green-500/20 text-green-700 dark:text-green-400",
-          !isActive && row.status === "in_progress" && "bg-orange-500/20 text-orange-700 dark:text-orange-400",
+          !isActive && row.status === "in_progress" && "bg-accent/20 text-accent",
           !isActive && row.status === "available" && "bg-secondary text-muted-foreground",
           !isActive && isLocked && "bg-secondary/50 text-muted-foreground/50"
         )}

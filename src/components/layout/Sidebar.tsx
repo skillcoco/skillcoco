@@ -7,7 +7,6 @@ import {
   Sun,
   Moon,
   ChevronLeft,
-  BookOpen,
 } from "lucide-react";
 import { useAppStore } from "@/stores/useAppStore";
 import { useLearningStore } from "@/stores/useLearningStore";
@@ -38,9 +37,9 @@ export function Sidebar() {
       <div className="flex h-14 items-center justify-between px-4">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <BookOpen size={20} className="text-primary" />
+            <img src="/coco.svg" alt="" aria-hidden="true" className="h-7 w-7" />
             <span className="text-lg font-bold text-foreground">
-              Learn<span className="text-primary">Forge</span>
+              Skill<span className="text-primary">Coco</span>
             </span>
           </div>
         )}
@@ -87,7 +86,7 @@ export function Sidebar() {
           {({ isActive }) => (
             <>
               {isActive && (
-                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-primary" />
               )}
               <LayoutDashboard size={18} />
               {!collapsed && <span>Dashboard</span>}
@@ -110,21 +109,21 @@ export function Sidebar() {
           {({ isActive }) => (
             <>
               {isActive && (
-                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-primary" />
               )}
               <RotateCcw size={18} />
               {!collapsed && (
                 <span className="flex-1">
                   Review
                   {dueCount > 0 && (
-                    <span className="ml-2 inline-flex items-center rounded-full bg-orange-500/20 px-1.5 py-0.5 text-[10px] font-medium text-orange-400">
+                    <span className="ml-2 inline-flex items-center rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                       {dueCount} due
                     </span>
                   )}
                 </span>
               )}
               {collapsed && dueCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white">
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-accent-foreground">
                   {dueCount > 99 ? "99" : dueCount}
                 </span>
               )}
@@ -147,7 +146,7 @@ export function Sidebar() {
           {({ isActive }) => (
             <>
               {isActive && (
-                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-primary" />
               )}
               <Library size={18} />
               {!collapsed && <span>Library</span>}
@@ -255,7 +254,7 @@ export function Sidebar() {
           {({ isActive }) => (
             <>
               {isActive && (
-                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-orange-500" />
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-primary" />
               )}
               <Settings size={18} />
               {!collapsed && <span>Settings</span>}

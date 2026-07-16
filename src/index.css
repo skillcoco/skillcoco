@@ -4,38 +4,38 @@
 
 @layer base {
   :root {
-    /* -- Light theme (matches soft gray/white direction) -- */
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 25 95% 53%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
+    /* -- SkillCoco "coco" light theme — coconut cream + cocoa brown + mango -- */
+    --background: 40 43% 96%;
+    --foreground: 24 45% 14%;
+    --card: 40 55% 99%;
+    --card-foreground: 24 45% 14%;
+    --popover: 40 55% 99%;
+    --popover-foreground: 24 45% 14%;
+    --primary: 22 58% 40%;
+    --primary-foreground: 40 44% 97%;
+    --secondary: 34 45% 90%;
+    --secondary-foreground: 24 40% 20%;
+    --muted: 36 33% 91%;
+    --muted-foreground: 26 20% 40%;
+    --accent: 32 90% 55%;
+    --accent-foreground: 24 50% 15%;
+    --destructive: 6 75% 52%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 25 95% 53%;
-    --radius: 0.5rem;
+    --border: 34 30% 84%;
+    --input: 34 30% 84%;
+    --ring: 32 90% 55%;
+    --radius: 0.75rem;
 
     /* Sidebar */
-    --sidebar: 210 40% 98%;
-    --sidebar-foreground: 222 47% 11%;
-    --sidebar-accent: 210 40% 94%;
+    --sidebar: 38 40% 95%;
+    --sidebar-foreground: 24 45% 14%;
+    --sidebar-accent: 34 35% 88%;
 
-    /* Glass effects - light */
-    --glass-bg: rgba(255, 255, 255, 0.60);
-    --glass-border: rgba(255, 255, 255, 0.40);
+    /* Glass effects - light (warm cream tint) */
+    --glass-bg: rgba(255, 251, 243, 0.62);
+    --glass-border: rgba(255, 245, 230, 0.50);
     --glass-blur: 12px;
-    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+    --glass-shadow: 0 8px 32px rgba(74, 45, 20, 0.08);
 
     /* Track accent colors */
     --track-kubernetes: 217 91% 60%;
@@ -43,44 +43,44 @@
     --track-go: 187 72% 50%;
     --track-python: 45 93% 58%;
 
-    /* Status colors */
-    --success: 160 84% 39%;
-    --warning: 38 92% 50%;
-    --info: 217 91% 60%;
+    /* Status colors — palm green / mango amber / coconut-water teal */
+    --success: 145 50% 38%;
+    --warning: 36 92% 48%;
+    --info: 182 52% 40%;
   }
 
   .dark {
-    /* -- Dark theme (deep charcoal + warm accent) -- */
-    --background: 235 35% 13%;
-    --foreground: 210 40% 98%;
-    --card: 232 33% 12%;
-    --card-foreground: 210 40% 98%;
-    --popover: 232 33% 12%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 25 95% 53%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 230 25% 18%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 230 25% 18%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 230 25% 18%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 230 25% 20%;
-    --input: 230 25% 20%;
-    --ring: 25 95% 53%;
+    /* -- SkillCoco "coco" dark theme — espresso + caramel + mango -- */
+    --background: 24 30% 9%;
+    --foreground: 38 38% 91%;
+    --card: 24 26% 12%;
+    --card-foreground: 38 38% 91%;
+    --popover: 24 26% 12%;
+    --popover-foreground: 38 38% 91%;
+    --primary: 28 68% 55%;
+    --primary-foreground: 24 45% 12%;
+    --secondary: 26 20% 18%;
+    --secondary-foreground: 38 38% 91%;
+    --muted: 26 18% 18%;
+    --muted-foreground: 34 22% 66%;
+    --accent: 34 90% 58%;
+    --accent-foreground: 24 50% 12%;
+    --destructive: 6 60% 46%;
+    --destructive-foreground: 38 38% 92%;
+    --border: 26 18% 20%;
+    --input: 26 18% 20%;
+    --ring: 34 90% 58%;
 
     /* Sidebar */
-    --sidebar: 235 35% 11%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-accent: 230 25% 20%;
+    --sidebar: 24 30% 8%;
+    --sidebar-foreground: 38 38% 91%;
+    --sidebar-accent: 26 20% 18%;
 
-    /* Glass effects - dark */
-    --glass-bg: rgba(255, 255, 255, 0.05);
-    --glass-border: rgba(255, 255, 255, 0.08);
+    /* Glass effects - dark (warm espresso tint) */
+    --glass-bg: rgba(40, 28, 18, 0.50);
+    --glass-border: rgba(255, 235, 200, 0.08);
     --glass-blur: 12px;
-    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.30);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 
     /* Track accent colors (same across themes) */
     --track-kubernetes: 217 91% 60%;
@@ -89,9 +89,9 @@
     --track-python: 45 93% 58%;
 
     /* Status colors */
-    --success: 160 84% 39%;
-    --warning: 38 92% 50%;
-    --info: 217 91% 60%;
+    --success: 145 42% 46%;
+    --warning: 36 88% 55%;
+    --info: 182 48% 50%;
   }
 }
 
