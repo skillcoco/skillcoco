@@ -1,16 +1,13 @@
 // Phase 16 Plan 02 Task 3 — Library page (LIB-01/LIB-02/LIB-03/LIB-04).
 //
-// Unifies owned/imported packs, bundled starter packs, and the redeem entry
-// point into one /library sibling route (D-02 — Dashboard stays default).
+// Unifies owned/imported packs, bundled starter packs, and course import
+// into one /library sibling route (D-02 — Dashboard stays default).
 // Layout order (16-UI-SPEC.md): page header -> "Your packs" (header row +
 // grid/empty-state, active-first per D-06) -> "Starter packs" (grid) ->
-// "Redeem a license key" (verbatim RedeemLicenseFlow re-mount, D-04).
-//
-// 16-03 owns wiring LibraryImportSection below the Redeem section — see the
-// marked mount point at the bottom of this file.
+// "Import a course file".
 
 import { useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { useLearningStore } from "@/stores/useLearningStore";
 import { useLibraryStore } from "@/stores/useLibraryStore";
@@ -18,10 +15,8 @@ import { LibraryPackCard } from "@/components/library/LibraryPackCard";
 import { StarterPackCard } from "@/components/library/StarterPackCard";
 import { LibraryEmptyState } from "@/components/library/LibraryEmptyState";
 import { LibraryImportSection } from "@/components/library/LibraryImportSection";
-import { RedeemLicenseFlow } from "@/components/RedeemLicenseFlow";
 
 export function Library() {
-  const navigate = useNavigate();
   const tracks = useLearningStore((s) => s.tracks);
   const loadTracks = useLearningStore((s) => s.loadTracks);
   const starterPacks = useLibraryStore((s) => s.starterPacks);
@@ -49,8 +44,7 @@ export function Library() {
       <div>
         <h1 className="text-3xl font-bold text-foreground">Library</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage the courses you own, redeem a license, or pick up something
-          new.
+          Manage the courses you own or pick up something new.
         </p>
       </div>
 
@@ -102,18 +96,6 @@ export function Library() {
             ))}
           </div>
         )}
-      </div>
-
-      {/* Redeem a license key — LIB-03 (redeem half), D-04 verbatim re-mount */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">
-          Redeem a license key
-        </h2>
-        <div className="glass rounded-xl p-5">
-          <RedeemLicenseFlow
-            onImported={(trackId) => navigate(`/track/${trackId}`)}
-          />
-        </div>
       </div>
 
       {/* Import a course file — LIB-03 (import-file half), relocated from

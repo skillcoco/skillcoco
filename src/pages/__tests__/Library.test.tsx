@@ -2,8 +2,7 @@
 // D-01/D-02/D-04/D-06/D-08).
 //
 // Assembles: page header -> "Your packs" (header row + grid/empty-state,
-// active-first) -> "Starter packs" (grid) -> "Redeem a license key"
-// (verbatim RedeemLicenseFlow re-mount, D-04).
+// active-first) -> "Starter packs" (grid) -> "Import a course file".
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -38,10 +37,6 @@ vi.mock("@/stores/useLibraryStore", () => ({
     const state = { ...mockLibraryState, loadStarterPacks: mockLoadStarterPacks };
     return typeof selector === "function" ? selector(state) : state;
   }),
-}));
-
-vi.mock("@/components/RedeemLicenseFlow", () => ({
-  RedeemLicenseFlow: () => <div data-testid="redeem-license-flow-stub" />,
 }));
 
 vi.mock("@/components/library/LibraryPackCard", () => ({
@@ -99,7 +94,7 @@ describe("Library — Phase 16 Plan 02 Task 3", () => {
     expect(screen.getByRole("heading", { name: "Library" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Manage the courses you own, redeem a license, or pick up something new.",
+        "Manage the courses you own or pick up something new.",
       ),
     ).toBeInTheDocument();
   });
@@ -161,14 +156,6 @@ describe("Library — Phase 16 Plan 02 Task 3", () => {
   it("renders an empty message when load finished with zero starter packs", () => {
     renderLibrary();
     expect(screen.getByText(/No starter packs available/i)).toBeInTheDocument();
-  });
-
-  it("re-mounts RedeemLicenseFlow under a Redeem heading (D-04)", () => {
-    renderLibrary();
-    expect(screen.getByTestId("redeem-license-flow-stub")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Redeem a license key" }),
-    ).toBeInTheDocument();
   });
 
   it("shows a New Track header action linking to /onboarding (D-01)", () => {

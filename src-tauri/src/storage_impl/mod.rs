@@ -23,10 +23,6 @@
 //!   (Phase 7 Wave 8 — eighth application of the per-module storage-trait
 //!   recipe). `track_mastery_aggregate` method body delegates to the
 //!   [`threshold`] free fn (Wave 4 seam closed).
-//! - [`entitlements`] — `SqliteEntitlementStore<'a>(&'a Connection)`
-//!   (Phase 15-01/15-02 — tenth application). Plain inherent-impl (no
-//!   `learnforge-core` trait — entitlements is Rust-side only); D-05 CRUD
-//!   over the `entitlements` table.
 //!
 //! All adapters use the local-newtype pattern to satisfy Rust's orphan rule
 //! (E0117) — see each module's "Orphan-rule note" for details.
@@ -37,7 +33,6 @@
 pub mod achievements;
 pub mod bkt;
 pub mod blocks;
-pub mod entitlements;
 pub mod microlearning;
 pub mod packs;
 pub mod signing;

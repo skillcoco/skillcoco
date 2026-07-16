@@ -4,8 +4,8 @@
 // LibraryPackCard but lighter: "Free" pill (secondary, non-accent per the
 // accent-reservation rule), single Start button that routes through
 // startStarterPack (16-01's unchanged import gate) and navigates into the
-// new TrackView on success. No progress bar, no attribution — starter packs
-// have no entitlement.
+// new TrackView on success. No progress bar — starter packs are bundled
+// content, imported locally.
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";

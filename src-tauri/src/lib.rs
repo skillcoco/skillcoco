@@ -3,9 +3,6 @@ mod ai;
 pub mod auth;
 pub mod commands;
 pub mod db;
-// Phase 15 (Entitlement & Redeem) — license-key redeem, buyer-stamped pack
-// download, and local entitlement caching. See entitlements/mod.rs.
-pub mod entitlements;
 pub mod labs;
 // Phase 18 Plan 4 — shared PDF text-rendering helper (`push_line`) used by
 // the certificate renderer (achievements::artifacts). Extracted so the
@@ -395,13 +392,6 @@ pub fn run() {
             // Bundled starter packs (Phase 16 — Plan 01, LIB-04/LIB-02, D-12/D-13)
             commands::course_io::list_starter_packs,
             commands::course_io::start_starter_pack,
-            // Entitlement redeem + buyer-stamped pack download (Phase 15 — Plan 04)
-            commands::entitlements::redeem_license,
-            commands::entitlements::download_and_import_pack,
-            // Buyer attribution, local-only read (Phase 15 — Plan 06 / D-08)
-            commands::entitlements::get_entitlement_for_track,
-            // Stranded-purchase local recovery (Phase 15 — code review CR-01)
-            commands::entitlements::recover_redeemed_pack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

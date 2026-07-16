@@ -1,23 +1,14 @@
 import { useState } from "react";
 import { FolderOpen, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
-import {
-  importCourse,
-  openFileDialog,
-  getEntitlementForTrack,
-} from "@/lib/tauri-commands";
-import { BuyerAttributionLine } from "@/components/BuyerAttributionLine";
+import { importCourse, openFileDialog } from "@/lib/tauri-commands";
 import { useLearningStore } from "@/stores/useLearningStore";
 
 // ── Phase 16 Plan 03 Task 1 — LibraryImportSection ──
 //
-// Relocates the SettingsCourseImportSection body (Phase 12 Plan 04, extended
-// by Phase 15 Plan 06 D-08 attribution) into a compact inline row mounted in
-// Library.tsx (LIB-03 — Library hosts the redeem-key and import-file entry
-// points). Same import_course gate, same call sequence (openFileDialog then
-// importCourse then getEntitlementForTrack for attribution, failure caught
-// and ignored). Attribution renders via the shared BuyerAttributionLine
-// component (D-07 — extend, don't duplicate) instead of re-inlining the
-// "Licensed to..." JSX.
+// Relocates the SettingsCourseImportSection body (Phase 12 Plan 04) into a
+// compact inline row mounted in Library.tsx (LIB-03 — Library hosts the
+// import-file entry point). Same import_course gate, same call sequence
+// (openFileDialog then importCourse).
 
 interface ImportState {
   status: "idle" | "loading" | "success" | "error";
@@ -30,9 +21,6 @@ interface ImportState {
   verified?: boolean;
   /** Publisher name from the verified issuer cert, when `verified` is `true`. */
   issuerName?: string | null;
-  /** Buyer-attribution fields, resolved via a local-only entitlement lookup. */
-  buyerName?: string;
-  orderId?: string;
 }
 
 export function LibraryImportSection() {
@@ -84,21 +72,6 @@ export function LibraryImportSection() {
       // navigating away and back. Fire-and-forget: a failed refresh must not
       // affect the already-successful import feedback.
       loadTracks().catch(() => {});
-
-      // Attribution is a display-only enhancement — a failed lookup must
-      // not affect the already-successful import feedback.
-      try {
-        const entitlement = await getEntitlementForTrack(result.trackId);
-        if (entitlement) {
-          setState((prev) => ({
-            ...prev,
-            buyerName: entitlement.buyerName,
-            orderId: entitlement.orderId,
-          }));
-        }
-      } catch {
-        // ignored — see comment above
-      }
     } catch (err) {
       setState({
         status: "error",
@@ -134,7 +107,6 @@ export function LibraryImportSection() {
                 Verified publisher: <span className="font-medium">{state.issuerName}</span>
               </p>
             )}
-            <BuyerAttributionLine buyerName={state.buyerName} orderId={state.orderId} />
             {state.warnings && state.warnings.length > 0 && (
               <div className="mt-2 space-y-1">
                 {state.warnings.map((w, i) => (

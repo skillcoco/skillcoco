@@ -4,9 +4,6 @@
 // top stripe via getTrackColor, .glass surface, p-5, progress bar) but:
 //   - D-11 — pack removal is out of Phase 16 scope, so unlike TrackCard
 //     (Dashboard) this card renders no destructive/removal affordance.
-//   - Renders BuyerAttributionLine fed by getEntitlementForTrack(track.id),
-//     fetched in a mount effect, catch-and-ignore (display-only, D-07 — a
-//     failed/absent entitlement must never fail the card).
 //   - Labels by actual status (WR-06): active/onboarding -> Continue (same
 //     filter Dashboard.tsx uses for "in progress"), completed -> Review,
 //     paused/archived -> Resume. Every import creates a status='active'
@@ -14,13 +11,10 @@
 //     action is always a plain navigate into the existing TrackView (D-10,
 //     one track per pack), which cannot fail: no spinner/error machinery.
 
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BookOpen } from "lucide-react";
 import type { LearningTrack } from "@/types";
-import { getEntitlementForTrack } from "@/lib/tauri-commands";
 import { getTrackColor } from "@/lib/track-colors";
-import { BuyerAttributionLine } from "@/components/BuyerAttributionLine";
 
 interface LibraryPackCardProps {
   track: LearningTrack;
@@ -28,31 +22,9 @@ interface LibraryPackCardProps {
 
 export function LibraryPackCard({ track }: LibraryPackCardProps) {
   const navigate = useNavigate();
-  const [attribution, setAttribution] = useState<{
-    buyerName?: string;
-    orderId?: string;
-  }>({});
 
   const isActive = track.status === "active" || track.status === "onboarding";
   const color = getTrackColor(track.topic);
-
-  useEffect(() => {
-    let cancelled = false;
-    getEntitlementForTrack(track.id)
-      .then((entitlement) => {
-        if (cancelled || !entitlement) return;
-        setAttribution({
-          buyerName: entitlement.buyerName,
-          orderId: entitlement.orderId,
-        });
-      })
-      .catch(() => {
-        // Attribution is display-only — a failed lookup must never fail the card.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [track.id]);
 
   // WR-06 — the LearningTrack row already exists for every owned pack, so
   // the action is a plain client-side navigate (D-09/D-10). navigate()
@@ -78,11 +50,6 @@ export function LibraryPackCard({ track }: LibraryPackCardProps) {
         <p className="line-clamp-2 text-sm text-muted-foreground">
           {track.goal}
         </p>
-
-        <BuyerAttributionLine
-          buyerName={attribution.buyerName}
-          orderId={attribution.orderId}
-        />
 
         {isActive && (
           <div className="space-y-1.5">

@@ -31,12 +31,9 @@ import {
 import {
   listTopicPacksAdmin,
   exportCourse,
-  getEntitlementForTrack,
-  type EntitlementAttribution,
 } from "@/lib/tauri-commands";
 import { save } from "@tauri-apps/plugin-dialog";
 import { CertificationProgress } from "@/components/achievements/CertificationProgress";
-import { BuyerAttributionLine } from "@/components/BuyerAttributionLine";
 
 // ── D-16 / D-05 — mastery band helper ──
 //
@@ -508,30 +505,6 @@ export function TrackView() {
     if (trackId) selectTrack(trackId);
   }, [trackId]);
 
-  // Phase 15 Plan 06 (D-08) — buyer-attribution second line. Local-only IPC
-  // read (zero network — ENT-04 offline attribution); resolves the
-  // learning_paths.pack_id -> entitlements join independently of the
-  // generated_by_model packId parse (that parse only covers topic-pack:
-  // tracks, not redeemed/imported provenance). Omitted silently when null.
-  const [entitlement, setEntitlement] = useState<EntitlementAttribution | null>(null);
-  useEffect(() => {
-    if (!trackId) {
-      setEntitlement(null);
-      return;
-    }
-    let cancelled = false;
-    getEntitlementForTrack(trackId)
-      .then((result) => {
-        if (!cancelled) setEntitlement(result);
-      })
-      .catch(() => {
-        if (!cancelled) setEntitlement(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [trackId]);
-
   // Reset selection when track changes
   useEffect(() => {
     setSelectedModuleId(null);
@@ -727,20 +700,6 @@ export function TrackView() {
                 Verified{currentPath?.issuerName ? ` · ${currentPath.issuerName}` : ""}
               </span>
             )}
-            {/* Phase 15 Plan 06 (D-08) — buyer-attribution second line.
-                Renders ONLY when a local entitlement row exists for this
-                track (get_entitlement_for_track, zero network — ENT-04).
-                Phase 16 Plan 03 Task 4 (D-07) — refactored onto the shared
-                BuyerAttributionLine (third call site consolidation); copy/
-                data-testid preserved verbatim. mt-1 spacing (not part of the
-                shared component's locked className) preserved via wrapper. */}
-            <div className="mt-1">
-              <BuyerAttributionLine
-                buyerName={entitlement?.buyerName}
-                orderId={entitlement?.orderId}
-                testId="buyer-attribution"
-              />
-            </div>
           </div>
           <div className="flex items-center gap-3">
             {/* Phase 12 Plan 04 — Export course button (D-10 UI mirror).

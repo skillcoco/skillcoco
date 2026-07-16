@@ -7,7 +7,6 @@ import { SettingsTopicPacksSection } from "@/pages/SettingsTopicPacksSection";
 import { SettingsYouTubeSection } from "@/pages/SettingsYouTubeSection";
 import { SettingsVerifyCertSection } from "@/pages/SettingsVerifyCertSection";
 import { SettingsImportMovedNotice } from "@/pages/SettingsImportMovedNotice";
-import { SettingsRedeemLicenseSection } from "@/pages/SettingsRedeemLicenseSection";
 import {
   Shield,
   Key,
@@ -945,9 +944,6 @@ export function Settings() {
 
       {/* ── Course Import moved to Library (Phase 16 Plan 03 — D-03) ── */}
       <SettingsImportMovedNotice />
-
-      {/* ── Redeem License (Phase 15 Plan 05 — D-01/D-02) ── */}
-      <SettingsRedeemLicenseSection />
 
       {/* ── Preferences ── */}
       <section className="space-y-4">

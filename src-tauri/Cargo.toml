@@ -78,10 +78,6 @@ printpdf = { version = "0.9", features = ["images", "png"] }
 base64 = "0.22"
 hex = "0.4"
 rand = "0.8"
-# Phase 15 (Entitlement & Redeem, 15-02) — SHA-256 license-key fingerprint
-# (D-06). Previously only a transitive dep via learnforge-core; promoted to
-# direct so src-tauri/src/entitlements/fingerprint.rs can `use sha2::...`.
-sha2 = "0.10"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 

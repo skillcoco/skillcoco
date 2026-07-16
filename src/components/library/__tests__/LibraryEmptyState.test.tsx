@@ -2,7 +2,7 @@
 //
 // Renders only inside "Your packs" when zero owned tracks exist. py-12
 // centered block, muted BookOpen, heading + body, NO CTA buttons (guidance
-// copy points at Redeem/Starter sections instead of duplicating an
+// copy points at Import/Starter sections instead of duplicating an
 // onboarding hero).
 
 import { describe, it, expect } from "vitest";
@@ -15,7 +15,7 @@ describe("LibraryEmptyState — Phase 16 Plan 02 Task 2", () => {
     expect(screen.getByText("No packs yet")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Redeem a license key, import a course file, or pick a starter pack below to get going.",
+        "Import a course file, or pick a starter pack below to get going.",
       ),
     ).toBeInTheDocument();
   });

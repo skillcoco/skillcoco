@@ -1,28 +1,24 @@
 // Phase 16 Plan 03 Task 1 — LibraryImportSection (relocated import UI, LIB-03/D-03).
 //
-// Relocates the SettingsCourseImportSection import logic verbatim (openFileDialog
-// -> importCourse -> getEntitlementForTrack attribution, attribution failure
-// caught and ignored) into a compact inline-row presentation mounted in
-// Library.tsx. Attribution renders via the shared BuyerAttributionLine
-// component (D-07 — extend, don't duplicate).
+// Relocates the SettingsCourseImportSection import logic verbatim
+// (openFileDialog -> importCourse) into a compact inline-row presentation
+// mounted in Library.tsx.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ImportCourseResult } from "@/types/course-io";
 
-const { importCourseMock, openFileDialogMock, getEntitlementForTrackMock, loadTracksMock } =
+const { importCourseMock, openFileDialogMock, loadTracksMock } =
   vi.hoisted(() => ({
     importCourseMock: vi.fn(),
     openFileDialogMock: vi.fn(),
-    getEntitlementForTrackMock: vi.fn().mockResolvedValue(null),
     loadTracksMock: vi.fn().mockResolvedValue(undefined),
   }));
 
 vi.mock("@/lib/tauri-commands", () => ({
   importCourse: importCourseMock,
   openFileDialog: openFileDialogMock,
-  getEntitlementForTrack: getEntitlementForTrackMock,
 }));
 
 // Selector-aware store mock (mirrors Library.test.tsx's precedent).
@@ -50,7 +46,6 @@ function importResult(overrides: Partial<ImportCourseResult> = {}): ImportCourse
 beforeEach(() => {
   vi.clearAllMocks();
   openFileDialogMock.mockResolvedValue("/tmp/course.json");
-  getEntitlementForTrackMock.mockResolvedValue(null);
   loadTracksMock.mockResolvedValue(undefined);
 });
 
@@ -61,13 +56,8 @@ describe("LibraryImportSection — Phase 16 Plan 03 Task 1", () => {
     expect(screen.getByText("Import course file")).toBeInTheDocument();
   });
 
-  it("imports successfully and shows attribution via BuyerAttributionLine", async () => {
+  it("imports successfully and shows the success confirmation", async () => {
     importCourseMock.mockResolvedValue(importResult());
-    getEntitlementForTrackMock.mockResolvedValue({
-      issuerName: "Test Publisher",
-      buyerName: "Jane Buyer",
-      orderId: "ORD-77",
-    });
 
     render(<LibraryImportSection />);
     await userEvent.click(screen.getByTestId("import-course-button"));
@@ -75,10 +65,7 @@ describe("LibraryImportSection — Phase 16 Plan 03 Task 1", () => {
     await waitFor(() => {
       expect(screen.getByText(/course imported successfully/i)).toBeInTheDocument();
     });
-    await waitFor(() => {
-      expect(screen.getByText("Licensed to Jane Buyer · order #ORD-77")).toBeInTheDocument();
-    });
-    expect(getEntitlementForTrackMock).toHaveBeenCalledWith("trk-abc123");
+    expect(importCourseMock).toHaveBeenCalledWith({ filePath: "/tmp/course.json" });
   });
 
   it("cancelling the file dialog returns to idle with no error", async () => {

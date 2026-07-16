@@ -3,12 +3,11 @@
 // Owned-pack card: Continue (active/onboarding) / Review (completed) /
 // Resume (paused/archived) primary action — every import creates an
 // 'active' track (course_io.rs import_course_txn), so no "not-yet-started"
-// state exists (WR-06). Progress bar for active packs, BuyerAttributionLine
-// attribution (display-only, never fails the card), NO delete affordance
+// state exists (WR-06). Progress bar for active packs, NO delete affordance
 // (D-11 — pack removal out of scope this phase).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import type { LearningTrack } from "@/types";
@@ -25,11 +24,6 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
-vi.mock("@/lib/tauri-commands", () => ({
-  getEntitlementForTrack: vi.fn(),
-}));
-
-import { getEntitlementForTrack } from "@/lib/tauri-commands";
 import { LibraryPackCard } from "@/components/library/LibraryPackCard";
 
 // NOTE: track.status "active" AND "onboarding" both count as in-progress
@@ -64,7 +58,6 @@ function renderCard(track: LearningTrack) {
 describe("LibraryPackCard — Phase 16 Plan 02 Task 2", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getEntitlementForTrack).mockResolvedValue(null);
   });
 
   // WR-06 — labels match the actual status taxonomy: paused/archived tracks
@@ -108,28 +101,6 @@ describe("LibraryPackCard — Phase 16 Plan 02 Task 2", () => {
     const btn = await screen.findByRole("button", { name: "Resume Go Basics" });
     await user.click(btn);
     expect(mockNavigate).toHaveBeenCalledWith("/track/track-9");
-  });
-
-  it("renders BuyerAttributionLine when getEntitlementForTrack resolves an entitlement", async () => {
-    vi.mocked(getEntitlementForTrack).mockResolvedValue({
-      issuerName: "SODA",
-      buyerName: "Jane Doe",
-      orderId: "ORD-1",
-    });
-    renderCard(makeTrack({ status: "active" }));
-    expect(
-      await screen.findByText("Licensed to Jane Doe · order #ORD-1"),
-    ).toBeInTheDocument();
-  });
-
-  it("never fails the card when getEntitlementForTrack rejects", async () => {
-    vi.mocked(getEntitlementForTrack).mockRejectedValue(new Error("db locked"));
-    renderCard(makeTrack({ status: "active", topic: "Resilient Pack" }));
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "Continue Resilient Pack" }),
-      ).toBeInTheDocument();
-    });
   });
 
   it("has no delete affordance (D-11)", async () => {

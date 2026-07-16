@@ -120,10 +120,9 @@ mod tests {
             |row| row.get(0),
         ).unwrap();
         // v012 + v013 + v014 were added in Phase 11; v015 added in Phase 14 (14-06);
-        // v016 added in Phase 18 (18-01); v020 added in Phase 15 (15-02).
-        // v017/v018 were removed in the Phase 20 reports strip and v019 in the
-        // Phase 21 exam strip — schema_migrations has 17 rows after full apply
-        // (MAX version stays 20; the gaps are tolerated by the runner).
-        assert_eq!(count, 17, "exactly 17 rows in schema_migrations after idempotent double-apply (v017/v018 removed in reports strip, v019 removed in exam strip)");
+        // v016 added in Phase 18 (18-01). v017/v018 (reports strip), v019 (exam
+        // strip), and v020 (entitlements strip) were all removed — the chain is
+        // now a contiguous v001..v016, so schema_migrations has 16 rows.
+        assert_eq!(count, 16, "exactly 16 rows in schema_migrations after idempotent double-apply (contiguous v1..v16; v17/v18 reports, v19 exam, v20 entitlements removed)");
     }
 }
