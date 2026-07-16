@@ -7,8 +7,8 @@
 //! [`crate::packs::loader::PackSource`]: the enum and the trait share the
 //! identifier `PackSource` but live in distinct modules. Callers
 //! disambiguate via fully-qualified paths
-//! (`learnforge_core::packs::PackSource` for the enum,
-//! `learnforge_core::packs::loader::PackSource` for the trait).
+//! (`skillcoco_core::packs::PackSource` for the enum,
+//! `skillcoco_core::packs::loader::PackSource` for the trait).
 
 use serde::{Deserialize, Serialize};
 

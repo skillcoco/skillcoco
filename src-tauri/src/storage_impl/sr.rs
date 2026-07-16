@@ -1,5 +1,5 @@
 //! Wave 3 (Plan 07-03) — rusqlite-backed impl of
-//! [`learnforge_core::sm2::SrStore`].
+//! [`skillcoco_core::sm2::SrStore`].
 //!
 //! Reads and writes the `sr_cards` table. All SQL strings are lifted
 //! verbatim from the pre-Wave-3 `commands/learning.rs` and
@@ -8,7 +8,7 @@
 //!
 //! ## Orphan-rule note (consistent with Wave 2 / `storage_impl::bkt`)
 //!
-//! `SrStore` is foreign (from `learnforge_core`) and
+//! `SrStore` is foreign (from `skillcoco_core`) and
 //! `rusqlite::Connection` is foreign (from `rusqlite`), so a direct
 //! `impl SrStore for &Connection` would violate Rust's orphan rule
 //! (E0117). We satisfy the rule by introducing the local newtype
@@ -18,12 +18,12 @@
 //! ## Trust boundary (T-07-07)
 //!
 //! `rusqlite::Error` is stringified into `SrError::Db` here so
-//! `learnforge-core` never depends on rusqlite. `QueryReturnedNoRows` on
+//! `skillcoco-core` never depends on rusqlite. `QueryReturnedNoRows` on
 //! the single-card lookup is mapped to `SrError::NotFound` so callers can
 //! distinguish "no row" from "I/O failure" without leaking the rusqlite
 //! type.
 
-use learnforge_core::sm2::{SM2Result, SrCardRow, SrError, SrStore};
+use skillcoco_core::sm2::{SM2Result, SrCardRow, SrError, SrStore};
 use rusqlite::Connection;
 
 /// Rusqlite-backed [`SrStore`] adapter.

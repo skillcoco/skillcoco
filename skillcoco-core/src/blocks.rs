@@ -56,7 +56,7 @@ use serde::{Deserialize, Serialize};
 /// # Examples
 ///
 /// ```
-/// use learnforge_core::blocks::BlockType;
+/// use skillcoco_core::blocks::BlockType;
 /// let bt = BlockType::FlashCards;
 /// let json = serde_json::to_string(&bt).unwrap();
 /// assert_eq!(json, "\"flash_cards\"");
@@ -84,7 +84,7 @@ pub enum BlockType {
 /// # Examples
 ///
 /// ```
-/// use learnforge_core::blocks::BlockStatus;
+/// use skillcoco_core::blocks::BlockStatus;
 /// let st = BlockStatus::Ready;
 /// let json = serde_json::to_string(&st).unwrap();
 /// assert_eq!(json, "\"ready\"");
@@ -149,7 +149,7 @@ pub struct ModuleBlock {
 /// # Examples
 ///
 /// ```
-/// use learnforge_core::blocks::{BlockStatus, status_to_str};
+/// use skillcoco_core::blocks::{BlockStatus, status_to_str};
 /// assert_eq!(status_to_str(&BlockStatus::Ready), "ready");
 /// ```
 pub fn status_to_str(s: &BlockStatus) -> &'static str {
@@ -166,7 +166,7 @@ pub fn status_to_str(s: &BlockStatus) -> &'static str {
 /// # Examples
 ///
 /// ```
-/// use learnforge_core::blocks::{BlockType, block_type_to_str};
+/// use skillcoco_core::blocks::{BlockType, block_type_to_str};
 /// assert_eq!(block_type_to_str(&BlockType::FlashCards), "flash_cards");
 /// assert_eq!(block_type_to_str(&BlockType::Lab), "lab");
 /// ```

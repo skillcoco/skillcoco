@@ -208,7 +208,7 @@ fn test_full_pipeline_profile_to_review() {
     // SM-2 calculation (already wired in submit_review command)
     // Use repetitions=1 so new_interval = 6.0 (second review, quality=4)
     // Note: SM-2 with repetitions=0 gives interval=1.0 (first review, always 1 day)
-    let sm2 = learnforge_core::sm2::sm2_calculate(4, 1, 2.5, 1.0);
+    let sm2 = skillcoco_core::sm2::sm2_calculate(4, 1, 2.5, 1.0);
     db.conn
         .execute(
             "UPDATE sr_cards SET interval_days = ?1, ease_factor = ?2, repetitions = ?3, \

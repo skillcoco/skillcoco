@@ -27,7 +27,7 @@
 //! ## Example
 //!
 //! ```
-//! use learnforge_core::threshold::{TrackAggregate, levels_met, which_level_just_crossed};
+//! use skillcoco_core::threshold::{TrackAggregate, levels_met, which_level_just_crossed};
 //!
 //! let prev = TrackAggregate {
 //!     modules_total: 4,
@@ -57,7 +57,7 @@
 /// # Example
 ///
 /// ```
-/// use learnforge_core::threshold::TrackAggregate;
+/// use skillcoco_core::threshold::TrackAggregate;
 ///
 /// let agg = TrackAggregate {
 ///     modules_total: 10,
@@ -116,7 +116,7 @@ fn is_professional(agg: &TrackAggregate) -> bool {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::threshold::{TrackAggregate, which_level_just_crossed};
+/// use skillcoco_core::threshold::{TrackAggregate, which_level_just_crossed};
 ///
 /// let prev = TrackAggregate {
 ///     modules_total: 10, modules_mastered: 4, avg_mastery: 0.7,
@@ -153,7 +153,7 @@ pub fn which_level_just_crossed(
 /// # Example
 ///
 /// ```
-/// use learnforge_core::threshold::{TrackAggregate, levels_met};
+/// use skillcoco_core::threshold::{TrackAggregate, levels_met};
 ///
 /// let agg = TrackAggregate {
 ///     modules_total: 4, modules_mastered: 4, avg_mastery: 0.90,

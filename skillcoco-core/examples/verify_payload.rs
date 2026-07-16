@@ -12,12 +12,12 @@
 //! Run with:
 //!
 //! ```bash
-//! cargo run -p learnforge-core --example verify_payload
+//! cargo run -p skillcoco-core --example verify_payload
 //! ```
 
 use ed25519_dalek::{pkcs8::EncodePublicKey, SigningKey};
-use learnforge_core::canonical_json::canonical_json_bytes;
-use learnforge_core::signing::{public_key_fingerprint, sign_payload, verify_payload};
+use skillcoco_core::canonical_json::canonical_json_bytes;
+use skillcoco_core::signing::{public_key_fingerprint, sign_payload, verify_payload};
 use rand::rngs::OsRng;
 use serde_json::json;
 

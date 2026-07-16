@@ -26,9 +26,9 @@
 //! The **enum** [`model::PackSource`] and the **trait**
 //! [`loader::PackSource`] share the identifier. They live in distinct
 //! sub-modules and never conflict at the use site — callers reference the
-//! enum via `learnforge_core::packs::PackSource` (the top-level re-export
+//! enum via `skillcoco_core::packs::PackSource` (the top-level re-export
 //! below) and the trait via the fully-qualified
-//! `learnforge_core::packs::loader::PackSource`.
+//! `skillcoco_core::packs::loader::PackSource`.
 //!
 //! ## What stayed in src-tauri (Pitfall 7)
 //!
@@ -53,4 +53,4 @@ pub use registry::PackRegistry;
 // NB: the trait `PackSource` is intentionally NOT re-exported at this
 // level — it would shadow the enum `PackSource` (re-exported just above).
 // Callers reference the trait via its fully-qualified path
-// `learnforge_core::packs::loader::PackSource`.
+// `skillcoco_core::packs::loader::PackSource`.

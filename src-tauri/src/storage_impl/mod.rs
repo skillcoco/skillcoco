@@ -1,5 +1,5 @@
 //! Rusqlite-backed implementations of the per-module storage traits declared
-//! in `learnforge_core`.
+//! in `skillcoco_core`.
 //!
 //! Each algorithm crate module owns its own trait (A3 lock — `07-RESEARCH.md`),
 //! so the impls land in matching files here as the migration proceeds:
@@ -28,7 +28,7 @@
 //! (E0117) — see each module's "Orphan-rule note" for details.
 //!
 //! [`AchievementStore::track_mastery_aggregate`]:
-//!   learnforge_core::achievements::AchievementStore::track_mastery_aggregate
+//!   skillcoco_core::achievements::AchievementStore::track_mastery_aggregate
 
 pub mod achievements;
 pub mod bkt;

@@ -1,5 +1,5 @@
 //! Wave 2 (Plan 07-02) — rusqlite-backed impl of
-//! [`learnforge_core::bkt::BktStore`].
+//! [`skillcoco_core::bkt::BktStore`].
 //!
 //! Reads `mastery_level` from the `module_progress` table. SQL lifted
 //! verbatim from the prereq-check fragment in
@@ -9,7 +9,7 @@
 //! ## Orphan-rule note (Wave 2 deviation from PLAN.md verbatim)
 //!
 //! The plan specified `impl BktStore for &rusqlite::Connection` directly,
-//! but `BktStore` is foreign (from `learnforge_core`) and `Connection` is
+//! but `BktStore` is foreign (from `skillcoco_core`) and `Connection` is
 //! foreign (from `rusqlite`), so Rust's orphan rule (E0117) rejects that
 //! impl: at least one of the trait OR the impl-target type must belong to
 //! the current crate. We satisfy this by introducing the local newtype
@@ -18,18 +18,18 @@
 //! The wrapper is zero-cost (single-field tuple struct around a reference)
 //! and the call-site ergonomics are preserved by callers constructing
 //! `SqliteBktStore(&conn)` and invoking
-//! `learnforge_core::path::all_prerequisites_mastered(&store, …)` directly
+//! `skillcoco_core::path::all_prerequisites_mastered(&store, …)` directly
 //! (Wave 10 cleanup; the pre-Wave-10 `crate::learning::path::*` shim was
 //! deleted).
 //!
 //! ## Trust boundary (T-07-05)
 //!
 //! `rusqlite::Error` is stringified into `BktError::Db` here so
-//! `learnforge-core` never depends on rusqlite. `QueryReturnedNoRows` is
+//! `skillcoco-core` never depends on rusqlite. `QueryReturnedNoRows` is
 //! mapped to `BktError::NotFound` so callers can distinguish "no row" from
 //! "I/O failure" without leaking the rusqlite type.
 
-use learnforge_core::bkt::{BktError, BktStore};
+use skillcoco_core::bkt::{BktError, BktStore};
 use rusqlite::Connection;
 
 /// Rusqlite-backed [`BktStore`] adapter.

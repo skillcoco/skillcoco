@@ -27,7 +27,7 @@
 //! ## Example
 //!
 //! ```
-//! use learnforge_core::bkt::{BKTParams, update_mastery, MASTERY_THRESHOLD};
+//! use skillcoco_core::bkt::{BKTParams, update_mastery, MASTERY_THRESHOLD};
 //!
 //! let params = BKTParams::default();
 //! // After one correct answer starting from prior 0.3
@@ -50,7 +50,7 @@ use thiserror::Error;
 /// # Example
 ///
 /// ```
-/// use learnforge_core::bkt::MASTERY_THRESHOLD;
+/// use skillcoco_core::bkt::MASTERY_THRESHOLD;
 /// assert_eq!(MASTERY_THRESHOLD, 0.7);
 /// ```
 pub const MASTERY_THRESHOLD: f64 = 0.7;
@@ -64,7 +64,7 @@ pub const MASTERY_THRESHOLD: f64 = 0.7;
 /// # Example
 ///
 /// ```
-/// use learnforge_core::bkt::BKTParams;
+/// use skillcoco_core::bkt::BKTParams;
 ///
 /// let defaults = BKTParams::default();
 /// assert_eq!(defaults.p_know, 0.3);
@@ -108,7 +108,7 @@ impl Default for BKTParams {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::bkt::{BKTParams, update_mastery};
+/// use skillcoco_core::bkt::{BKTParams, update_mastery};
 ///
 /// let params = BKTParams::default();
 /// let after_correct = update_mastery(&params, 0.3, true);
@@ -149,7 +149,7 @@ pub fn update_mastery(params: &BKTParams, prior_mastery: f64, is_correct: bool) 
 /// # Example
 ///
 /// ```
-/// use learnforge_core::bkt::should_adapt;
+/// use skillcoco_core::bkt::should_adapt;
 ///
 /// // Within band → no adaptation
 /// assert!(!should_adapt(0.5, 0.48, 0.1));
@@ -165,7 +165,7 @@ pub fn should_adapt(expected_mastery: f64, actual_mastery: f64, threshold: f64) 
 /// Errors returned by [`BktStore`] implementations.
 ///
 /// `Db(String)` carries backend-specific error messages stringified at the
-/// boundary so `learnforge-core` itself never depends on rusqlite / IndexedDB
+/// boundary so `skillcoco-core` itself never depends on rusqlite / IndexedDB
 /// / etc. — preserving the WASM-portability and anti-leakage invariants
 /// (decision D-02, Pitfall T-07-05).
 #[derive(Debug, Error)]
@@ -192,7 +192,7 @@ pub enum BktError {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::bkt::{BktError, BktStore};
+/// use skillcoco_core::bkt::{BktError, BktStore};
 ///
 /// struct InMemoryStub;
 /// impl BktStore for InMemoryStub {

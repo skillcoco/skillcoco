@@ -1,8 +1,8 @@
 use crate::db::models::{LearningPath, ModuleProgress, SRCard};
 use crate::storage_impl::bkt::SqliteBktStore;
 use crate::AppState;
-use learnforge_core::bkt::{update_mastery, BKTParams, MASTERY_THRESHOLD};
-use learnforge_core::path::{
+use skillcoco_core::bkt::{update_mastery, BKTParams, MASTERY_THRESHOLD};
+use skillcoco_core::path::{
     all_prerequisites_mastered as core_all_prerequisites_mastered,
     parse_edges_json as core_parse_edges_json,
 };
@@ -60,7 +60,7 @@ pub struct SubmitQuizResult {
     /// when `module_completed == false` (R2 short-circuit) or when
     /// issuance failed (log-and-continue).
     #[serde(default)]
-    pub newly_issued_achievements: Vec<learnforge_core::achievements::Achievement>,
+    pub newly_issued_achievements: Vec<skillcoco_core::achievements::Achievement>,
 }
 
 /// Request to rate a flash card (SM-2 quality signal + optional BKT reinforcement).
@@ -324,7 +324,7 @@ pub async fn submit_quiz(
 
     // 1. Load the quiz block — reject if not found or wrong type
     let block = {
-        use learnforge_core::blocks::BlockStore;
+        use skillcoco_core::blocks::BlockStore;
         crate::storage_impl::blocks::SqliteBlockStore(&db.conn)
             .get_by_id(&req.block_id)
             .map_err(|e| format!("submit_quiz: DB error loading block: {}", e))?
@@ -389,7 +389,7 @@ pub async fn submit_quiz(
     // Phase 6 (Plan 06-02 Task 3) — sentinel for the post-completion
     // achievement issuance. R2 short-circuit: we only populate this
     // inside the `became_completed` branch.
-    let mut newly_issued_achievements: Vec<learnforge_core::achievements::Achievement> = Vec::new();
+    let mut newly_issued_achievements: Vec<skillcoco_core::achievements::Achievement> = Vec::new();
 
     if transition.became_completed {
         // 6. Find path_id for this track so check_unlock_modules can load edges_json
@@ -423,7 +423,7 @@ pub async fn submit_quiz(
 
         // 11. Phase 08.2 (D-16/D-17) — issue any newly-crossed milestones
         // (25/50/75) + Completion certificate via the new local issuance
-        // path. Replaces the Phase 6 `learnforge_core::achievements::maybe_issue`
+        // path. Replaces the Phase 6 `skillcoco_core::achievements::maybe_issue`
         // 3-tier call. The core primitive remains callable as a library fn
         // (Studio overlay or future consumers can still drive it) — this
         // OSS desktop binary just stops using it.
@@ -1423,7 +1423,7 @@ pub fn submit_review(
         .map_err(|e| e.to_string())?;
 
     // Calculate new SM-2 values
-    let sm2_result = learnforge_core::sm2::sm2_calculate(
+    let sm2_result = skillcoco_core::sm2::sm2_calculate(
         quality,
         card.repetitions,
         card.ease_factor,

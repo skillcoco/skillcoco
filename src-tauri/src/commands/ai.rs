@@ -213,7 +213,7 @@ pub async fn generate_learning_path(
 
     // Validate DAG structure
     {
-        use learnforge_core::path::{validate_dag, PathEdge, PathNode};
+        use skillcoco_core::path::{validate_dag, PathEdge, PathNode};
         let nodes: Vec<PathNode> = modules_arr
             .iter()
             .map(|m| PathNode {
@@ -310,7 +310,7 @@ pub async fn generate_learning_path(
 /// - DAG validation / SQLite errors — surface verbatim
 pub fn generate_path_from_pack_impl(
     conn: &rusqlite::Connection,
-    registry: &learnforge_core::packs::PackRegistry,
+    registry: &skillcoco_core::packs::PackRegistry,
     request: &GeneratePathRequest,
     pack_id: &str,
 ) -> Result<serde_json::Value, String> {
@@ -349,7 +349,7 @@ pub fn generate_path_from_pack_impl(
     // (T-05-20 mitigation — packs SHOULD be DAGs by authoring convention,
     // but we never trust on-disk authoring blindly).
     {
-        use learnforge_core::path::{validate_dag, PathEdge, PathNode};
+        use skillcoco_core::path::{validate_dag, PathEdge, PathNode};
         let nodes: Vec<PathNode> = modules_arr
             .iter()
             .map(|m| PathNode {
@@ -526,7 +526,7 @@ fn build_tutor_system_prompt(ctx: Option<&ExerciseContext>, fallback: &str) -> S
 /// Returns None on any failure (block not found, not a section, missing markdown) — caller falls back.
 /// Truncates to TUTOR_CONTENT_EXCERPT_MAX to avoid oversized system prompts.
 fn load_section_excerpt(conn: &rusqlite::Connection, section_id: &str) -> Option<String> {
-    use learnforge_core::blocks::BlockStore;
+    use skillcoco_core::blocks::BlockStore;
     let block = crate::storage_impl::blocks::SqliteBlockStore(conn)
         .get_by_id(section_id)
         .ok()
@@ -1022,7 +1022,7 @@ pub async fn evaluate_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use learnforge_core::bkt::{update_mastery, BKTParams};
+    use skillcoco_core::bkt::{update_mastery, BKTParams};
 
     // ── extract_json: top-level array handling (Phase 11 video-ranking bug) ──
     // The LLM video-ranking call (commands/videos.rs) is the only caller that
@@ -1445,7 +1445,7 @@ mod tests {
 
     // ── Phase 5 Q3 — pack_id short-circuit tests ──
 
-    use learnforge_core::packs::{
+    use skillcoco_core::packs::{
         LoadedPack as TpLoadedPack, Pack as TpPack, PackEdge as TpPackEdge,
         PackModule as TpPackModule, PackRegistry as TpPackRegistry, PackSource as TpPackSource,
         ValidationStatus as TpValidationStatus,

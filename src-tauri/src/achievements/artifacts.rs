@@ -290,12 +290,12 @@ pub fn render_qr_png(qr_payload: &str) -> Result<Vec<u8>, AchievementError> {
 // ── Share text ────────────────────────────────────────────────────────────
 
 // Phase 7 Wave 5 (07-05) — the share_text template moved to
-// `learnforge_core::signing::share_text` per the D-03 amendment (PDF /
+// `skillcoco_core::signing::share_text` per the D-03 amendment (PDF /
 // PNG renderers stay here because printpdf / image / qrcode are not
 // WASM-portable; only the pure string template lives in core). Re-export
 // preserves the legacy path `achievements::artifacts::share_text` so the
 // existing test functions in this module continue to compile unchanged.
-pub use learnforge_core::signing::share_text;
+pub use skillcoco_core::signing::share_text;
 
 #[cfg(test)]
 mod tests {

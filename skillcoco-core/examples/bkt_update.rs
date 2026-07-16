@@ -7,10 +7,10 @@
 //! Run with:
 //!
 //! ```bash
-//! cargo run -p learnforge-core --example bkt_update
+//! cargo run -p skillcoco-core --example bkt_update
 //! ```
 
-use learnforge_core::bkt::{update_mastery, BKTParams, MASTERY_THRESHOLD};
+use skillcoco_core::bkt::{update_mastery, BKTParams, MASTERY_THRESHOLD};
 
 fn main() {
     let params = BKTParams::default();

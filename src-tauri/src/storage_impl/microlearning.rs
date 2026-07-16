@@ -16,7 +16,7 @@
 //! per A5 (Pitfall 10 mitigation).
 
 use chrono::{DateTime, Utc};
-use learnforge_core::microlearning::{
+use skillcoco_core::microlearning::{
     CandidateModule, MicrolearningError, MicrolearningStore, BKT_LOWER, BKT_UPPER,
 };
 use rusqlite::{params, Connection};
@@ -29,7 +29,7 @@ use rusqlite::{params, Connection};
 /// `impl MicrolearningStore for &Connection` would trigger
 /// `error[E0117]: only traits defined in the current crate can be
 /// implemented for arbitrary types` — both the trait (in
-/// `learnforge-core`) and `Connection` (in `rusqlite`) are foreign to
+/// `skillcoco-core`) and `Connection` (in `rusqlite`) are foreign to
 /// `src-tauri`. Wrapping `&Connection` in a local newtype satisfies the
 /// orphan rule with zero runtime cost.
 pub struct SqliteMicrolearningStore<'a>(pub &'a Connection);
@@ -202,7 +202,7 @@ impl<'a> MicrolearningStore for SqliteMicrolearningStore<'a> {
 mod tests {
     //! Integration tests for the rusqlite adapter against an in-memory
     //! `Connection`. The corresponding pure-stub tests live in
-    //! `learnforge-core/src/microlearning.rs`.
+    //! `skillcoco-core/src/microlearning.rs`.
 
     use super::*;
     use crate::db::migrations::apply_migrations;

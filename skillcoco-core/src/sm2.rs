@@ -27,13 +27,13 @@
 //! lives behind the [`SrStore`] trait — host crates implement it against
 //! their datastore. The trait lives next to the algorithm per the per-module
 //! storage pattern (decision A3 / Pattern 1 from `07-RESEARCH.md`); error
-//! translation at the boundary keeps `learnforge-core` free of backend
+//! translation at the boundary keeps `skillcoco-core` free of backend
 //! types (decision D-02 / T-07-07).
 //!
 //! ## Example
 //!
 //! ```
-//! use learnforge_core::sm2::sm2_calculate;
+//! use skillcoco_core::sm2::sm2_calculate;
 //!
 //! // First successful review (quality=4, fresh card)
 //! let r = sm2_calculate(4, 0, 2.5, 0.0);
@@ -51,7 +51,7 @@ use thiserror::Error;
 /// # Example
 ///
 /// ```
-/// use learnforge_core::sm2::{SM2Result, sm2_calculate};
+/// use skillcoco_core::sm2::{SM2Result, sm2_calculate};
 ///
 /// let r: SM2Result = sm2_calculate(5, 2, 2.5, 6.0);
 /// assert_eq!(r.repetitions, 3);
@@ -89,7 +89,7 @@ pub struct SM2Result {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::sm2::sm2_calculate;
+/// use skillcoco_core::sm2::sm2_calculate;
 ///
 /// // Failed review resets the card
 /// let failed = sm2_calculate(1, 5, 2.5, 30.0);
@@ -140,7 +140,7 @@ pub fn sm2_calculate(
 /// Errors returned by [`SrStore`] implementations.
 ///
 /// `Db(String)` carries backend-specific error messages stringified at the
-/// boundary so `learnforge-core` itself never depends on rusqlite / IndexedDB
+/// boundary so `skillcoco-core` itself never depends on rusqlite / IndexedDB
 /// / etc. — preserving the WASM-portability and anti-leakage invariants
 /// (decision D-02 / T-07-07 mitigation). Mirrors the [`crate::bkt::BktError`]
 /// pattern from Wave 2.
@@ -213,7 +213,7 @@ pub struct SrCardRow {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::sm2::{SrCardRow, SrError, SrStore, SM2Result};
+/// use skillcoco_core::sm2::{SrCardRow, SrError, SrStore, SM2Result};
 ///
 /// struct InMemoryStub;
 /// impl SrStore for InMemoryStub {

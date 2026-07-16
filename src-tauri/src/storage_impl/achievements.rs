@@ -2,7 +2,7 @@
 //!
 //! Phase 7 Wave 8 (07-08): the eighth and final application of the
 //! per-module storage-trait recipe. The trait lives in
-//! `learnforge-core/src/achievements.rs`; this file binds it to
+//! `skillcoco-core/src/achievements.rs`; this file binds it to
 //! `rusqlite::Connection` via the same orphan-rule newtype pattern
 //! used in Waves 4-7 (`SqliteSrStore`, `SqliteBlockStore`,
 //! `SqlitePackStore`, etc.).
@@ -26,23 +26,23 @@
 //! Rust's orphan rule forbids `impl From<rusqlite::Error> for
 //! AchievementError` from living in either crate (both are foreign
 //! types from src-tauri's perspective; both are foreign from
-//! learnforge-core's perspective for the rusqlite half). Wave 5 hit
+//! skillcoco-core's perspective for the rusqlite half). Wave 5 hit
 //! the same wall and solved it the same way for `BktError` /
 //! `SrError` / `PackError`: stringify at the trust boundary.
 //!
 //! ## Newtype rationale (orphan rule)
 //!
 //! Cargo's coherence rules forbid `impl AchievementStore for
-//! &Connection` because both the trait (`learnforge_core::achievements`)
+//! &Connection` because both the trait (`skillcoco_core::achievements`)
 //! and the type (`rusqlite::Connection`) live in upstream crates.
 //! The fix is the newtype `SqliteAchievementStore<'a>(pub
 //! &'a Connection)` declared here — same pattern as `SqlitePackStore`
 //! / `SqliteBlockStore` / `SqliteSrStore`.
 
-use learnforge_core::achievements::{
+use skillcoco_core::achievements::{
     Achievement, AchievementError, AchievementStore, IssuanceContext,
 };
-use learnforge_core::threshold::TrackAggregate;
+use skillcoco_core::threshold::TrackAggregate;
 use rusqlite::Connection;
 
 /// Stringify a [`rusqlite::Error`] into [`AchievementError::Db`] at the
@@ -252,13 +252,13 @@ impl<'a> AchievementStore for SqliteAchievementStore<'a> {
 mod tests {
     //! SQL-touching tests for the rusqlite-backed AchievementStore.
     //! Pure-algorithm tests live in
-    //! `learnforge_core::achievements::tests` (run against inline
+    //! `skillcoco_core::achievements::tests` (run against inline
     //! stubs).
 
     use super::*;
     use crate::db::migrations::apply_migrations;
     use crate::db::schema;
-    use learnforge_core::achievements::{
+    use skillcoco_core::achievements::{
         Achievement, AchievementError, AchievementStore, IssuanceContext,
     };
     use rusqlite::Connection;

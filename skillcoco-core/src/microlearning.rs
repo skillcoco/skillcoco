@@ -30,7 +30,7 @@
 //!
 //! `select_daily_challenge` is generic over [`MicrolearningStore`]
 //! (A3 lock — per-module storage trait), so the algorithm lives in
-//! `learnforge-core` and the SQL helpers live in
+//! `skillcoco-core` and the SQL helpers live in
 //! `src-tauri/src/storage_impl/microlearning.rs`. WASM consumers
 //! implement [`MicrolearningStore`] against IndexedDB or any other
 //! backend.
@@ -39,7 +39,7 @@
 //!
 //! ```
 //! use chrono::{TimeZone, Utc};
-//! use learnforge_core::microlearning::{
+//! use skillcoco_core::microlearning::{
 //!     select_daily_challenge, CandidateModule, MicrolearningError, MicrolearningStore,
 //! };
 //!
@@ -104,7 +104,7 @@ pub const DECAY_DAYS_CAP_MULT: f64 = 5.0;
 /// Error type for the microlearning selection algorithm. The
 /// `Backend` variant stringifies any underlying storage error at the
 /// trust boundary so `rusqlite::Error` (or `idb::Error`, etc.) never
-/// leaks into `learnforge-core`'s public surface — T-07-05 mitigation,
+/// leaks into `skillcoco-core`'s public surface — T-07-05 mitigation,
 /// matching the `BktError` / `SrError` pattern.
 #[derive(Debug, thiserror::Error)]
 pub enum MicrolearningError {
@@ -161,7 +161,7 @@ pub struct CandidateModule {
 /// The algorithm's four SQL touch points become four trait methods +
 /// one (decay_days_for_module) for the BKT-decay signal. All
 /// implementations live in adapter crates (e.g. `src-tauri` for the
-/// rusqlite reference impl); `learnforge-core` ships only the trait
+/// rusqlite reference impl); `skillcoco-core` ships only the trait
 /// + algorithm + an in-memory stub used by the unit tests.
 pub trait MicrolearningStore {
     /// Step 1 — fetch all modules in the `[BKT_LOWER, BKT_UPPER)`
@@ -309,7 +309,7 @@ mod tests {
     //! Pure stub-store tests (A5 — fixed `now` for determinism). The
     //! corresponding rusqlite-backed integration tests live in
     //! `src-tauri/src/storage_impl/microlearning.rs` so the in-memory
-    //! `Connection` machinery never leaks into `learnforge-core`.
+    //! `Connection` machinery never leaks into `skillcoco-core`.
 
     use super::*;
     use chrono::TimeZone;

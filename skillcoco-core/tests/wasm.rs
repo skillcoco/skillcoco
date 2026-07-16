@@ -1,7 +1,7 @@
 //! WASM smoke test — Phase 7 Waves 5 (07-05) + 9 (07-09).
 //!
 //! Three `#[wasm_bindgen_test]` functions exercise the highest-risk paths
-//! in the wasm32-unknown-unknown build of `learnforge-core`:
+//! in the wasm32-unknown-unknown build of `skillcoco-core`:
 //!
 //! 1. **`bkt_update_runs_in_wasm`** — proves the pure-math algorithm path
 //!    compiles, links, and executes on wasm32. Closes Phase 7 D-04 (the
@@ -24,13 +24,13 @@
 //!
 //! ```bash
 //! cargo install wasm-pack
-//! wasm-pack test --node learnforge-core
+//! wasm-pack test --node skillcoco-core
 //! # OR — browser-side smoke (matches the `run_in_browser` configure)
-//! wasm-pack test --chrome --headless learnforge-core
+//! wasm-pack test --chrome --headless skillcoco-core
 //! ```
 //!
 //! Phase 9 wires a CI matrix that runs this test. For Phase 7, **the
-//! file existing + the wasm32 build of `learnforge-core` succeeding** is
+//! file existing + the wasm32 build of `skillcoco-core` succeeding** is
 //! the D-04 + R1 deliverable: the test FILE proves the crypto + math
 //! chains both *compile* on wasm32, which is the failure mode Wave 5
 //! wanted to catch the moment Ed25519 landed in core. Execution on the
@@ -41,9 +41,9 @@
 
 use ed25519_dalek::pkcs8::EncodePublicKey;
 use ed25519_dalek::SigningKey;
-use learnforge_core::bkt::{update_mastery, BKTParams};
-use learnforge_core::canonical_json::canonical_json_bytes;
-use learnforge_core::signing::{sign_payload, verify_payload};
+use skillcoco_core::bkt::{update_mastery, BKTParams};
+use skillcoco_core::canonical_json::canonical_json_bytes;
+use skillcoco_core::signing::{sign_payload, verify_payload};
 use rand::rngs::OsRng;
 use serde_json::json;
 use wasm_bindgen_test::*;
@@ -68,7 +68,7 @@ fn bkt_update_runs_in_wasm() {
 /// `SigningKey::generate(&mut OsRng)` pulls entropy via `getrandom` which
 /// on wasm32-unknown-unknown resolves to `crypto.getRandomValues()`
 /// thanks to the `getrandom = { features = ["wasm_js"] }` declaration in
-/// `learnforge-core/Cargo.toml`'s wasm32 target block (Wave 1 lock).
+/// `skillcoco-core/Cargo.toml`'s wasm32 target block (Wave 1 lock).
 #[wasm_bindgen_test]
 fn ed25519_sign_runs_in_wasm() {
     let mut csprng = OsRng;

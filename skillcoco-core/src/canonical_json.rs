@@ -23,7 +23,7 @@
 //! ## Example
 //!
 //! ```
-//! use learnforge_core::canonical_json::canonical_json_bytes;
+//! use skillcoco_core::canonical_json::canonical_json_bytes;
 //!
 //! #[derive(serde::Serialize)]
 //! struct Payload { b: u32, a: u32 }
@@ -111,7 +111,7 @@ pub fn canonicalize(v: Value) -> Result<Value, CanonicalJsonError> {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::canonical_json::canonical_json_bytes;
+/// use skillcoco_core::canonical_json::canonical_json_bytes;
 ///
 /// #[derive(serde::Serialize)]
 /// struct P { z: u32, a: u32 }

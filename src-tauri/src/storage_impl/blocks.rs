@@ -1,17 +1,17 @@
 //! Wave 6 (Plan 07-06) — rusqlite-backed impl of
-//! [`learnforge_core::blocks::BlockStore`].
+//! [`skillcoco_core::blocks::BlockStore`].
 //!
 //! Bodies lifted verbatim from `src-tauri/src/db/blocks.rs:68-185`
 //! (pre-Wave-6). The error envelope is rewrapped from
 //! `rusqlite::Error` → [`BlocksError`] at the trust boundary so
-//! `learnforge-core` never depends on rusqlite (D-02 anti-leakage).
+//! `skillcoco-core` never depends on rusqlite (D-02 anti-leakage).
 //!
 //! ## Orphan-rule note (Wave 2/3/4/5 pattern repeat)
 //!
 //! `impl BlockStore for &Connection` would trigger
 //! `error[E0117]: only traits defined in the current crate can be
 //! implemented for arbitrary types` — both the trait (in
-//! `learnforge-core`) and `Connection` (in `rusqlite`) are foreign to
+//! `skillcoco-core`) and `Connection` (in `rusqlite`) are foreign to
 //! `src-tauri`. Wrapping `&Connection` in a local newtype satisfies the
 //! orphan rule with zero runtime cost.
 //!
@@ -29,7 +29,7 @@
 //! are TEXT containing the snake_case enum names (see
 //! [`block_type_to_str`] / [`status_to_str`]).
 
-use learnforge_core::blocks::{
+use skillcoco_core::blocks::{
     status_to_str, BlockStatus, BlockStore, BlocksError, ModuleBlock,
 };
 use rusqlite::Connection;
@@ -186,7 +186,7 @@ impl<'a> BlockStore for SqliteBlockStore<'a> {
 mod tests {
     //! Integration tests against an in-memory `Connection`. The
     //! corresponding pure-stub tests (covering the trait surface in
-    //! isolation) live in `learnforge-core/src/blocks.rs::tests`.
+    //! isolation) live in `skillcoco-core/src/blocks.rs::tests`.
 
     use super::*;
     use crate::db::migrations::apply_migrations;

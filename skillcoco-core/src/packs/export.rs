@@ -24,7 +24,7 @@ use std::collections::HashMap;
 ///
 /// Only `status = "ready"` blocks are exported (D-02). camelCase serde
 /// matches the IPC wire format (same convention as `ModuleBlock` in
-/// `learnforge_core::blocks`).
+/// `skillcoco_core::blocks`).
 ///
 /// Field names mirror `ModuleBlock` exactly so that a mapping from
 /// `ModuleBlock -> ExportedBlock` in `commands/course_io.rs` is trivial.

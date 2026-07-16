@@ -23,7 +23,7 @@ use tauri::State;
 use super::loader;
 use crate::storage_impl::packs::SqlitePackStore;
 use crate::AppState;
-use learnforge_core::packs::{LoadedPack, PackEdge, PackModule, PackRegistry, PackStore};
+use skillcoco_core::packs::{LoadedPack, PackEdge, PackModule, PackRegistry, PackStore};
 
 // ── Request / Response types ─────────────────────────────────────────────
 
@@ -179,7 +179,7 @@ mod tests {
     use super::*;
     use crate::db::migrations::apply_migrations;
     use crate::db::schema as db_schema;
-    use learnforge_core::packs::{Pack, PackSource, ValidationStatus};
+    use skillcoco_core::packs::{Pack, PackSource, ValidationStatus};
 
     fn fresh_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

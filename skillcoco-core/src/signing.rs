@@ -37,7 +37,7 @@
 //! ## Example
 //!
 //! ```
-//! use learnforge_core::signing::{sign_payload, verify_payload, public_key_fingerprint};
+//! use skillcoco_core::signing::{sign_payload, verify_payload, public_key_fingerprint};
 //! use ed25519_dalek::{SigningKey, pkcs8::EncodePublicKey};
 //! use rand::rngs::OsRng;
 //!
@@ -99,7 +99,7 @@ pub enum SigningError {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::signing::sign_payload;
+/// use skillcoco_core::signing::sign_payload;
 /// use ed25519_dalek::SigningKey;
 /// use rand::rngs::OsRng;
 ///
@@ -172,7 +172,7 @@ pub fn share_text(level: &str, track: &str, key_fingerprint: &str, payload_b64: 
 /// Declared next to the algorithm (A3 lock — per-module storage trait
 /// location); the FS-backed implementation lives in
 /// `src-tauri/src/storage_impl/signing.rs` so the WASM build of
-/// `learnforge-core` doesn't pull `std::fs`.
+/// `skillcoco-core` doesn't pull `std::fs`.
 ///
 /// Implementations are responsible for any platform-specific isolation
 /// (Unix 0o600 mode, Windows per-user app-data ACL, IndexedDB storage on

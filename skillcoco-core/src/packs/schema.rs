@@ -2,17 +2,17 @@
 //!
 //! ## Wave 9 (07-09) — packaged-asset path
 //!
-//! `topic-packs/` lives **inside** the crate at `learnforge-core/topic-packs/`
+//! `topic-packs/` lives **inside** the crate at `skillcoco-core/topic-packs/`
 //! so that `cargo publish` ships the bundled-pack assets in the crate
 //! tarball. The `include_str!` path is therefore relative to this file's
 //! directory:
 //!
 //! ```text
-//! learnforge-core/src/packs/schema.rs  →  ../../topic-packs/pack-schema.json
+//! skillcoco-core/src/packs/schema.rs  →  ../../topic-packs/pack-schema.json
 //! ```
 //!
-//! Two `..` segments hop from `learnforge-core/src/packs/` →
-//! `learnforge-core/src/` → `learnforge-core/`, then `topic-packs/...`
+//! Two `..` segments hop from `skillcoco-core/src/packs/` →
+//! `skillcoco-core/src/` → `skillcoco-core/`, then `topic-packs/...`
 //! addresses the in-crate directory.
 //!
 //! Wave 9 relocation rationale: pre-Wave-9 the path was
@@ -31,9 +31,9 @@ use std::sync::OnceLock;
 /// Raw schema text, embedded at compile time.
 ///
 /// Path is relative to **this file's directory**
-/// (`learnforge-core/src/packs/`), resolving to
-/// `learnforge-core/topic-packs/pack-schema.json` via two `..` segments
-/// (`packs/ → src/ → learnforge-core/`). See the module-level
+/// (`skillcoco-core/src/packs/`), resolving to
+/// `skillcoco-core/topic-packs/pack-schema.json` via two `..` segments
+/// (`packs/ → src/ → skillcoco-core/`). See the module-level
 /// doc-comment for the full derivation + Wave 9 publish-tarball
 /// constraint.
 pub const SCHEMA_SOURCE: &str =

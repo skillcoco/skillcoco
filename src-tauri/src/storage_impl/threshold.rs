@@ -1,7 +1,7 @@
 //! `track_mastery_aggregate` — rusqlite-backed SQL aggregate computing a
 //! [`TrackAggregate`] from `module_progress` rows. The pure predicates
 //! (`which_level_just_crossed`, `levels_met`) live in
-//! `learnforge_core::threshold`.
+//! `skillcoco_core::threshold`.
 //!
 //! ## Wave 4 ↔ Wave 8 seam (CLOSED)
 //!
@@ -21,17 +21,17 @@
 //! through `SqliteAchievementStore(&conn)` and delete this file.
 //!
 //! No cross-wave dependency violation: this file lives in `src-tauri`
-//! only; `learnforge_core::threshold` imports nothing from it. The
+//! only; `skillcoco_core::threshold` imports nothing from it. The
 //! trait-method delegation is intra-`src-tauri` (storage_impl →
 //! storage_impl).
 //!
-//! [`AchievementStore`]: learnforge_core::achievements::AchievementStore
+//! [`AchievementStore`]: skillcoco_core::achievements::AchievementStore
 //! [`AchievementStore::track_mastery_aggregate`]:
-//!   learnforge_core::achievements::AchievementStore::track_mastery_aggregate
+//!   skillcoco_core::achievements::AchievementStore::track_mastery_aggregate
 //! [`SqliteAchievementStore`]: crate::storage_impl::achievements::SqliteAchievementStore
 
-use learnforge_core::achievements::AchievementError;
-use learnforge_core::threshold::TrackAggregate;
+use skillcoco_core::achievements::AchievementError;
+use skillcoco_core::threshold::TrackAggregate;
 use rusqlite::Connection;
 
 /// Compute the live track aggregate from `module_progress` rows.

@@ -1,5 +1,5 @@
 //! Transitional shim — Wave 7 (07-07) moved bundled-pack loading +
-//! `PackSource` trait declaration to `learnforge_core::packs::loader`.
+//! `PackSource` trait declaration to `skillcoco_core::packs::loader`.
 //! The FS-touching skill-scan code stays here as the
 //! [`FsPackSource`] impl (R3 / Pitfall 4 mitigation), and the
 //! rusqlite-bound orchestration free fns ([`load_all`],
@@ -7,7 +7,7 @@
 //! (`lib.rs:156` and `commands::reload_skills`) compile unchanged.
 //!
 //! Wave 10 grep-and-rewrites callers to invoke
-//! `learnforge_core::packs::loader::*` + `FsPackSource` directly and
+//! `skillcoco_core::packs::loader::*` + `FsPackSource` directly and
 //! deletes the shim.
 //!
 //! ## Security mitigations preserved verbatim
@@ -22,23 +22,23 @@
 //!   `rusqlite::params!`.
 
 // Re-export pure loader helpers from core. We deliberately do NOT
-// `pub use learnforge_core::packs::loader::*` because that would shadow
+// `pub use skillcoco_core::packs::loader::*` because that would shadow
 // the enum `PackSource` (re-exported by `topic_packs::mod.rs`) with the
-// trait `PackSource` from `learnforge_core::packs::loader`. Each symbol
+// trait `PackSource` from `skillcoco_core::packs::loader`. Each symbol
 // is named explicitly to keep the shim's surface unambiguous.
-pub use learnforge_core::packs::loader::{
+pub use skillcoco_core::packs::loader::{
     classify_errors, now_rfc3339, parse_and_validate, sentinel_pack, BUNDLED_PACKS,
 };
-pub use learnforge_core::packs::loader::PackSource as CorePackSource;
+pub use skillcoco_core::packs::loader::PackSource as CorePackSource;
 
-use learnforge_core::packs::loader::PackSource as PackSourceTrait;
-use learnforge_core::packs::{LoadedPack, PackError, PackRegistry, PackSource, ValidationStatus};
+use skillcoco_core::packs::loader::PackSource as PackSourceTrait;
+use skillcoco_core::packs::{LoadedPack, PackError, PackRegistry, PackSource, ValidationStatus};
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::storage_impl::packs::SqlitePackStore;
-use learnforge_core::packs::PackStore;
+use skillcoco_core::packs::PackStore;
 
 /// Env var that tests use to redirect the skills root to a tempdir.
 /// Production code never sets this — only `#[cfg(test)]` paths do.
@@ -102,17 +102,17 @@ impl ImportedFilePackSource {
     /// Errors:
     /// - `PackError::Io` — path does not exist, canonicalize fails, or read fails.
     /// - `PackError::Schema` — file exceeds `MAX_IMPORT_BYTES` (5 MB cap).
-    pub fn read_file(&self) -> Result<(Vec<u8>, std::path::PathBuf), learnforge_core::packs::PackError> {
+    pub fn read_file(&self) -> Result<(Vec<u8>, std::path::PathBuf), skillcoco_core::packs::PackError> {
         // T-05-05: canonicalize — reject symlinks that escape allowed paths.
         let canon = std::fs::canonicalize(&self.file_path)
-            .map_err(|e| learnforge_core::packs::PackError::Io(e.to_string()))?;
+            .map_err(|e| skillcoco_core::packs::PackError::Io(e.to_string()))?;
 
         // T-05-06: enforce 5 MB cap BEFORE read (mirror FsPackSource constant).
         const MAX_IMPORT_BYTES: u64 = 5 * 1024 * 1024;
         let md = std::fs::metadata(&canon)
-            .map_err(|e| learnforge_core::packs::PackError::Io(e.to_string()))?;
+            .map_err(|e| skillcoco_core::packs::PackError::Io(e.to_string()))?;
         if md.len() > MAX_IMPORT_BYTES {
-            return Err(learnforge_core::packs::PackError::Schema(format!(
+            return Err(skillcoco_core::packs::PackError::Schema(format!(
                 "import file exceeds {} bytes ({} actual)",
                 MAX_IMPORT_BYTES,
                 md.len()
@@ -120,20 +120,20 @@ impl ImportedFilePackSource {
         }
 
         let bytes = std::fs::read(&canon)
-            .map_err(|e| learnforge_core::packs::PackError::Io(e.to_string()))?;
+            .map_err(|e| skillcoco_core::packs::PackError::Io(e.to_string()))?;
 
         Ok((bytes, canon))
     }
 }
 
-/// FS-backed [`learnforge_core::packs::loader::PackSource`] impl.
+/// FS-backed [`skillcoco_core::packs::loader::PackSource`] impl.
 ///
 /// Wraps the canonical skills-dir scan with the T-05-05 + T-05-06
 /// mitigations preserved verbatim from pre-Wave-7
 /// `src-tauri/src/topic_packs/loader.rs`. Each invocation walks the
 /// configured skills root once and returns the raw `(skill_id, bytes)`
 /// pairs; parsing + validation happens in the orchestration layer below
-/// (and in `learnforge_core::packs::loader::parse_and_validate`).
+/// (and in `skillcoco_core::packs::loader::parse_and_validate`).
 ///
 /// Wave 10 cleanup will inline this into the call site if no other
 /// platforms grow the same need.
@@ -921,7 +921,7 @@ mod tests {
         assert!(result.is_err(), "nonexistent path must return Err");
         // Must be an Io error (not Schema)
         match result.unwrap_err() {
-            learnforge_core::packs::PackError::Io(_) => {} // correct
+            skillcoco_core::packs::PackError::Io(_) => {} // correct
             other => panic!("expected PackError::Io, got: {:?}", other),
         }
     }

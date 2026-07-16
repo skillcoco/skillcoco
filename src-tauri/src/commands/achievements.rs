@@ -6,7 +6,7 @@
 //!   - `export_certificate` — unsigned PDF (no QR, no fingerprint footer)
 //!   - `export_badge` — PNG badge with QR payload (self-signed completion badge)
 //!
-//! The completion badge is cryptographically self-signed via `learnforge_core::
+//! The completion badge is cryptographically self-signed via `skillcoco_core::
 //! signing` (Ed25519) + the local `FsKeyStore`; the client-side certificate
 //! VERIFY surface was removed in the Phase 23 trust-chain strip.
 //!
@@ -23,7 +23,7 @@ use tauri::State;
 
 use crate::achievements::artifacts::{self, BadgePngInput, CertificatePdfInput};
 use crate::storage_impl::achievements::SqliteAchievementStore;
-use learnforge_core::achievements::{
+use skillcoco_core::achievements::{
     Achievement, AchievementError, AchievementStore, TrackCertifications,
 };
 
@@ -221,7 +221,7 @@ pub fn export_badge(
     request: ExportBadgeRequest,
     state: State<'_, crate::AppState>,
 ) -> Result<Vec<u8>, String> {
-    use learnforge_core::achievements::AchievementStore;
+    use skillcoco_core::achievements::AchievementStore;
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let ach = SqliteAchievementStore(&db.conn)

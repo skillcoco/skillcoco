@@ -1,4 +1,4 @@
-//! # learnforge-core
+//! # skillcoco-core
 //!
 //! Adaptive learning algorithms — Bayesian Knowledge Tracing (BKT), SuperMemo 2
 //! (SM-2), threshold predicates, microlearning selection, canonical JSON,
@@ -9,7 +9,7 @@
 //!
 //! This crate is published at version `0.1.x`. **Breaking changes are
 //! permitted in any 0.x release.** The public API stabilizes at `1.0.0`.
-//! Pin to a specific minor (`learnforge-core = "0.1"`) and read the
+//! Pin to a specific minor (`skillcoco-core = "0.1"`) and read the
 //! `CHANGELOG.md` before upgrading.
 //!
 //! ## Architecture
@@ -34,7 +34,7 @@
 //! - [`packs`] — Topic-pack subsystem: bundled loader, schema validator, `PackSource` + `PackStore` traits (Wave 7).
 //! - [`achievements`] — Achievement issuance algorithm + `AchievementStore` trait + `maybe_issue` with A5 clock injection (Wave 8).
 //!
-//! All algorithmic modules have now moved to `learnforge-core`. PDF/PNG
+//! All algorithmic modules have now moved to `skillcoco-core`. PDF/PNG
 //! rendering (printpdf/qrcode/image) STAYS in `src-tauri` per D-03
 //! amendment because those crates are not WASM-portable. The renderer
 //! input shapes (`CertificatePdfInput` / `BadgePngInput`) live next to

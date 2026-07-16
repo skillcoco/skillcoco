@@ -24,7 +24,7 @@ fn test_app_state() -> Arc<AppState> {
         lab_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         // Phase 5 — empty registry; lab tests never touch topic_packs.
         topic_packs: Arc::new(Mutex::new(
-            learnforge_core::packs::PackRegistry::default(),
+            skillcoco_core::packs::PackRegistry::default(),
         )),
         // Phase 6 — lazy signing key; lab tests never trigger maybe_issue.
         signing_key: Arc::new(Mutex::new(None)),
@@ -101,7 +101,7 @@ async fn open_session_for_test(
         let db = state.db.lock().unwrap();
         let conn = &db.conn;
         let block = {
-            use learnforge_core::blocks::BlockStore;
+            use skillcoco_core::blocks::BlockStore;
             crate::storage_impl::blocks::SqliteBlockStore(conn)
                 .get_by_id(&request.block_id)
                 .map_err(|e| format!("get_block: {}", e))?

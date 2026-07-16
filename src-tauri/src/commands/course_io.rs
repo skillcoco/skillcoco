@@ -63,11 +63,11 @@ use tauri::State;
 
 use crate::storage_impl::blocks::SqliteBlockStore;
 use crate::topic_packs::loader::ImportedFilePackSource;
-use learnforge_core::blocks::{BlockStore, ModuleBlock};
-use learnforge_core::packs::export::{
+use skillcoco_core::blocks::{BlockStore, ModuleBlock};
+use skillcoco_core::packs::export::{
     CourseExportPayload, ExportedBlock, ExportedVideo, serialize_export,
 };
-use learnforge_core::packs::loader::parse_and_validate;
+use skillcoco_core::packs::loader::parse_and_validate;
 
 // ── Error type ────────────────────────────────────────────────────────────────
 
@@ -103,8 +103,8 @@ impl From<rusqlite::Error> for ExportCourseError {
     }
 }
 
-impl From<learnforge_core::packs::export::ExportError> for ExportCourseError {
-    fn from(e: learnforge_core::packs::export::ExportError) -> Self {
+impl From<skillcoco_core::packs::export::ExportError> for ExportCourseError {
+    fn from(e: skillcoco_core::packs::export::ExportError) -> Self {
         ExportCourseError::Serialize(e.to_string())
     }
 }
@@ -402,13 +402,13 @@ pub enum ImportCourseError {
     Deserialize(String),
 }
 
-impl From<learnforge_core::packs::PackError> for ImportCourseError {
-    fn from(e: learnforge_core::packs::PackError) -> Self {
+impl From<skillcoco_core::packs::PackError> for ImportCourseError {
+    fn from(e: skillcoco_core::packs::PackError) -> Self {
         match e {
-            learnforge_core::packs::PackError::Io(msg) => ImportCourseError::Fs(msg),
-            learnforge_core::packs::PackError::Schema(msg) => ImportCourseError::Validation(msg),
-            learnforge_core::packs::PackError::Json(msg) => ImportCourseError::Validation(msg),
-            learnforge_core::packs::PackError::Loader(msg) => ImportCourseError::Fs(msg),
+            skillcoco_core::packs::PackError::Io(msg) => ImportCourseError::Fs(msg),
+            skillcoco_core::packs::PackError::Schema(msg) => ImportCourseError::Validation(msg),
+            skillcoco_core::packs::PackError::Json(msg) => ImportCourseError::Validation(msg),
+            skillcoco_core::packs::PackError::Loader(msg) => ImportCourseError::Fs(msg),
         }
     }
 }
@@ -1314,7 +1314,7 @@ mod tests {
         export_course_impl(&conn, &track_id, &save_path).expect("export must succeed");
 
         let json_str = std::fs::read_to_string(&save_path).unwrap();
-        let validation_result = learnforge_core::packs::loader::parse_and_validate(&json_str);
+        let validation_result = skillcoco_core::packs::loader::parse_and_validate(&json_str);
         assert!(
             validation_result.is_ok(),
             "exported file must validate through parse_and_validate (D-05/D-07); got: {:?}",
@@ -1351,7 +1351,7 @@ mod tests {
         })
         .to_string();
 
-        let r = learnforge_core::packs::loader::parse_and_validate(&json);
+        let r = skillcoco_core::packs::loader::parse_and_validate(&json);
         assert!(
             r.is_ok(),
             "exported course with bare-UUID ids + 'general' domain must validate (D-05); got: {:?}",
@@ -1377,7 +1377,7 @@ mod tests {
         })
         .to_string();
 
-        let r = learnforge_core::packs::loader::parse_and_validate(&json);
+        let r = skillcoco_core::packs::loader::parse_and_validate(&json);
         assert!(
             r.is_err(),
             "authored pack (no exportVersion) with UUID id + 'general' domain must be rejected"

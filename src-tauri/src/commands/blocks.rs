@@ -1,7 +1,7 @@
 use crate::auth::AuthState;
 use crate::storage_impl::blocks::SqliteBlockStore;
 use crate::AppState;
-use learnforge_core::blocks::{BlockStatus, BlockStore, BlocksError, ModuleBlock};
+use skillcoco_core::blocks::{BlockStatus, BlockStore, BlocksError, ModuleBlock};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -12,7 +12,7 @@ use tauri::State;
 // Wave 10 cleanup: pre-Wave-6 src-tauri exposed free-fn facades
 // (`insert_block`, `list_blocks_by_module`, etc.) on top of the rusqlite
 // adapter. Wave 6 (Plan 07-06) moved the trait declaration into
-// `learnforge_core::blocks::BlockStore` and the rusqlite impl into
+// `skillcoco_core::blocks::BlockStore` and the rusqlite impl into
 // `crate::storage_impl::blocks::SqliteBlockStore`. Wave 10 deletes the
 // transitional `src-tauri/src/db/blocks.rs` re-export shim; these local
 // wrappers preserve the dense `commands/blocks.rs` callsite shape against
@@ -1550,7 +1550,7 @@ pub(crate) mod tests {
     use super::*;
     // Wave 10 cleanup: `insert_block` + `BlockStatus` are now brought into
     // scope from the parent module (the local wrappers defined at the top
-    // of `commands/blocks.rs` + the `learnforge_core::blocks::BlockStatus`
+    // of `commands/blocks.rs` + the `skillcoco_core::blocks::BlockStatus`
     // re-export the parent already pulls in). The pre-Wave-10 import lived
     // at `crate::db::blocks::{insert_block, BlockStatus}` — both have been
     // re-rooted; no test-body changes required.

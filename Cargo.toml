@@ -4,7 +4,7 @@ members = [
     # Publishable algorithm crate — dependency of every downstream crate.
     # Listed first so workspace convention "dependencies before dependents"
     # holds. Phase 7 added (D-09).
-    "learnforge-core",
+    "skillcoco-core",
     "src-tauri",
 ]
 
@@ -13,7 +13,7 @@ members = [
 # A2 = YES lock, 07-CONTEXT.md).
 #
 # Why this block exists:
-#   Both `learnforge-core` and `src-tauri` (and later: web-platform crate)
+#   Both `skillcoco-core` and `src-tauri` (and later: web-platform crate)
 #   transitively depend on serde, chrono, ed25519-dalek, etc. Without a
 #   workspace-level pin, the two crates can drift to incompatible patch
 #   versions and either:
@@ -23,7 +23,7 @@ members = [
 #         the bump.
 #
 # Member crates opt in by writing `serde = { workspace = true }` etc.
-# Phase 7 Wave 1 only moves learnforge-core onto workspace-deps; src-tauri
+# Phase 7 Wave 1 only moves skillcoco-core onto workspace-deps; src-tauri
 # stays on local pins for now (refactor deferred to a quiet wave per
 # 07-01-PLAN.md Task 1 step 4 — "future drift impossible" once both crates
 # reference workspace-deps).

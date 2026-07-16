@@ -10,10 +10,10 @@
 //! Run with:
 //!
 //! ```bash
-//! cargo run -p learnforge-core --example sm2_schedule
+//! cargo run -p skillcoco-core --example sm2_schedule
 //! ```
 
-use learnforge_core::sm2::sm2_calculate;
+use skillcoco_core::sm2::sm2_calculate;
 
 fn main() {
     // (quality, label) pairs — one failure injected mid-sequence to show

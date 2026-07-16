@@ -201,7 +201,7 @@ fn read_lab_spec_creates(
     let db = state.db.lock().map_err(|e| format!("db lock: {}", e))?;
     let conn = &db.conn;
     let block = {
-        use learnforge_core::blocks::BlockStore;
+        use skillcoco_core::blocks::BlockStore;
         crate::storage_impl::blocks::SqliteBlockStore(conn)
             .get_by_id(block_id)
             .map_err(|e| format!("get_block: {}", e))?

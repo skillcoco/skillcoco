@@ -32,7 +32,7 @@ use crate::db::microlearning::{
 use crate::storage_impl::microlearning::SqliteMicrolearningStore;
 use crate::AppState;
 use chrono::Utc;
-use learnforge_core::microlearning::select_daily_challenge as core_select_daily_challenge;
+use skillcoco_core::microlearning::select_daily_challenge as core_select_daily_challenge;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::State;

@@ -10,10 +10,10 @@
 //! Run with:
 //!
 //! ```bash
-//! cargo run -p learnforge-core --example pack_validate
+//! cargo run -p skillcoco-core --example pack_validate
 //! ```
 
-use learnforge_core::packs::schema;
+use skillcoco_core::packs::schema;
 use serde_json::json;
 
 fn main() {

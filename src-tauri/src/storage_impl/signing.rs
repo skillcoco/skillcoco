@@ -1,8 +1,8 @@
 //! `FsKeyStore` — filesystem-backed [`SigningKeyStore`] implementation.
 //!
 //! Phase 7 Wave 5 (07-05): the FS-backed half of `achievements::signing`
-//! moved here so `learnforge-core::signing` stays pure (no `std::fs`, no
-//! `std::path::Path`) and the WASM build of `learnforge-core` compiles
+//! moved here so `skillcoco-core::signing` stays pure (no `std::fs`, no
+//! `std::path::Path`) and the WASM build of `skillcoco-core` compiles
 //! cleanly. D-03 amendment + Pitfall 4 lock — `std::fs` is not
 //! WASM-portable.
 //!
@@ -25,7 +25,7 @@
 
 use ed25519_dalek::pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey};
 use ed25519_dalek::SigningKey;
-use learnforge_core::signing::{SigningError, SigningKeyStore};
+use skillcoco_core::signing::{SigningError, SigningKeyStore};
 use pkcs8::LineEnding;
 use rand::rngs::OsRng;
 use std::path::{Path, PathBuf};
@@ -235,7 +235,7 @@ impl<'a> SigningKeyStore for MutexCachedKeyStore<'a> {
 #[cfg(test)]
 mod tests {
     //! FS-backed tests that need a real `tempfile::TempDir`. Pure-crypto
-    //! tests live in `learnforge-core/src/signing.rs`.
+    //! tests live in `skillcoco-core/src/signing.rs`.
 
     use super::*;
 
@@ -259,7 +259,7 @@ mod tests {
             k2.to_bytes(),
             "reload yields same key bytes"
         );
-        use learnforge_core::signing::public_key_fingerprint;
+        use skillcoco_core::signing::public_key_fingerprint;
         assert_eq!(
             public_key_fingerprint(&k1.verifying_key()),
             public_key_fingerprint(&k2.verifying_key())

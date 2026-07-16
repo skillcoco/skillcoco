@@ -33,8 +33,8 @@ use super::schema;
 
 /// Compile-time-embedded `topic-packs/` directory.
 ///
-/// Path is relative to `$CARGO_MANIFEST_DIR` (= `learnforge-core/`).
-/// Resolves to `learnforge-core/topic-packs/`, picking up every pack
+/// Path is relative to `$CARGO_MANIFEST_DIR` (= `skillcoco-core/`).
+/// Resolves to `skillcoco-core/topic-packs/`, picking up every pack
 /// directory automatically — no per-pack code edit needed.
 ///
 /// Phase 7 Wave 9 (07-09): the `topic-packs/` directory was relocated
@@ -43,7 +43,7 @@ use super::schema;
 /// `$CARGO_MANIFEST_DIR/../topic-packs` reached one level above the crate
 /// root, which broke `cargo publish --dry-run` (the verified tarball
 /// cannot include files outside the crate directory). Moving the assets
-/// into the crate is the canonical fix and makes `learnforge-core`
+/// into the crate is the canonical fix and makes `skillcoco-core`
 /// self-contained on crates.io.
 pub static BUNDLED_PACKS: Dir<'_> =
     include_dir!("$CARGO_MANIFEST_DIR/topic-packs");

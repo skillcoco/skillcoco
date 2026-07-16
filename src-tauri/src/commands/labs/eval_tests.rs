@@ -562,7 +562,7 @@ fn eval_test_app_state() -> Arc<AppState> {
         db: Arc::new(std::sync::Mutex::new(db)),
         lab_sessions: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         topic_packs: Arc::new(std::sync::Mutex::new(
-            learnforge_core::packs::PackRegistry::default(),
+            skillcoco_core::packs::PackRegistry::default(),
         )),
         signing_key: Arc::new(std::sync::Mutex::new(None)),
         signing_key_path: std::path::PathBuf::from("/tmp/learnforge-eval-tests-keys"),

@@ -7,7 +7,7 @@
 //! ## Orphan-rule recipe
 //!
 //! `impl PackStore for &Connection` would violate E0117 because both the
-//! trait (`learnforge_core::packs::persistence::PackStore`) and the
+//! trait (`skillcoco_core::packs::persistence::PackStore`) and the
 //! target (`rusqlite::Connection`) are foreign to `src-tauri`. The local
 //! newtype [`SqlitePackStore`] satisfies the orphan rule with no runtime
 //! cost — a single-field tuple struct around `&T` has identical layout
@@ -23,8 +23,8 @@
 //! - **Q6 (skills-only reload):** [`SqlitePackStore::delete_skill_rows`]
 //!   filters by `source='skill'`; bundled rows are untouched.
 
-use learnforge_core::packs::persistence::{source_str, status_str, PackStore};
-use learnforge_core::packs::{LoadedPack, PackError};
+use skillcoco_core::packs::persistence::{source_str, status_str, PackStore};
+use skillcoco_core::packs::{LoadedPack, PackError};
 use rusqlite::{params, Connection};
 
 /// Local newtype carrying the rusqlite-backed [`PackStore`] impl.
@@ -108,7 +108,7 @@ mod tests {
     use super::*;
     use crate::db::migrations::apply_migrations;
     use crate::db::schema;
-    use learnforge_core::packs::{Pack, PackSource, ValidationStatus};
+    use skillcoco_core::packs::{Pack, PackSource, ValidationStatus};
     use rusqlite::Connection;
 
     fn fresh_db() -> Connection {

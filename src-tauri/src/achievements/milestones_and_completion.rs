@@ -1,7 +1,7 @@
 //! Phase 08.2 — milestone + completion issuance + points awards.
 //!
 //! Replaces the OSS desktop binary's consumer of
-//! `learnforge_core::achievements::maybe_issue` (which still ships the
+//! `skillcoco_core::achievements::maybe_issue` (which still ships the
 //! 3-tier Associate/Practitioner/Professional ladder as library
 //! primitives — see D-12). Per D-16/D-17, OSS now issues:
 //!
@@ -33,7 +33,7 @@
 //! Phase 08.1 (cert split); Studio overlay re-introduces signing for
 //! the Completion cert PDF.
 
-use learnforge_core::achievements::Achievement;
+use skillcoco_core::achievements::Achievement;
 use rusqlite::Connection;
 use uuid::Uuid;
 

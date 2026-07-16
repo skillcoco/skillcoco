@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 # now consumes the publishable algorithm crate; module-by-module migration
 # follows in Waves 3-8. learning/adaptive.rs and learning/path.rs are
 # transitional re-export shims that delete in Wave 10 (07-10-PLAN.md).
-learnforge-core = { path = "../learnforge-core" }
+skillcoco-core = { path = "../skillcoco-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
@@ -54,11 +54,11 @@ include_dir = "0.7"
 
 # Phase 6 (Certification) — Wave 0 dependency adds (Plan 06-01).
 # Phase 7 Wave 5 (07-05) — `sha2` removed; the SHA-256 fingerprint hashing
-# moved to `learnforge_core::signing::public_key_fingerprint` and no
+# moved to `skillcoco_core::signing::public_key_fingerprint` and no
 # src-tauri code outside the (now shim) signing module references it
 # directly. Verified via:
 #   rg "sha2|Sha256" src-tauri/src/ --type rust  →  0 hits
-# The transitive sha2 dep is pulled through `learnforge-core` so no
+# The transitive sha2 dep is pulled through `skillcoco-core` so no
 # resolution-graph change occurs.
 # Crate selection locked in 06-RESEARCH.md + 06-CONTEXT.md A2:
 #   - qrcode 0.14 + image 0.25 for QR (NOT fast_qr — A2 lock)

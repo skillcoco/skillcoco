@@ -4,7 +4,7 @@
 //! mixed pure/DB code split). The DB-touching prerequisite check
 //! ([`all_prerequisites_mastered`]) is preserved as a free function that takes
 //! a [`BktStore`] trait object, so persistence stays
-//! behind the storage trait and `learnforge-core` itself remains
+//! behind the storage trait and `skillcoco-core` itself remains
 //! WASM-portable / rusqlite-free.
 //!
 //! ## Surface
@@ -52,7 +52,7 @@ pub enum PathError {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::path::{EdgeRecord, parse_edges_json};
+/// use skillcoco_core::path::{EdgeRecord, parse_edges_json};
 ///
 /// let json = r#"[{"from":"a","to":"b","type":"prerequisite"}]"#;
 /// let edges: Vec<EdgeRecord> = parse_edges_json(json).unwrap();
@@ -89,7 +89,7 @@ fn default_edge_type() -> String {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::path::parse_edges_json;
+/// use skillcoco_core::path::parse_edges_json;
 ///
 /// // Empty array parses to empty Vec
 /// assert!(parse_edges_json("[]").unwrap().is_empty());
@@ -117,8 +117,8 @@ pub fn parse_edges_json(edges_json: &str) -> Result<Vec<EdgeRecord>, PathError> 
 /// # Example
 ///
 /// ```
-/// use learnforge_core::bkt::{BktError, BktStore};
-/// use learnforge_core::path::{EdgeRecord, all_prerequisites_mastered};
+/// use skillcoco_core::bkt::{BktError, BktStore};
+/// use skillcoco_core::path::{EdgeRecord, all_prerequisites_mastered};
 ///
 /// struct AllMastered;
 /// impl BktStore for AllMastered {
@@ -216,7 +216,7 @@ pub struct PathEdge {
 /// # Example
 ///
 /// ```
-/// use learnforge_core::path::{PathNode, PathEdge, validate_dag};
+/// use skillcoco_core::path::{PathNode, PathEdge, validate_dag};
 ///
 /// let nodes = vec![
 ///     PathNode {
@@ -407,7 +407,7 @@ mod tests {
 
     /// Pure-Rust BktStore stub: per-(learner, module) mastery map.
     /// Used by the Wave 2 prereq-check tests to avoid pulling rusqlite into
-    /// learnforge-core just to verify the algorithm.
+    /// skillcoco-core just to verify the algorithm.
     struct MapStore {
         masteries: HashMap<(String, String), f64>,
     }
