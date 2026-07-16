@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nickkuk/nickkuk.github.io/refs/heads/master/tauri-v2.json",
   "productName": "SkillCoco",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "identifier": "com.skillcoco.app",
   "build": {
     "beforeDevCommand": "pnpm dev",

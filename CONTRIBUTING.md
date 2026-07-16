@@ -206,15 +206,18 @@ SkillCoco follows an **open-core model**:
 
 | What | Where | License |
 |------|-------|---------|
-| Adaptive engine (BKT, SM-2, microlearning), open pack format, lessons/video/quizzes, gamification, AI tutor (BYOK/local) | **This repo** | MIT |
-| Integrated learning environment: terminal + IDE, validated/graded labs, interactive simulators, exam simulators | SkillCoco Pro (private) | Commercial |
+| Adaptive engine (BKT, SM-2, microlearning), open pack format + import, lessons/video/quizzes, gamification, AI tutor (BYOK/local), local self-signed completion badge, and terminal labs (use + build) | **This repo** | MIT |
+| Richer integrated learning environment (IDE, interactive simulators, exam simulator) and other paid-tier features | SkillCoco Pro (private) | Commercial |
 | Course licensing, verifiable certificates, progress sync, cohort/manager reporting, multi-tenant web | SkillCoco Hub (private) | Commercial |
 | Course authoring + AI enrichment for educators | SkillCoco Studio (private) | Commercial |
 
-Some Pro-tier features (terminal labs, exam-sim) still exist in this repository
-today; they are scheduled to move out in a planned "OSS-lite" milestone.
-Contributions to this repository improve the open-source desktop product.
-Commercial-product features are built in their own repositories by the core team.
+The "OSS-lite" open-core split is complete (v2.0.0): the commercial-tier
+features — skill reports, exam simulator, entitlements/redeem, and the
+client-side certificate trust chain — were removed from this repository and
+continue in the private SkillCoco Pro fork. Terminal labs stay here as a
+first-class OSS feature. Contributions to this repository improve the
+open-source desktop product; commercial-product features are built in their
+own repositories by the core team.
 
 If you are unsure whether your contribution is in scope, open an issue and ask
 before investing time in implementation.

@@ -9,13 +9,16 @@
   contracts are the pack schema and the `skillcoco-core` crate; cross-repo
   changes are decided there first.
 - **No feature-parity obligation with Pro.** OSS is allowed to be boring.
-- Planned background milestone "OSS-lite strip + open-core launch" (required before
-  public promotion, no other deadline): remove terminal labs, exam-sim, entitlements/
-  redeem, and the client-side certificate trust chain. Keep: adaptive engine
-  (BKT/SM-2/microlearning), pack format + import, lessons/video/quizzes,
-  gamification, AI tutor (BYOK/local models), simple local completion badge.
-- The full-featured lineage continues in the private `skillcoco-pro` fork
-  (forked 2026-07-14 at `0c516fb`).
+- The "OSS-lite strip + open-core launch" milestone is DONE (shipped as
+  v2.0.0). Removed from OSS: skill reports, exam-sim, entitlements/redeem,
+  and the client-side certificate trust chain + pack signature gate (pack
+  import is now plain unsigned local import). Kept in OSS: adaptive engine
+  (BKT/SM-2/microlearning), pack format + import + bundled starter packs,
+  lessons/video/quizzes, gamification, AI tutor (BYOK/local models), the
+  local self-signed completion badge, and **terminal labs (use + build) —
+  a first-class OSS feature**.
+- The full-featured commercial lineage continues in the private
+  `skillcoco-pro` fork (forked 2026-07-14 at `0c516fb`).
 
 ## Behavioral Rules (Always Enforced)
 
