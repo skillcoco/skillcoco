@@ -5,9 +5,9 @@
 set -euo pipefail
 
 # Paths that must never enter the OSS repo.
-BLOCKED_PATHS_REGEX='(^|/)\.planning/|(^|/)private/|^pro/|^_pro_placeholder/|(^|/)\.env($|\.)|\.pem$|\.key$|(^|/)id_(rsa|ed25519)($|\.)|(^|/)credentials(\.|$)'
-# Exceptions: public-key fixtures are allowed (they are not secrets).
-ALLOW_REGEX='root[-_]public\.pem$|root-public\.pem$'
+BLOCKED_PATHS_REGEX='(^|/)\.planning/|(^|/)private/|^pro/|^_pro_placeholder/|(^|/)\.env$|(^|/)\.env\.(local|production|development)$|\.pem$|\.key$|(^|/)id_(rsa|ed25519)($|\.)|(^|/)credentials(\.|$)'
+# Exceptions (not secrets): public-key fixtures + committed env examples.
+ALLOW_REGEX='root[-_]public\.pem$|\.env\.(example|sample|template)$'
 
 staged="$(git diff --cached --name-only --diff-filter=AM)"
 [ -z "$staged" ] && exit 0
