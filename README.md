@@ -9,12 +9,18 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/skillcoco/skillcoco/actions/workflows/ci.yml"><img src="https://github.com/skillcoco/skillcoco/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/skillcoco/skillcoco/releases/latest"><img src="https://img.shields.io/github/v/release/skillcoco/skillcoco?label=release" alt="Latest release" /></a>
+  <a href="https://github.com/skillcoco/skillcoco/releases"><img src="https://img.shields.io/github/downloads/skillcoco/skillcoco/total?label=downloads" alt="Downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT" /></a>
   <a href="https://github.com/skillcoco/skillcoco/actions/workflows/cla.yml"><img src="https://img.shields.io/badge/CLA-required-orange.svg" alt="CLA required" /></a>
   <img src="https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=white" alt="Tauri 2" />
   <img src="https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white" alt="Rust" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white" alt="React 18" />
-  <img src="https://img.shields.io/badge/Status-Active_Development-success" alt="Active development" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/skillcoco/skillcoco/releases/latest"><strong>⬇ Download the latest macOS build</strong></a>
 </p>
 
 <p align="center">
@@ -139,6 +145,16 @@ Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) befo
 See [`LICENSING.md`](LICENSING.md) for the full boundary explanation.
 
 Adaptive learning algorithms should be open, auditable, and patent-free. That is the design.
+
+---
+
+## Star history
+
+If SkillCoco is useful to you, a ⭐ helps others find it.
+
+<a href="https://star-history.com/#skillcoco/skillcoco&Date">
+  <img src="https://api.star-history.com/svg?repos=skillcoco/skillcoco&type=Date" alt="Star History Chart" width="600" />
+</a>
 
 ---
 
