@@ -46,7 +46,7 @@ dirs = "5"
 # Graph DB for learning path DAGs
 # ruvector-graph = { path = "../../../../agentix/upstream/ruvector/crates/ruvector-graph", default-features = false }
 portable-pty = "0.9"
-bollard = "0.19"
+bollard = "0.21"
 gray_matter = "0.2"
 serde_yaml = "0.9"
 regex = "1"
