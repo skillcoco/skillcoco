@@ -20,6 +20,9 @@ tauri-build = { version = "2", features = [] }
 skillcoco-core = { path = "../skillcoco-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+# Phase 7 validate-export (Studio EXP-05, D-08) — skillcoco:// scheme handler.
+# 2.4.9 approved via package-legitimacy gate (official tauri-apps plugin).
+tauri-plugin-deep-link = "2.4.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }

@@ -3,6 +3,9 @@ mod ai;
 pub mod auth;
 pub mod commands;
 pub mod db;
+// Phase 7 validate-export (Studio EXP-05 upstream half, D-08) — generic
+// skillcoco://import?path= deep-link parsing; handler wired in build_app.
+pub mod deep_link;
 pub mod labs;
 // Phase 18 Plan 4 — shared PDF text-rendering helper (`push_line`) used by
 // the certificate renderer (achievements::artifacts). Extracted so the
@@ -220,6 +223,10 @@ pub fn build_app() -> tauri::Builder<tauri::Wry> {
         // ready-to-call API surface.
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        // Phase 7 validate-export (Studio EXP-05, D-08) — skillcoco:// scheme.
+        // macOS registration is STATIC (tauri.conf.json plugins.deep-link) and
+        // only activates for an installed /Applications bundle — not dev runs.
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let app_dir = app
                 .path()
@@ -286,6 +293,44 @@ pub fn build_app() -> tauri::Builder<tauri::Wry> {
             }
 
             log::info!("SkillCoco initialized with DB at {:?}", db_path);
+
+            // skillcoco://import?path=<pack> → generic pack import (D-08).
+            // Same fail-closed gate as the file-picker import: the payload is
+            // schema-validated before any DB write. Errors are logged and
+            // ignored — a bad deep link must never crash the app.
+            #[cfg(desktop)]
+            {
+                use tauri::Manager;
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        let Some(pack_path) = deep_link::parse_import_deep_link(url.as_str())
+                        else {
+                            log::warn!("ignoring unrecognized deep link: {url}");
+                            continue;
+                        };
+                        let state = handle.state::<AppState>();
+                        let import_result = state
+                            .db
+                            .lock()
+                            .map_err(|e| e.to_string())
+                            .and_then(|db| {
+                                commands::course_io::import_course_impl(&db.conn, &pack_path)
+                                    .map_err(|e| e.to_string())
+                            });
+                        match import_result {
+                            Ok(result) => log::info!(
+                                "deep-link import succeeded: {pack_path} → {result:?}"
+                            ),
+                            Err(e) => {
+                                log::warn!("deep-link import failed for {pack_path}: {e}")
+                            }
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
 }

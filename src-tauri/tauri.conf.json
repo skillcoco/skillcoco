@@ -44,5 +44,14 @@
       "entitlements": "./Entitlements.plist",
       "hardenedRuntime": true
     }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "skillcoco"
+        ]
+      }
+    }
   }
 }
