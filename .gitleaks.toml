@@ -16,4 +16,7 @@ paths = [
   '''src-tauri/src/entitlements/.*''',
   '''src-tauri/src/commands/entitlements.*\.rs''',
   '''src-tauri/src/licensing/.*''',
+  # .claude/ agent + config docs contain example/placeholder tokens
+  # (e.g. private_key_hex: "ed25519_private_key"), never real secrets.
+  '''\.claude/.*''',
 ]
