@@ -48,15 +48,27 @@ interface ReferenceVideoPanelProps {
 }
 
 /**
- * Builds the youtube-nocookie embed src with enablejsapi=1, start=, and origin=.
+ * Builds the youtube-nocookie embed src.
  *
  * `start` is floored to an integer (YT only accepts whole seconds).
- * origin= is required for the postMessage protocol to work cross-origin.
+ *
+ * YouTube's IFrame API rejects a non-http(s) `origin` — such as Tauri's
+ * desktop webview origin `tauri://localhost` — with "Video player
+ * configuration error" (error 153), which blocks playback entirely. So we
+ * only attach `enablejsapi=1` + `origin=` on a real web origin (browser / dev
+ * server), where the postMessage progress-tracking protocol works. On the
+ * desktop app we emit a plain embed that just plays; progress tracking
+ * (enablejsapi/postMessage) is a nice-to-have and is skipped there.
  */
 function nocookieEmbedSrc(videoId: string, startSeconds: number): string {
   const start = Math.floor(Math.max(0, startSeconds));
-  const origin = encodeURIComponent(window.location.origin);
-  return `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&start=${start}&origin=${origin}`;
+  const params = new URLSearchParams({ start: String(start) });
+  const origin = window.location.origin;
+  if (origin.startsWith("http://") || origin.startsWith("https://")) {
+    params.set("enablejsapi", "1");
+    params.set("origin", origin);
+  }
+  return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`;
 }
 
 export function ReferenceVideoPanel({

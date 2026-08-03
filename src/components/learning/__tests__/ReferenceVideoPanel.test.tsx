@@ -668,6 +668,30 @@ describe("ReferenceVideoPanel (acceptance)", () => {
       });
     });
 
+    it("vp_iframe_src_omits_jsapi_on_tauri_origin — non-http(s) origin (tauri://) drops enablejsapi+origin to avoid YouTube error 153", async () => {
+      const original = Object.getOwnPropertyDescriptor(window, "location");
+      // Simulate the Tauri desktop webview origin.
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: { ...window.location, origin: "tauri://localhost" },
+      });
+      try {
+        mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
+        render(<ReferenceVideoPanel {...DEFAULT_PROPS} />);
+        await waitFor(() => {
+          const iframe = screen.getByTitle(VIDEO_A.title) as HTMLIFrameElement;
+          // Still a playable youtube-nocookie embed with start=, but NO
+          // enablejsapi/origin (which trigger error 153 on tauri:// origins).
+          expect(iframe.src).toContain("youtube-nocookie.com/embed/");
+          expect(iframe.src).toContain("start=");
+          expect(iframe.src).not.toContain("enablejsapi");
+          expect(iframe.src).not.toContain("origin=");
+        });
+      } finally {
+        if (original) Object.defineProperty(window, "location", original);
+      }
+    });
+
     it("vp_message_event_stores_current_time — infoDelivery message from nocookie origin updates the store", async () => {
       mockGetLessonVideos.mockResolvedValue(makeResult([VIDEO_A]));
 
