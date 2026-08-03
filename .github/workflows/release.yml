@@ -83,7 +83,7 @@ jobs:
       # floating `@v0` tag could shift to v0.7 without notice. v0.6.2
       # is the latest verified 0.6.x as of 2026-06-17.
       - name: Build, sign, and upload to GitHub Releases
-        uses: tauri-apps/tauri-action@v0.6.2
+        uses: tauri-apps/tauri-action@v1.0.0
         env:
           # macOS signing + notarization (Apple ID variant — 6 secrets).
           # These resolve to empty strings pre-Wave-6; tauri-action
