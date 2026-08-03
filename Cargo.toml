@@ -42,7 +42,7 @@ uuid = { version = "1", features = ["v4", "js"] }
 # Ed25519 signing stack — `pkcs8` + `pem` for key I/O, `rand_core` for OsRng.
 ed25519-dalek = { version = "2", features = ["pkcs8", "rand_core", "pem"] }
 pkcs8 = { version = "0.10", features = ["pem"] }
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 base64 = "0.22"
 rand = "0.8"
