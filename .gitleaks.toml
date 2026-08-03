@@ -1,0 +1,19 @@
+title = "SkillCoco gitleaks config"
+
+# Use gitleaks' full default rule set.
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+Allowlisted false positives. These are fake, non-secret test fixtures in the
+commercial-tier code that was stripped in v2.0.0 (entitlements / license
+redeem / licensing). The code no longer exists in the working tree; it only
+survives in historical commits, which gitleaks still scans. No real secret has
+ever been committed to this repo (verified during the v2.0.1 history purge).
+"""
+paths = [
+  '''src-tauri/src/entitlements/.*''',
+  '''src-tauri/src/commands/entitlements.*\.rs''',
+  '''src-tauri/src/licensing/.*''',
+]
