@@ -80,7 +80,7 @@ image = "0.25"
 printpdf = { version = "0.9", features = ["images", "png"] }
 base64 = "0.22"
 hex = "0.4"
-rand = "0.8"
+rand = "0.9"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 
