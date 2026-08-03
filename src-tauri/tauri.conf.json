@@ -40,7 +40,6 @@
       "resources/starter-packs/"
     ],
     "macOS": {
-      "signingIdentity": "Developer ID Application: <REPLACE_AFTER_ENROLLMENT> (<TEAM_ID>)",
       "entitlements": "./Entitlements.plist",
       "hardenedRuntime": true
     }
