@@ -12,6 +12,17 @@ remains the per-crate source of truth per Phase 8 O-6.
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-08-05
+
+### Fixed
+- Reference-video playback in lessons: the embed sent `enablejsapi=1` with
+  `origin=<window.location.origin>`. In the desktop app that origin is
+  `tauri://localhost`, a non-http(s) scheme that YouTube's IFrame API now
+  rejects with "Video player configuration error" (error 153), blocking
+  playback entirely. `enablejsapi`/`origin` are now only attached on a real
+  http(s) origin (browser/dev); the desktop app gets a plain embed that plays
+  normally, with progress-resume tracking degrading gracefully there.
+
 ## [2.0.1] - 2026-08-03
 
 Patch release — no functional or API changes.
