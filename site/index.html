@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SkillCoco — Open-source adaptive learning, in your terminal</title>
+    <meta
+      name="description"
+      content="SkillCoco is an open-source, offline-capable desktop app for adaptive learning. Bayesian Knowledge Tracing + SM-2 spaced repetition, AI-judged hands-on terminal labs, and a bring-your-own-key AI tutor. MIT licensed."
+    />
+    <meta name="theme-color" content="#f97316" />
+    <link rel="canonical" href="https://skillcoco.com/" />
+
+    <!-- Open Graph / social preview -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SkillCoco" />
+    <meta property="og:title" content="SkillCoco — Open-source adaptive learning, in your terminal" />
+    <meta
+      property="og:description"
+      content="Bayesian Knowledge Tracing + SM-2 spaced repetition, AI-judged hands-on terminal labs, and a bring-your-own-key AI tutor. MIT licensed desktop app."
+    />
+    <meta property="og:image" content="https://skillcoco.com/og-image.png" />
+    <meta property="og:url" content="https://skillcoco.com/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="SkillCoco — Open-source adaptive learning, in your terminal" />
+    <meta
+      name="twitter:description"
+      content="Bayesian Knowledge Tracing + SM-2 spaced repetition, AI-judged hands-on terminal labs, and a bring-your-own-key AI tutor. MIT licensed."
+    />
+    <meta name="twitter:image" content="https://skillcoco.com/og-image.png" />
+
+    <link rel="icon" type="image/svg+xml" href="/coco.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "SkillCoco",
+        "operatingSystem": "macOS",
+        "applicationCategory": "EducationalApplication",
+        "description": "Open-source, offline-capable desktop app for adaptive learning — Bayesian Knowledge Tracing, SM-2 spaced repetition, AI-judged terminal labs, and a bring-your-own-key AI tutor.",
+        "license": "https://github.com/skillcoco/skillcoco/blob/main/LICENSE",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "url": "https://skillcoco.com/",
+        "codeRepository": "https://github.com/skillcoco/skillcoco"
+      }
+    </script>
+  </head>
+  <body>
+    <a href="#main" class="skip-link">Skip to content</a>
+
+    <!-- ============ HEADER ============ -->
+    <header class="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-xl">
+      <div class="mx-auto flex h-16 max-w-8xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <a href="#top" class="flex items-center gap-2.5" aria-label="SkillCoco home">
+          <img src="/coco.svg" alt="" class="h-8 w-8" width="32" height="32" />
+          <span class="text-lg font-bold tracking-tight">Skill<span class="text-primary">Coco</span></span>
+        </a>
+
+        <nav class="hidden items-center gap-8 md:flex" aria-label="Primary">
+          <a href="#features" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">Features</a>
+          <a href="#labs" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">Terminal Labs</a>
+          <a href="#open-core" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">Open Core</a>
+          <a href="#install" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">Install</a>
+          <a
+            href="https://github.com/skillcoco/skillcoco"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.64 1.59.24 2.77.12 3.06.74.8 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .3.2.66.79.55A10.99 10.99 0 0 0 23.5 12c0-6.27-5.23-11.5-11.5-11.5Z"/></svg>
+            <span data-github-stars class="tabular-nums">GitHub</span>
+          </a>
+        </nav>
+
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            data-theme-toggle
+            aria-label="Toggle dark mode"
+            class="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <svg data-icon-sun viewBox="0 0 24 24" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            <svg data-icon-moon viewBox="0 0 24 24" class="hidden h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+          </button>
+
+          <a
+            href="https://github.com/skillcoco/skillcoco/releases/latest"
+            data-download-dmg
+            class="hidden items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 sm:flex"
+          >
+            Download
+          </a>
+
+          <button
+            type="button"
+            data-mobile-nav-toggle
+            aria-label="Toggle menu"
+            aria-expanded="false"
+            class="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground md:hidden"
+          >
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <nav data-mobile-nav class="hidden flex-col gap-1 border-t border-border/70 bg-background px-4 py-3 md:hidden" aria-label="Mobile">
+        <a href="#features" class="rounded-md px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary">Features</a>
+        <a href="#labs" class="rounded-md px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary">Terminal Labs</a>
+        <a href="#open-core" class="rounded-md px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary">Open Core</a>
+        <a href="#install" class="rounded-md px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary">Install</a>
+        <a href="https://github.com/skillcoco/skillcoco" target="_blank" rel="noopener noreferrer" class="rounded-md px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <!-- ============ HERO ============ -->
+      <section id="top" class="relative overflow-hidden">
+        <div class="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_60%_50%_at_50%_-10%,hsl(var(--primary)/0.14),transparent)]"></div>
+        <div class="mx-auto max-w-8xl px-4 pb-16 pt-16 sm:px-6 sm:pt-24 lg:px-8 lg:pt-28">
+          <div class="grid items-center gap-12 lg:grid-cols-2 lg:gap-8">
+            <div class="reveal">
+              <span class="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/60 px-3 py-1 text-xs font-medium text-muted-foreground">
+                <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></svg>
+                Open source · MIT licensed
+              </span>
+
+              <h1 class="mt-5 text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-5xl lg:text-[3.4rem]">
+                Learn anything, adapt in
+                <span class="text-primary">real time</span>.
+              </h1>
+
+              <p class="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
+                SkillCoco is an open-source desktop app that replaces
+                &ldquo;did they watch the video?&rdquo; with &ldquo;can they
+                actually do this?&rdquo; — powered by real learning science,
+                AI-generated content, and hands-on terminal labs you can
+                build yourself.
+              </p>
+
+              <div class="mt-8 flex flex-wrap items-center gap-3">
+                <a
+                  href="https://github.com/skillcoco/skillcoco/releases/latest"
+                  data-download-dmg
+                  class="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+                >
+                  <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download for macOS
+                </a>
+                <a
+                  href="https://github.com/skillcoco/skillcoco"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-2 rounded-md border border-border px-5 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
+                >
+                  <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.64 1.59.24 2.77.12 3.06.74.8 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .3.2.66.79.55A10.99 10.99 0 0 0 23.5 12c0-6.27-5.23-11.5-11.5-11.5Z"/></svg>
+                  View on GitHub
+                  <span data-github-stars class="tabular-nums text-muted-foreground"></span>
+                </a>
+              </div>
+
+              <div class="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+                <span class="inline-flex items-center gap-1.5">
+                  <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 text-success" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                  Signed &amp; notarized for macOS
+                </span>
+                <span>Apple Silicon · <span data-latest-version>latest release</span></span>
+                <span>~10&nbsp;MB install</span>
+                <span>No telemetry</span>
+              </div>
+            </div>
+
+            <!-- Illustrative product mockup (not a literal screenshot) -->
+            <div class="reveal" style="transition-delay: 120ms">
+              <div class="overflow-hidden rounded-xl border border-border shadow-2xl shadow-black/10">
+                <div class="flex items-center gap-1.5 border-b border-border bg-secondary/60 px-4 py-2.5">
+                  <span class="h-2.5 w-2.5 rounded-full bg-[#ff5f57]"></span>
+                  <span class="h-2.5 w-2.5 rounded-full bg-[#febc2e]"></span>
+                  <span class="h-2.5 w-2.5 rounded-full bg-[#28c840]"></span>
+                  <span class="ml-3 text-xs text-muted-foreground">SkillCoco</span>
+                </div>
+                <div class="grid grid-cols-[auto,1fr] bg-card">
+                  <aside class="hidden w-40 border-r border-border p-3 sm:block">
+                    <div class="mb-4 flex items-center gap-2 px-1">
+                      <img src="/coco.svg" alt="" class="h-4 w-4" />
+                      <span class="text-xs font-bold">SkillCoco</span>
+                    </div>
+                    <div class="space-y-1">
+                      <div class="rounded-md bg-primary/10 px-2 py-1.5 text-xs font-medium text-primary">Dashboard</div>
+                      <div class="rounded-md px-2 py-1.5 text-xs text-muted-foreground">Review</div>
+                      <div class="rounded-md px-2 py-1.5 text-xs text-muted-foreground">Library</div>
+                    </div>
+                    <div class="mt-4 space-y-1.5 px-1">
+                      <div class="h-1.5 w-full rounded-full bg-secondary">
+                        <div class="h-full w-2/3 rounded-full bg-info"></div>
+                      </div>
+                      <div class="h-1.5 w-full rounded-full bg-secondary">
+                        <div class="h-full w-1/3 rounded-full bg-primary"></div>
+                      </div>
+                    </div>
+                  </aside>
+                  <div class="p-5">
+                    <p class="text-sm font-semibold">Kubernetes Fundamentals</p>
+                    <p class="mt-0.5 text-xs text-muted-foreground">Module 4 · Pod scheduling</p>
+                    <div class="mt-4 rounded-lg border border-border bg-secondary/40 p-3">
+                      <p class="text-[11px] font-medium text-muted-foreground">Mastery — Bayesian Knowledge Tracing</p>
+                      <div class="mt-2 flex items-end gap-1.5">
+                        <div class="h-6 w-4 rounded-sm bg-info/70"></div>
+                        <div class="h-9 w-4 rounded-sm bg-info/80"></div>
+                        <div class="h-14 w-4 rounded-sm bg-primary"></div>
+                        <div class="h-10 w-4 rounded-sm bg-info/60"></div>
+                        <div class="h-16 w-4 rounded-sm bg-primary"></div>
+                      </div>
+                    </div>
+                    <div class="mt-3 rounded-lg border border-border bg-[#0d1117] p-3 font-mono text-[11px] text-[#c9d1d9]">
+                      <span class="text-success">$</span> kubectl get pods<br />
+                      <span class="text-muted-foreground">nginx-7d9f8   1/1   Running</span><br />
+                      <span class="text-primary">✓ Step 3 check passed</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TRUST STRIP ============ -->
+      <section class="border-y border-border bg-secondary/30">
+        <div class="mx-auto grid max-w-8xl grid-cols-2 gap-6 px-4 py-8 sm:px-6 md:grid-cols-4 lg:px-8">
+          <div class="reveal flex items-center gap-3">
+            <svg viewBox="0 0 24 24" class="h-6 w-6 shrink-0 text-primary" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a4 4 0 0 0-4 4v1a3 3 0 0 0-2 5.24V14a3 3 0 0 0 3 3v2a3 3 0 0 0 6 0v-2a3 3 0 0 0 3-3v-1.76A3 3 0 0 0 16 7V6a4 4 0 0 0-4-4Z"/></svg>
+            <span class="text-sm font-medium">Bayesian Knowledge Tracing</span>
+          </div>
+          <div class="reveal flex items-center gap-3" style="transition-delay: 60ms">
+            <svg viewBox="0 0 24 24" class="h-6 w-6 shrink-0 text-primary" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            <span class="text-sm font-medium">SM-2 Spaced Repetition</span>
+          </div>
+          <div class="reveal flex items-center gap-3" style="transition-delay: 120ms">
+            <svg viewBox="0 0 24 24" class="h-6 w-6 shrink-0 text-primary" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <span class="text-sm font-medium">Terminal Labs, Built In</span>
+          </div>
+          <div class="reveal flex items-center gap-3" style="transition-delay: 180ms">
+            <svg viewBox="0 0 24 24" class="h-6 w-6 shrink-0 text-primary" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+            <span class="text-sm font-medium">MIT Licensed, Auditable</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ FEATURES ============ -->
+      <section id="features" class="mx-auto max-w-8xl px-4 py-20 sm:px-6 lg:px-8">
+        <div class="reveal mx-auto max-w-2xl text-center">
+          <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">What makes SkillCoco different</h2>
+          <p class="mt-4 text-muted-foreground">
+            Six things most learning apps skip — none of them optional here.
+          </p>
+        </div>
+
+        <div class="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="reveal rounded-xl border border-border bg-card p-6">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a4 4 0 0 0-4 4v1a3 3 0 0 0-2 5.24V14a3 3 0 0 0 3 3v2a3 3 0 0 0 6 0v-2a3 3 0 0 0 3-3v-1.76A3 3 0 0 0 16 7V6a4 4 0 0 0-4-4Z"/></svg>
+            </div>
+            <h3 class="mt-4 font-semibold">Real Bayesian Knowledge Tracing</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Corbett &amp; Anderson's 1994 BKT algorithm — the same model
+              behind Carnegie Mellon's Cognitive Tutors. Every answer updates
+              a per-skill posterior; modules unlock only when mastery is
+              demonstrated.
+            </p>
+          </div>
+
+          <div class="reveal rounded-xl border border-border bg-card p-6" style="transition-delay: 60ms">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </div>
+            <h3 class="mt-4 font-semibold">AI-judged terminal labs</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Labs check work in three layers: regex, exit-code, and — as a
+              last resort — a budget-guarded AI judge scoring open-ended
+              steps against a per-step rubric. Evaluation never silently
+              passes.
+            </p>
+          </div>
+
+          <div class="reveal rounded-xl border border-border bg-card p-6" style="transition-delay: 120ms">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            </div>
+            <h3 class="mt-4 font-semibold">Spaced repetition that decays</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Mastered modules auto-generate SM-2 flashcard reviews on
+              Wozniak's forgetting-curve schedule. The dashboard surfaces the
+              review queue alongside new content — mastery isn't a one-time
+              event.
+            </p>
+          </div>
+
+          <div class="reveal rounded-xl border border-border bg-card p-6" style="transition-delay: 180ms">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+            </div>
+            <h3 class="mt-4 font-semibold">Local-first, offline-capable</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              A ~10&nbsp;MB Tauri 2 binary. BKT, SM-2, SQLite (WAL), and
+              vector search all run in-process. No telemetry, no internet
+              required for the core loop.
+            </p>
+          </div>
+
+          <div class="reveal rounded-xl border border-border bg-card p-6" style="transition-delay: 240ms">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5 19 11l-3 3"/></svg>
+            </div>
+            <h3 class="mt-4 font-semibold">Bring your own AI key</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Claude, ChatGPT, or Gemini — paste a key or sign in with an
+              existing subscription — or point SkillCoco at a local Ollama
+              instance. No hosted backend to pay for or trust.
+            </p>
+          </div>
+
+          <div class="reveal rounded-xl border border-border bg-card p-6" style="transition-delay: 300ms">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+            </div>
+            <h3 class="mt-4 font-semibold">The only OSS platform like it</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              MIT licensed, source-auditable, and the only open-source
+              adaptive learning platform that ships BKT, SM-2, AI
+              integration, and an embedded terminal in one installable
+              binary.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TERMINAL LABS ============ -->
+      <section id="labs" class="border-y border-border bg-secondary/30 py-20">
+        <div class="mx-auto grid max-w-8xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
+          <div class="reveal">
+            <span class="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
+              First-class OSS feature
+            </span>
+            <h2 class="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Terminal labs you can use — and build</h2>
+            <p class="mt-4 leading-relaxed text-muted-foreground">
+              Hands-on labs run in an isolated Docker sandbox when available,
+              with an automatic host-shell fallback. Every step is checked
+              deterministically first (regex, exit code, file state); an
+              AI judge only steps in for open-ended work.
+            </p>
+            <ul class="mt-6 space-y-3 text-sm">
+              <li class="flex items-start gap-2.5">
+                <svg viewBox="0 0 24 24" class="mt-0.5 h-4 w-4 shrink-0 text-success" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                Author your own lab-based courses — the pack format is open.
+              </li>
+              <li class="flex items-start gap-2.5">
+                <svg viewBox="0 0 24 24" class="mt-0.5 h-4 w-4 shrink-0 text-success" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                Ships with bundled starter packs to learn from and remix.
+              </li>
+              <li class="flex items-start gap-2.5">
+                <svg viewBox="0 0 24 24" class="mt-0.5 h-4 w-4 shrink-0 text-success" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                An embedded PTY terminal (xterm.js), not an iframe hack.
+              </li>
+            </ul>
+          </div>
+
+          <div class="reveal terminal-window" style="transition-delay: 120ms">
+            <div class="flex items-center gap-1.5 border-b border-white/10 px-4 py-2.5">
+              <span class="terminal-dot bg-[#ff5f57]"></span>
+              <span class="terminal-dot bg-[#febc2e]"></span>
+              <span class="terminal-dot bg-[#28c840]"></span>
+              <span class="ml-3 text-xs text-white/40">pod-create-and-inspect · step 3/5</span>
+            </div>
+            <pre class="overflow-x-auto p-5 font-mono text-[13px] leading-relaxed text-[#c9d1d9]"><code><span class="text-white/40">$</span> kubectl apply -f pod.yaml
+pod/nginx-demo created
+<span class="text-white/40">$</span> kubectl get pods -o wide
+NAME         READY   STATUS    RESTARTS   AGE
+nginx-demo   1/1     Running   0          4s
+
+<span class="text-success">✓ Step 3 — Pod is Running</span>
+<span class="text-white/40">  check: commandRegex matched "Running"</span>
+<span class="text-primary">→ Step 4 — Inspect the pod's node assignment</span></code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ OPEN CORE ============ -->
+      <section id="open-core" class="mx-auto max-w-8xl px-4 py-20 sm:px-6 lg:px-8">
+        <div class="reveal mx-auto max-w-2xl text-center">
+          <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Open core, honestly</h2>
+          <p class="mt-4 text-muted-foreground">
+            Everything on this page is MIT licensed and lives in this one
+            public repository. Commercial products build on top of it —
+            they don't gate what's here.
+          </p>
+        </div>
+
+        <div class="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="reveal rounded-xl border-2 border-primary bg-card p-6">
+            <span class="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">You are here</span>
+            <h3 class="mt-3 font-bold">SkillCoco</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              The adaptive engine, pack format, lessons, gamification, AI
+              tutor, and terminal labs. Public, MIT licensed, always free.
+            </p>
+          </div>
+          <div class="reveal rounded-xl border border-border bg-card p-6" style="transition-delay: 60ms">
+            <span class="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Private</span>
+            <h3 class="mt-3 font-bold">SkillCoco Pro</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              The integrated learning environment: embedded terminal + IDE,
+              validated/graded labs, interactive simulators, exam mode.
+            </p>
+          </div>
+          <div class="reveal rounded-xl border border-border bg-card p-6" style="transition-delay: 120ms">
+            <span class="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Private</span>
+            <h3 class="mt-3 font-bold">SkillCoco Hub</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Course licensing, verifiable certificates, progress sync, and
+              cohort reporting for educators and teams.
+            </p>
+          </div>
+          <div class="reveal rounded-xl border border-border bg-card p-6" style="transition-delay: 180ms">
+            <span class="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Private</span>
+            <h3 class="mt-3 font-bold">SkillCoco Studio</h3>
+            <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Course authoring and AI enrichment for educators — transcripts
+              and outlines in, a finished pack out.
+            </p>
+          </div>
+        </div>
+
+        <p class="reveal mt-8 text-center text-sm text-muted-foreground">
+          Pro, Hub, and Studio previews are coming soon.
+          <a href="mailto:hello@initcron.org" class="font-medium text-primary hover:underline">Get in touch</a>
+          if you want early access.
+        </p>
+      </section>
+
+      <!-- ============ INSTALL ============ -->
+      <section id="install" class="border-y border-border bg-secondary/30 py-20">
+        <div class="mx-auto max-w-8xl px-4 sm:px-6 lg:px-8">
+          <div class="reveal mx-auto max-w-2xl text-center">
+            <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Get SkillCoco</h2>
+            <p class="mt-4 text-muted-foreground">Two ways to run it — download the signed build, or build from source.</p>
+          </div>
+
+          <div class="mt-12 grid gap-6 lg:grid-cols-2">
+            <div class="reveal rounded-xl border border-border bg-card p-6">
+              <h3 class="font-semibold">Download the app</h3>
+              <p class="mt-2 text-sm text-muted-foreground">macOS (Apple Silicon) · signed &amp; notarized · <span data-latest-version>latest release</span></p>
+              <a
+                href="https://github.com/skillcoco/skillcoco/releases/latest"
+                data-download-dmg
+                class="mt-5 inline-flex items-center gap-2 rounded-md bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download .dmg
+              </a>
+              <p class="mt-3 text-xs text-muted-foreground">
+                See <a href="https://github.com/skillcoco/skillcoco/releases" target="_blank" rel="noopener noreferrer" class="underline hover:text-foreground">all releases</a> for other platforms and changelogs.
+              </p>
+            </div>
+
+            <div class="reveal rounded-xl border border-border bg-card p-6" style="transition-delay: 80ms">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold">Build from source</h3>
+                <button
+                  type="button"
+                  data-copy="#install-cmd"
+                  class="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  Copy
+                </button>
+              </div>
+              <pre class="mt-4 overflow-x-auto rounded-lg border border-border bg-[#0d1117] p-4 font-mono text-xs leading-relaxed text-[#c9d1d9]"><code id="install-cmd">git clone https://github.com/skillcoco/skillcoco.git
+cd skillcoco
+pnpm install
+cargo build --manifest-path src-tauri/Cargo.toml
+pnpm tauri dev</code></pre>
+              <p class="mt-3 text-xs text-muted-foreground">Requires Node 18+, pnpm 8+, and Rust stable.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STAR HISTORY ============ -->
+      <section class="mx-auto max-w-8xl px-4 py-20 sm:px-6 lg:px-8">
+        <div class="reveal mx-auto max-w-2xl text-center">
+          <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Growing in the open</h2>
+          <p class="mt-4 text-muted-foreground">
+            Every commit, issue, and decision is public. If SkillCoco is
+            useful to you, a star helps others find it.
+          </p>
+        </div>
+        <div class="reveal mx-auto mt-10 max-w-3xl overflow-hidden rounded-xl border border-border bg-card p-4">
+          <a href="https://star-history.com/#skillcoco/skillcoco&Date" target="_blank" rel="noopener noreferrer">
+            <img
+              src="https://api.star-history.com/svg?repos=skillcoco/skillcoco&type=Date"
+              alt="SkillCoco GitHub star history chart"
+              loading="lazy"
+              width="800"
+              height="400"
+              class="w-full"
+            />
+          </a>
+        </div>
+      </section>
+
+      <!-- ============ FINAL CTA ============ -->
+      <section class="border-t border-border bg-secondary/30 py-20">
+        <div class="reveal mx-auto max-w-2xl px-4 text-center sm:px-6 lg:px-8">
+          <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Ready to build your first course?</h2>
+          <p class="mt-4 text-muted-foreground">Free, offline-capable, and yours to audit line by line.</p>
+          <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <a
+              href="https://github.com/skillcoco/skillcoco/releases/latest"
+              data-download-dmg
+              class="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Download for macOS
+            </a>
+            <a
+              href="https://github.com/skillcoco/skillcoco"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-2 rounded-md border border-border px-5 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
+            >
+              Read the source
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============ FOOTER ============ -->
+    <footer class="border-t border-border">
+      <div class="mx-auto max-w-8xl px-4 py-14 sm:px-6 lg:px-8">
+        <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <img src="/coco.svg" alt="" class="h-6 w-6" />
+              <span class="font-bold">Skill<span class="text-primary">Coco</span></span>
+            </div>
+            <p class="mt-3 max-w-xs text-sm text-muted-foreground">
+              Open-source adaptive learning for any subject. MIT licensed,
+              local-first, built in the open.
+            </p>
+          </div>
+
+          <div>
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Product</h4>
+            <ul class="mt-4 space-y-2.5 text-sm">
+              <li><a href="#features" class="text-muted-foreground hover:text-foreground">Features</a></li>
+              <li><a href="#labs" class="text-muted-foreground hover:text-foreground">Terminal Labs</a></li>
+              <li><a href="#open-core" class="text-muted-foreground hover:text-foreground">Open Core</a></li>
+              <li><a href="https://github.com/skillcoco/skillcoco/releases" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">Releases</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Community</h4>
+            <ul class="mt-4 space-y-2.5 text-sm">
+              <li><a href="https://github.com/skillcoco/skillcoco" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">GitHub</a></li>
+              <li><a href="https://github.com/skillcoco/skillcoco/issues" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">Issues</a></li>
+              <li><a href="https://github.com/skillcoco/skillcoco/discussions" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">Discussions</a></li>
+              <li><a href="https://github.com/skillcoco/skillcoco/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">Contributing</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Legal</h4>
+            <ul class="mt-4 space-y-2.5 text-sm">
+              <li><a href="https://github.com/skillcoco/skillcoco/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">MIT License</a></li>
+              <li><a href="https://github.com/skillcoco/skillcoco/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">Security</a></li>
+              <li><a href="https://github.com/skillcoco/skillcoco/blob/main/CODE_OF_CONDUCT.md" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">Code of Conduct</a></li>
+              <li><a href="mailto:hello@initcron.org" class="text-muted-foreground hover:text-foreground">Contact</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border pt-8 text-xs text-muted-foreground sm:flex-row">
+          <p>&copy; <span data-year></span> Initcron Systems. An Agentix Garage and School of DevOps / School of AI project.</p>
+          <p>Built in the open since March 2026.</p>
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

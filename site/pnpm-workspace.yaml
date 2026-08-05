@@ -1,0 +1,6 @@
+# Marks `site/` as its own pnpm workspace root, independent of the parent
+# skillcoco repo's pnpm-workspace.yaml. Without this, pnpm walks up and finds
+# the ancestor file, causing install/build to resolve against the wrong
+# project (or silently no-op).
+packages:
+  - "."
