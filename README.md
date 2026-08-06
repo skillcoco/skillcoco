@@ -17,6 +17,7 @@
   <img src="https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=white" alt="Tauri 2" />
   <img src="https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white" alt="Rust" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white" alt="React 18" />
+  <a href="https://www.schoolofdevops.com"><img src="https://img.shields.io/badge/Built%20by-School%20of%20DevOps-2ea44f" alt="Built by School of DevOps" /></a>
 </p>
 
 <p align="center">
@@ -42,7 +43,7 @@ the adaptive learning engine (BKT + SM-2 + microlearning), the open pack format,
 lessons, video, quizzes, gamification, and the AI tutor (bring your own key or run
 local models) — is MIT licensed and always will be.
 
-Commercial products by OpsFlow LLC build on top of it — explore them at
+Commercial products by Initcron Systems Private Limited build on top of it — explore them at
 **[skillcoco.com](https://skillcoco.com)**:
 
 - **[SkillCoco Pro](https://skillcoco.com)** — the integrated learning environment:
@@ -59,6 +60,33 @@ courses (Linux, Docker, Kubernetes, anything) entirely in the OSS app. Pro layer
 on the richer graded lab environment, simulators, and exam mode.
 
 Contributions here improve the open core. See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+---
+
+## Preview
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <a href="docs/screenshots/01-onboarding.png">
+        <img src="docs/screenshots/01-onboarding.png" alt="Onboarding — type any subject to learn" />
+      </a>
+      <p align="center"><sub><strong>Onboarding</strong> — type anything, tap a topic, or pick a template. AI builds a personalized adaptive path.</sub></p>
+    </td>
+    <td width="33%" valign="top">
+      <a href="docs/screenshots/02-learning-path.png">
+        <img src="docs/screenshots/02-learning-path.png" alt="Learning path — DAG view of a generated course with certificate progress" />
+      </a>
+      <p align="center"><sub><strong>Learning path</strong> — a generated course as a DAG, with live certificate/mastery progress toward completion.</sub></p>
+    </td>
+    <td width="33%" valign="top">
+      <a href="docs/screenshots/03-lesson.png">
+        <img src="docs/screenshots/03-lesson.png" alt="Lesson view — AI-generated content with a reference video and AI tutor" />
+      </a>
+      <p align="center"><sub><strong>Lesson view</strong> — AI-generated content shaped by learner state, with a reference video and the AI Tutor one click away.</sub></p>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -158,4 +186,4 @@ If SkillCoco is useful to you, a ⭐ helps others find it.
 
 ---
 
-<p align="center"><em>An Agentix Garage and School of DevOps / School of AI project. Built in the open since March 2026.</em></p>
+<p align="center"><em>An Agentix Garage and <a href="https://www.schoolofdevops.com">School of DevOps</a> / School of AI project. Built in the open since March 2026.</em></p>
