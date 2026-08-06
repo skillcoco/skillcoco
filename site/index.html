@@ -435,7 +435,7 @@ nginx-demo   1/1     Running   0          4s
 
         <p class="reveal mt-8 text-center text-sm text-muted-foreground">
           Pro, Hub, and Studio previews are coming soon.
-          <a href="mailto:hello@initcron.org" class="font-medium text-primary hover:underline">Get in touch</a>
+          <a href="mailto:gjs@opsflow.sh" class="font-medium text-primary hover:underline">Get in touch</a>
           if you want early access.
         </p>
       </section>
@@ -499,13 +499,22 @@ pnpm tauri dev</code></pre>
         <div class="reveal mx-auto mt-10 max-w-3xl overflow-hidden rounded-xl border border-border bg-card p-4">
           <a href="https://star-history.com/#skillcoco/skillcoco&Date" target="_blank" rel="noopener noreferrer">
             <img
+              id="star-history-img"
               src="https://api.star-history.com/svg?repos=skillcoco/skillcoco&type=Date"
               alt="SkillCoco GitHub star history chart"
               loading="lazy"
               width="800"
               height="400"
               class="w-full"
+              onerror="this.classList.add('hidden'); document.getElementById('star-history-fallback').classList.remove('hidden')"
             />
+            <!-- Fallback if the (third-party) star-history.com chart service is
+                 down or slow — never leave a broken-image icon on the page. -->
+            <div id="star-history-fallback" class="hidden flex h-[300px] flex-col items-center justify-center gap-2 text-center sm:h-[400px]">
+              <svg viewBox="0 0 24 24" class="h-8 w-8 text-muted-foreground" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+              <p class="text-sm font-medium text-foreground">Star history chart is warming up</p>
+              <p class="text-xs text-muted-foreground">star-history.com is generating the chart for this repo — view it directly, or check back shortly.</p>
+            </div>
           </a>
         </div>
       </section>
@@ -577,13 +586,13 @@ pnpm tauri dev</code></pre>
               <li><a href="https://github.com/skillcoco/skillcoco/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">MIT License</a></li>
               <li><a href="https://github.com/skillcoco/skillcoco/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">Security</a></li>
               <li><a href="https://github.com/skillcoco/skillcoco/blob/main/CODE_OF_CONDUCT.md" target="_blank" rel="noopener noreferrer" class="text-muted-foreground hover:text-foreground">Code of Conduct</a></li>
-              <li><a href="mailto:hello@initcron.org" class="text-muted-foreground hover:text-foreground">Contact</a></li>
+              <li><a href="mailto:gjs@opsflow.sh" class="text-muted-foreground hover:text-foreground">Contact</a></li>
             </ul>
           </div>
         </div>
 
         <div class="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border pt-8 text-xs text-muted-foreground sm:flex-row">
-          <p>&copy; <span data-year></span> Initcron Systems. An Agentix Garage and School of DevOps / School of AI project.</p>
+          <p>&copy; <span data-year></span> OpsFlow LLC. An Agentix Garage and School of DevOps / School of AI project.</p>
           <p>Built in the open since March 2026.</p>
         </div>
       </div>

@@ -42,7 +42,7 @@ the adaptive learning engine (BKT + SM-2 + microlearning), the open pack format,
 lessons, video, quizzes, gamification, and the AI tutor (bring your own key or run
 local models) — is MIT licensed and always will be.
 
-Commercial products by Initcron Systems build on top of it — explore them at
+Commercial products by OpsFlow LLC build on top of it — explore them at
 **[skillcoco.com](https://skillcoco.com)**:
 
 - **[SkillCoco Pro](https://skillcoco.com)** — the integrated learning environment:

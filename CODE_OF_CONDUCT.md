@@ -35,7 +35,7 @@ is representing the project in public spaces.
 
 ## Reporting
 
-Report unacceptable behavior to the maintainers at **hello@initcron.org**. All
+Report unacceptable behavior to the maintainers at **gjs@opsflow.sh**. All
 reports will be reviewed and investigated promptly and fairly, and the reporter's
 privacy will be respected. Maintainers are obligated to keep the details of any
 incident confidential.

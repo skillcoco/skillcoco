@@ -238,7 +238,7 @@ before investing time in implementation.
 
 - **Bug reports / feature requests:** [GitHub Issues](https://github.com/skillcoco/skillcoco/issues)
 - **Questions:** Start a [GitHub Discussion](https://github.com/skillcoco/skillcoco/discussions)
-- **Security vulnerabilities:** Email `bean@initcron.org` — do not open a public issue
+- **Security vulnerabilities:** Email `gjs@opsflow.sh` — do not open a public issue
 
 ---
 

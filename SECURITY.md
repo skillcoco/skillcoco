@@ -34,7 +34,7 @@ Use one of these private channels instead:
    "Report a vulnerability." This routes the report directly to the
    maintainers as a private security advisory draft and is the
    fastest path to a CVE if one is warranted.
-2. **Email (fallback):** `hello@initcron.org`. Use this if you do
+2. **Email (fallback):** `gjs@opsflow.sh`. Use this if you do
    not have a GitHub account or the Security tab is unavailable to
    you. Encrypt sensitive payloads at your discretion; we do not
    currently publish a GPG key — request one in your initial email if
